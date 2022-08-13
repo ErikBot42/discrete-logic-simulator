@@ -1,6 +1,5 @@
 #[allow(clippy::upper_case_acronyms)]
 use std::time::Instant;
-//use std::sync::atomic::*;
 
 #[derive(Debug)]
 enum GateType {
@@ -14,7 +13,7 @@ enum GateType {
 }
 
 // data needed after processing network
-type acc_type = i8;
+type AccType = i8;
 #[derive(Debug)]
 struct Gate {
     // constant:
@@ -22,7 +21,7 @@ struct Gate {
     kind: GateType,
 
     // variable:
-    acc: acc_type,            // TODO i8
+    acc: AccType,            // TODO i8
     state: bool,
     in_update_list: bool,
 }
@@ -46,7 +45,7 @@ impl Gate {
         Self::new(GateType::CLUSTER, Vec::new())
     }
     // change number of inputs to handle logic correctly
-    fn add_inputs(&mut self, inputs: acc_type) {
+    fn add_inputs(&mut self, inputs: AccType) {
         match self.kind {
             GateType::AND | GateType::NAND 
                 => self.acc -= inputs,
@@ -97,8 +96,10 @@ struct GateNetwork {
     clusters: Vec<Gate>,
     update_list: Vec<usize>,
 }
-
-// only add to update list if state will change?
+// TODO: merge gates & cluster lists?
+// TODO: only add to update list if state will change?
+// TODO: add layer after cluster directly?
+// TODO: atomics do not seem to significantly impact performance, therefore 
 
 impl GateNetwork {
     fn add_gate(&mut self, gate: Gate, inputs: Vec<usize>) -> usize {
