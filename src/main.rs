@@ -1,4 +1,7 @@
 #[allow(clippy::upper_case_acronyms)]
+use std::time::Instant;
+//use std::sync::atomic::*;
+
 #[derive(Debug)]
 enum GateType {
     AND,
@@ -11,6 +14,7 @@ enum GateType {
 }
 
 // data needed after processing network
+type acc_type = i8;
 #[derive(Debug)]
 struct Gate {
     // constant:
@@ -18,7 +22,7 @@ struct Gate {
     kind: GateType,
 
     // variable:
-    acc: i32,            // TODO i8
+    acc: acc_type,            // TODO i8
     state: bool,
     in_update_list: bool,
 }
@@ -26,14 +30,14 @@ impl Gate {
     fn new(kind: GateType, outputs: Vec<usize>) -> Self {
         let start_acc = match kind {
             GateType::XNOR 
-                => 0,
+                => 1,
             GateType::AND | GateType::OR | GateType::NOR | GateType::NAND | GateType::XOR | GateType::CLUSTER 
                 => 0
         };
         Gate {
-            outputs: Vec::new(),
+            outputs,
             acc: start_acc,
-            kind: GateType::CLUSTER,
+            kind,
             state: false, // all gates/clusters init to off
             in_update_list: false,
         }
@@ -42,7 +46,7 @@ impl Gate {
         Self::new(GateType::CLUSTER, Vec::new())
     }
     // change number of inputs to handle logic correctly
-    fn add_inputs(&mut self, inputs: i32) {
+    fn add_inputs(&mut self, inputs: acc_type) {
         match self.kind {
             GateType::AND | GateType::NAND 
                 => self.acc -= inputs,
@@ -50,7 +54,7 @@ impl Gate {
                 => (),
         }
     }
-    //#[inline(always)]
+    #[inline(never)]
     fn evaluate(&self) -> bool {
         match self.kind {
             GateType::NAND | GateType::OR | GateType::CLUSTER 
@@ -61,15 +65,17 @@ impl Gate {
                 => self.acc & 1 == 0,
         } 
     }
-    //#[inline(always)]
+    #[inline(never)]
     fn update(&mut self, update_list: &mut Vec<usize>, clusters: &mut Vec<Gate>) {
         // if this assert fails, the system will recover anyways
         // but that would probably have been caused by a bug.
-        assert!(self.in_update_list); 
+        debug_assert!(self.in_update_list); 
 
+        //println!("Update:\n{:?}",self);
         self.in_update_list = false; // this gate should be ready to be readded to the update list.
         let next = self.evaluate();
         if self.state != next {
+            //println!("new state!");
             for output_id in &self.outputs {
                 let cluster = &mut clusters[*output_id];
                 cluster.acc += if next {1} else {-1};
@@ -77,6 +83,8 @@ impl Gate {
                     cluster.in_update_list = true;
                     update_list.push(*output_id);
                 }
+                //println!("Cluster:\n{:?}",self);
+
             }
             self.state = next;
         }
@@ -108,27 +116,51 @@ impl GateNetwork {
         }
         next_id
     }
-    fn update(&mut self, mut update_list: Vec<usize>) {
+    #[inline(never)]
+    fn update(&mut self) {
         let mut cluster_update_list = Vec::new();
-        for gate_id in &update_list {
+        //println!("update_list: {:?}", self.update_list);
+        for gate_id in &self.update_list {
             self.gates[*gate_id].update(&mut cluster_update_list, &mut self.clusters);
         }
-        update_list.clear();
+        //println!("cluster_update_list: {:?}", cluster_update_list);
+        self.update_list.clear();
         for cluster_id in cluster_update_list {
-            self.gates[cluster_id].update(&mut update_list, &mut self.clusters);
+            self.clusters[cluster_id].update(&mut self.update_list, &mut self.gates);
         }
+    }
+    fn add_all_gates_to_update_list(&mut self) {
+        for gate_id in 0..self.gates.len() {
+            self.update_list.push(gate_id); 
+            self.gates[gate_id].in_update_list = true;
+        } 
     }
 }
 
 fn main() {
     let mut network = GateNetwork{gates: Vec::new(), clusters: Vec::new(), update_list: Vec::new()};
     let c1 = network.add_cluster();
-    let c2 = network.add_cluster();
-    let g1 = network.add_gate(Gate::new(GateType::NOR, [c1].to_vec()), [c1,c2].to_vec());
-    let update_list = [g1].to_vec();
+    //let c2 = network.add_cluster();
+    let g1 = network.add_gate(Gate::new(GateType::NOR, [c1].to_vec()), [c1/*,c2*/].to_vec());
+
+    network.add_all_gates_to_update_list();
     println!("{:#?}",network);
-    network.update(update_list);
+    network.update();
     println!("{:#?}",network);
+    
+    network.update();
+    println!("{:#?}",network);
+    let iterations = 1_000_000_0;
+    println!("running {} iterations",iterations);
+    let start = Instant::now();
+    for _ in 0..iterations {
+        network.update();
+    }
+    let elapsed_time = start.elapsed().as_millis();
+    println!("{:#?}",network);
+    println!("running {} iterations took {} ms",iterations, elapsed_time);
+    println!("done");
+
 
     //let g1 = 
 }
