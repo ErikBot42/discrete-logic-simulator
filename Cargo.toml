@@ -6,13 +6,16 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
-panic = "abort"
+#opt-level = 3
+#lto = true
+#codegen-units = 1
+#panic = "abort"
 #debug = 1
 
 #[rust]
 #debuginfo-level = 1
 
 [dependencies]
+base64 = "0.13.0"
+zstd = "0.11"
+colored = "2.0.0"
