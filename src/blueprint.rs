@@ -1,5 +1,8 @@
 // blueprint.rs: parsing VCB blueprints
 
+#[allow(clippy::upper_case_acronyms)]
+use colored::Colorize;
+
 // contains the raw data.
 #[derive(Debug, Default)]
 #[repr(C)]
@@ -43,6 +46,18 @@ impl FooterInfo {
         }
     }
 }
+enum Trace {
+    And,
+    Or,
+    Nand,
+    Nor,
+    Xor,
+    Xnor,
+    Led,
+    Buffer,
+    Nor,
+
+}
 #[derive(Default)]
 pub struct BlueprintParser {}
 impl BlueprintParser {
@@ -61,6 +76,18 @@ impl BlueprintParser {
         // hopefully, input data isn't a zip bomb
         let data = zstd::bulk::decompress(data_bytes, 9999999).unwrap_or(Vec::new());
         println!("{:#?}",data);
+        for y in 0..footer.height {
+            for x in 0..footer.width {
+                let i = (x + y*footer.width)*4;
+                let p = "  ".on_truecolor(
+                    data[i],
+                    data[i+1],
+                    data[i+2],
+                    );
+                print!("{}",p);
+            }
+            println!();
+        }
     }
 }
 
