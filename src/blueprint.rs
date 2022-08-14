@@ -30,6 +30,7 @@ enum Layer {
 struct FooterInfo {
     width: usize,
     height: usize,
+    count: usize,
     layer: Layer,
 }
 impl FooterInfo {
@@ -37,6 +38,7 @@ impl FooterInfo {
         FooterInfo {
             width: footer.width as usize,
             height: footer.height as usize,
+            count: (footer.width*footer.height) as usize,
             layer: match footer.layer {
                 65536 => Layer::Logic,
                 131072 => Layer::On,
@@ -47,16 +49,48 @@ impl FooterInfo {
     }
 }
 enum Trace {
+    GrayTrace,
+    WhiteTrace,
+    RedTrace,
+    Orange1Trace,
+
+    Orange2Trace,
+    Orange3Trace,
+    YellowTrace,
+    Green1Trace,
+
+    Green2Trace,
+    CyanTrace,
+    Cyan2Trace,
+    Blue1Trace,
+
+    Blue2Trace,
+    PurpleTrace,
+    MagentaTrace,
+    PinkTrace,
+
+    Write,
+    Empty,
+    Cross,
+    Read,
+
+    Buffer,
     And,
     Or,
+    Xor,
+
+    Not,
     Nand,
     Nor,
-    Xor,
     Xnor,
-    Led,
-    Buffer,
-    Nor,
 
+    LatchOn,
+    LatchOff,
+    Clock,
+    Led,
+
+    Annotation,
+    Filler,
 }
 #[derive(Default)]
 pub struct BlueprintParser {}
@@ -87,6 +121,11 @@ impl BlueprintParser {
                 print!("{}",p);
             }
             println!();
+        }
+
+        for c in 0..footer.count {
+            let i = c*4;
+            println!("{:?}",(data[i],data[i+1],data[i+2],data[i+3]) );
         }
     }
 }
