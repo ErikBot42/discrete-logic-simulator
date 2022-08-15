@@ -227,11 +227,9 @@ impl VcbBoard {
         board.print();
         let mut i = 0;
         for x in 0..num_elements {
-            if let Some(node) = board.explore(x as i32, 0, i, None) {
-                i+=1;
-                board.nodes.push(node);
-                assert!(i == board.nodes.len());
-            };
+            board.explore(x as i32, 0, board.nodes.len(), None);
+            //    i+=1;
+            //};
         }
         board.print();
         for i in 0..4 {
@@ -247,10 +245,13 @@ impl VcbBoard {
         assert!(a == b);
         if a {println!("connect: {start}, {end}");}
     }
-    fn explore(&mut self, mut x: i32, dx: i32, id: usize, prev: Option<(Trace, usize)>) -> Option<BoardNode> {
+    fn explore(&mut self, mut x: i32, dx: i32, id: usize, prev: Option<(Trace, usize)>) {
         x+=dx;
 
-        let el = match self.elements.get_mut(x as usize) {Some(el) => el, None => {println!("{x}");return None}};
+        let el = match self.elements.get_mut(x as usize) {Some(el) => el, None => {return}};
+        
+        if let Some(_) = el.id {println!("{x}");return};
+
         // return if not valid to merge with prev && invalid to link
         if match prev {
             Some((prev_trace,prev_id)) => {
@@ -259,29 +260,29 @@ impl VcbBoard {
                     //if let Some(id) = el.id {
                     //    assert!(id != prev_id);
                     //    if let Some(v) = prev_trace.should_invert_connection(el.kind) {
-                    //        self.add_connection((id, prev_id),v); return None;
+                    //        self.add_connection((id, prev_id),v); return;
                     //    }
                     //};
                     true
                 }
             },
             None => false,
-        } {return None}
+        } {return}
 
         // merge with prev OR assign new id to el
         match el.kind {
-            Trace::Empty => return None,
+            Trace::Empty => return,
             Trace::Cross => {
                 if dx != 0 {
                     //panic!("x:{x}, y:{y}, dx:{dx}, dy:{dy}, i:{i}");
                     self.explore(x,dx,id,prev);
                 } 
-                return None 
+                return 
             }
             _ => (),
         }
         match el.id {
-            Some(_) => None,
+            Some(_) => (),
             None => {
                 el.id = Some(id);
                 let kind = el.kind;
@@ -289,7 +290,13 @@ impl VcbBoard {
                 self.explore(x,  -1,                  id, Some((kind, id))); 
                 self.explore(x,   self.width as i32,  id, Some((kind, id))); 
                 self.explore(x, -(self.width as i32), id, Some((kind, id))); 
-                Some(BoardNode::new(kind))
+                // origin of search
+                if prev == None {
+                    
+                    self.nodes.push(BoardNode::new(kind));
+                    println!("{id} {}", self.nodes.len());
+                    assert!(id == self.nodes.len()-1);
+                }
             },
         }
     }
