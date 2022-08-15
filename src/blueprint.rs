@@ -225,15 +225,13 @@ impl VcbBoard {
         }
         let mut board = VcbBoard{elements, nodes: Vec::new(), width, height};
         board.print();
-        let mut i = 0;
         for x in 0..num_elements {
             board.explore(x as i32, 0, board.nodes.len(), None);
-            //    i+=1;
-            //};
         }
         board.print();
-        for i in 0..4 {
-            println!("{:?}", board.elements[i]);
+        for i in 0..10 {
+            let node = &board.nodes[i];
+            println!("{i}: {node:?}");
         }
         board
     }
@@ -250,24 +248,22 @@ impl VcbBoard {
 
         let el = match self.elements.get_mut(x as usize) {Some(el) => el, None => {return}};
         
-        if let Some(_) = el.id {println!("{x}");return};
+        //if let Some(_) = el.id {return};
+        // ^ && root search => early exit.
 
-        // return if not valid to merge with prev && invalid to link
-        if match prev {
-            Some((prev_trace,prev_id)) => {
-                if prev_trace.should_merge(el.kind) {false}
-                else {
-                    //if let Some(id) = el.id {
-                    //    assert!(id != prev_id);
-                    //    if let Some(v) = prev_trace.should_invert_connection(el.kind) {
-                    //        self.add_connection((id, prev_id),v); return;
-                    //    }
-                    //};
-                    true
-                }
-            },
-            None => false,
-        } {return}
+        if let Some((prev_trace,prev_id)) = prev {
+            if !prev_trace.should_merge(el.kind) {
+                if let Some(id) = el.id {
+                    // Create node connection
+                    assert!(id != prev_id);
+                    assert!(prev != None);
+                    if let Some(v) = prev_trace.should_invert_connection(el.kind) {
+                        self.add_connection((id, prev_id),v); return;
+                    }
+                };
+                return
+            }
+        };
 
         // merge with prev OR assign new id to el
         match el.kind {
@@ -286,17 +282,16 @@ impl VcbBoard {
             None => {
                 el.id = Some(id);
                 let kind = el.kind;
+                // origin of search
+                // add id before using it
+                if prev == None {
+                    self.nodes.push(BoardNode::new(kind));
+                    assert!(id == self.nodes.len()-1);
+                }
                 self.explore(x,   1,                  id, Some((kind, id))); 
                 self.explore(x,  -1,                  id, Some((kind, id))); 
                 self.explore(x,   self.width as i32,  id, Some((kind, id))); 
                 self.explore(x, -(self.width as i32), id, Some((kind, id))); 
-                // origin of search
-                if prev == None {
-                    
-                    self.nodes.push(BoardNode::new(kind));
-                    println!("{id} {}", self.nodes.len());
-                    assert!(id == self.nodes.len()-1);
-                }
             },
         }
     }
