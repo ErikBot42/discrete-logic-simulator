@@ -2,6 +2,11 @@
 
 #![allow(clippy::upper_case_acronyms)]
 use colored::Colorize;
+use std::collections::BTreeSet;
+
+//use std::hash::{Hash, Hasher};
+//use std::collections::HashSet;
+//use std::collections::HashMap;
 
 // contains the raw data.
 #[derive(Debug, Default)]
@@ -128,98 +133,165 @@ impl Trace {
     }
     fn is_wire(self) -> bool {
         match self {
-            Trace::Gray|Trace::White|Trace::Red|Trace::Orange1|Trace::Orange2|Trace::Orange3|Trace::Yellow|Trace::Green1|Trace::Green2|Trace::Cyan1|Trace::Cyan2|Trace::Blue1|Trace::Blue2|Trace::Purple|Trace::Magenta|Trace::Pink|Trace::Read|Trace::Write => true,
+            Trace::Gray | Trace::White | Trace::Red | Trace::Orange1 | Trace::Orange2 | Trace::Orange3 | Trace::Yellow | Trace::Green1 | Trace::Green2 | Trace::Cyan1 | Trace::Cyan2 | Trace::Blue1 | Trace::Blue2 | Trace::Purple | Trace::Magenta | Trace::Pink | Trace::Read | Trace::Write => true,
             _ => false,
         }
     }
-    fn should_connect(self, other: Trace) -> bool {
+    fn is_gate(self) -> bool {
+        match self {
+            Trace::Buffer | Trace::And | Trace::Or | Trace::Xor | Trace::Not | Trace::Nand | Trace::Nor | Trace::Xnor | Trace::LatchOn | Trace::LatchOff | Trace::Clock | Trace::Led => true,
+            _ => false,
+        }
+    }
+    fn should_merge(self, other: Trace) -> bool {
         other == Trace::Cross || self == other || self.is_wire() == other.is_wire()
     }
-}
-fn print_blueprint_data(data: &Vec<u8>, footer: &FooterInfo) 
-{
-    for y in 0..footer.height {
-        for x in 0..footer.width {
-            let i = (x + y*footer.width)*4;
-            let p = "  ".on_truecolor(
-                data[i],
-                data[i+1],
-                data[i+2],
-                );
-            print!("{}",p);
+
+    /// returns bool if connection should be made, 
+    /// containing whether to swap order of the connection
+    fn should_invert_connection(self, other: Trace) -> Option<bool> {
+        let swp; 
+        if self.is_gate() {swp = true;}
+        else if other.is_gate() {swp = false;}
+        else {return None};
+        match if swp {other} else {self} {
+            Trace::Read => Some(swp),
+            Trace::Write => Some(!swp),
+            _ => None,
         }
-        println!();
     }
 }
+//fn print_blueprint_data(data: &Vec<u8>, footer: &FooterInfo) 
+//{
+//    for y in 0..footer.height {
+//        for x in 0..footer.width {
+//            let i = (x + y*footer.width)*4;
+//            let p = "  ".on_truecolor(
+//                data[i],
+//                data[i+1],
+//                data[i+2],
+//                );
+//            print!("{}",p);
+//        }
+//        println!();
+//    }
+//}
+
+/// Represents one pixel.
 #[derive(Debug)]
-struct BoardElement{
+struct BoardElement {
     color: [u8; 4],
     kind: Trace,
-    // every gate/trace has a unique id.
-    // cross/empty has no id
+    //inputs: BTreeSet<usize>,
+    //outputs: BTreeSet<usize>,
+    // id for the associated node
     id: Option<usize>, 
 }
 impl BoardElement {
     fn new(color: &[u8]) -> Self {
-        BoardElement {color: color.try_into().unwrap(), kind: Trace::from_color(color), id: None} 
+        BoardElement {color: color.try_into().unwrap(), kind: Trace::from_color(color), id: None}
     }
     fn print(&self) {
         print!("{}",match self.id {Some(t) => format!("{:>2}",t%100), None => format!("  ")}.on_truecolor(self.color[0],self.color[1],self.color[2]));
     }
 }
+/// Represents one gate or trace
+#[derive(Debug)]
+struct BoardNode {
+    inputs: BTreeSet<usize>,
+    outputs: BTreeSet<usize>,
+    // TODO: type
+}
+impl BoardNode {
+    fn new(_trace: Trace) -> Self {
+        BoardNode {inputs: BTreeSet::new(), outputs: BTreeSet::new()}
+    }
+}
+//connections: HashSet<(usize,usize)>,
 
 #[derive(Debug)]
 struct VcbBoard {
     elements: Vec<BoardElement>,
+    nodes: Vec<BoardNode>,
     width: usize,
     height: usize,
 }
 impl VcbBoard {
     fn new(data: Vec<u8>, width: usize, height: usize) -> Self {
-        let mut elements: Vec<BoardElement> = Vec::with_capacity(width*height);
+        let num_elements = width*height;
+        let mut elements = Vec::with_capacity(num_elements);
         for i in 0..width*height {
             elements.push(BoardElement::new(&data[i*4..i*4+4])); 
         }
-        let mut board = VcbBoard{elements, width, height};
+        let mut board = VcbBoard{elements, nodes: Vec::new(), width, height};
         board.print();
         let mut i = 0;
-        for y in 0..height{
-            for x in 0..width {
-                if board.explore(x as i32, y as i32, 0, 0, i, None) {i+=1};
-            }
+        for x in 0..num_elements {
+            if let Some(node) = board.explore(x as i32, 0, i, None) {
+                i+=1;
+                board.nodes.push(node);
+                assert!(i == board.nodes.len());
+            };
         }
         board.print();
-        
+        for i in 0..4 {
+            println!("{:?}", board.elements[i]);
+        }
         board
     }
-    fn explore(&mut self, mut x: i32, mut y: i32, dx: i32, dy: i32, i: usize, prev: Option<Trace>) -> bool {
-        x+=dx;y+=dy;
-        if !(0<=x && x<self.width as i32 && 0<=y && y<self.height as i32) {return false}
-        let el = &mut self.elements[x as usize+y as usize*self.width];
-        if match prev {Some(p) => !p.should_connect(el.kind),None => false} {return false}
+    fn add_connection(&mut self, connection: (usize,usize), swp_dir: bool) {
+        let (start, end) = if swp_dir {(connection.1,connection.0)} else {connection};
+        assert!(start != end);
+        let a = self.nodes[start].inputs.insert(end);
+        let b = self.nodes[end].outputs.insert(start);
+        assert!(a == b);
+        if a {println!("connect: {start}, {end}");}
+    }
+    fn explore(&mut self, mut x: i32, dx: i32, id: usize, prev: Option<(Trace, usize)>) -> Option<BoardNode> {
+        x+=dx;
+
+        let el = match self.elements.get_mut(x as usize) {Some(el) => el, None => {println!("{x}");return None}};
+        // return if not valid to merge with prev && invalid to link
+        if match prev {
+            Some((prev_trace,prev_id)) => {
+                if prev_trace.should_merge(el.kind) {false}
+                else {
+                    //if let Some(id) = el.id {
+                    //    assert!(id != prev_id);
+                    //    if let Some(v) = prev_trace.should_invert_connection(el.kind) {
+                    //        self.add_connection((id, prev_id),v); return None;
+                    //    }
+                    //};
+                    true
+                }
+            },
+            None => false,
+        } {return None}
+
+        // merge with prev OR assign new id to el
         match el.kind {
-            Trace::Empty => return false,
+            Trace::Empty => return None,
             Trace::Cross => {
-                if (dx != 0 || dy != 0) {
+                if dx != 0 {
                     //panic!("x:{x}, y:{y}, dx:{dx}, dy:{dy}, i:{i}");
-                    self.explore(x,y,dx,dy,i,prev);
-                } else {
-                    //println!("x:{x}, y:{y}, dx:{dx}, dy:{dy}, i:{i}");
-                }; 
-                return false
+                    self.explore(x,dx,id,prev);
+                } 
+                return None 
             }
             _ => (),
         }
         match el.id {
-            Some(id) => return false,
-            None => el.id = Some(i),
+            Some(_) => None,
+            None => {
+                el.id = Some(id);
+                let kind = el.kind;
+                self.explore(x,   1,                  id, Some((kind, id))); 
+                self.explore(x,  -1,                  id, Some((kind, id))); 
+                self.explore(x,   self.width as i32,  id, Some((kind, id))); 
+                self.explore(x, -(self.width as i32), id, Some((kind, id))); 
+                Some(BoardNode::new(kind))
+            },
         }
-        let kind = el.kind;
-        self.explore(x,y, 1, 0,i,Some(kind)); 
-        self.explore(x,y,-1, 0,i,Some(kind)); 
-        self.explore(x,y, 0, 1,i,Some(kind)); 
-        self.explore(x,y, 0,-1,i,Some(kind)); 
-        return true
     }
     fn print(&self) {
         println!("\nBoard:");
@@ -248,25 +320,25 @@ impl BlueprintParser {
 
         let data = zstd::bulk::decompress(data_bytes, 9999999).unwrap_or_default();
         assert!(data.len() == footer.count*4);
-        println!("{:#?}",data);
-        for y in 0..footer.height {
-            for x in 0..footer.width {
-                let i = (x + y*footer.width)*4;
-                let p = "  ".on_truecolor(
-                    data[i],
-                    data[i+1],
-                    data[i+2],
-                    );
-                println!("{}: {:#?}",p, Trace::from_color(&[data[i],data[i+1],data[i+2],data[i+3]]));
-            }
-        }
+        //println!("{:#?}",data);
+        //for y in 0..footer.height {
+        //    for x in 0..footer.width {
+        //        let i = (x + y*footer.width)*4;
+        //        let p = "  ".on_truecolor(
+        //            data[i],
+        //            data[i+1],
+        //            data[i+2],
+        //            );
+        //        println!("{}: {:#?}",p, Trace::from_color(&[data[i],data[i+1],data[i+2],data[i+3]]));
+        //    }
+        //}
 
         //for c in 0..footer.count {
         //    let i = c*4;
         //    println!("{:?}",(data[i],data[i+1],data[i+2],data[i+3]) );
         //}
         
-        print_blueprint_data(&data, &footer);
+        //print_blueprint_data(&data, &footer);
         let board = VcbBoard::new(data, footer.width, footer.height);
         //println!("{:?}",board);
     }
