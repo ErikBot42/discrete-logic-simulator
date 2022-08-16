@@ -1,7 +1,7 @@
 // logic.rs: contains the simulaion engine itself.
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum GateType {
     AND,
     OR,
@@ -12,8 +12,11 @@ pub enum GateType {
     CLUSTER, // equivilent to OR
 }
 
-// data needed after processing network
+// will only support about 128 inputs/outputs (or about 255 if wrapped add)
+//
 type AccType = i8;
+
+// data needed after processing network
 #[derive(Debug)]
 pub struct Gate {
     // constant:
@@ -21,12 +24,12 @@ pub struct Gate {
     kind: GateType,
 
     // variable:
-    acc: AccType,            // TODO i8
+    acc: AccType, 
     state: bool,
     in_update_list: bool,
 }
 impl Gate {
-    pub fn new(kind: GateType, outputs: Vec<usize>) -> Self {
+    fn new(kind: GateType, outputs: Vec<usize>) -> Self {
         let start_acc = match kind {
             GateType::XNOR 
                 => 1,
@@ -41,14 +44,18 @@ impl Gate {
             in_update_list: false,
         }
     }
-    fn new_cluster() -> Self {
-        Self::new(GateType::CLUSTER, Vec::new())
+    fn from_gate_type(kind: GateType) -> Self {
+        Self::new(kind, Vec::new())
     }
-    // change number of inputs to handle logic correctly
-    fn add_inputs(&mut self, inputs: AccType) {
+    //fn new_cluster() -> Self {
+    //    Self::new(GateType::CLUSTER, Vec::new())
+    //}
+    /// Change number of inputs to handle logic correctly
+    /// Can be called multiple times for *diffrent* inputs
+    fn add_inputs(&mut self, inputs: i32) {
         match self.kind {
             GateType::AND | GateType::NAND 
-                => self.acc -= inputs,
+                => self.acc -= inputs as AccType,
             GateType::OR | GateType::NOR | GateType::XOR | GateType::XNOR | GateType::CLUSTER
                 => (),
         }
@@ -99,24 +106,49 @@ pub struct GateNetwork {
 // TODO: merge gates & cluster lists?
 // TODO: only add to update list if state will change?
 // TODO: add layer after cluster directly?
-// TODO: atomics do not seem to significantly impact performance, therefore 
+// TODO: atomics do not seem to significantly impact performance, therefore, they could be used.
 
 impl GateNetwork {
-    pub fn add_gate(&mut self, gate: Gate, inputs: Vec<usize>) -> usize {
-        GateNetwork::internal_add_circuit(gate, &mut self.gates, &mut self.clusters, inputs)
-    }
-    pub fn add_cluster(&mut self) -> usize {
-        GateNetwork::internal_add_circuit(Gate::new_cluster(), &mut self.clusters, &mut self.gates, Vec::new())
-    }
-    fn internal_add_circuit(mut gate: Gate, gates: &mut Vec<Gate>, clusters: &mut Vec<Gate>, inputs: Vec<usize>) -> usize {
-        gate.add_inputs(inputs.len().try_into().unwrap());
-        let next_id = gates.len();
-        gates.push(gate);
-        for input_id in inputs {
-            clusters[input_id].outputs.push(next_id);
-        }
+    //pub fn add_gate(&mut self, gate: Gate, inputs: Vec<usize>) -> usize {
+    //    GateNetwork::internal_add_circuit(gate, &mut self.gates, &mut self.clusters, inputs)
+    //}
+    /// Internally creates a vertex.
+    /// Returns vertex id
+    /// ids of gates/clusters may overlap
+    pub fn add_vertex(&mut self, kind: GateType) -> usize {
+
+        let list = if kind == GateType::CLUSTER {
+            &mut self.clusters
+        } else {
+            &mut self.gates
+        };
+        let next_id = list.len();
+        list.push(Gate::from_gate_type(kind));
         next_id
     }
+
+    /// Add edges from start id, type to end id, type
+    /// Connection MUST be between cluster and a non cluster gate. 
+    pub fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
+        let gate = &mut self.gates[gate_id];
+        gate.add_inputs(inputs.len() as i32);
+
+    }
+    //fn add_cluster(&mut self) -> usize {
+    //    GateNetwork::internal_add_circuit(Gate::new_cluster(), &mut self.clusters, &mut self.gates, Vec::new())
+    //}
+    //fn add_gate(&mut self, kind: GateType) -> usize {
+    //    GateNetwork::internal_add_circuit(Gate::from_gate_type(kind), &mut self.gates, &mut self.clusters, Vec::new())
+    //}
+    //fn internal_add_circuit(mut gate: Gate, gates: &mut Vec<Gate>, clusters: &mut Vec<Gate>, inputs: Vec<usize>) -> usize {
+    //    gate.add_inputs(inputs.len().try_into().unwrap());
+    //    let next_id = gates.len();
+    //    gates.push(gate);
+    //    for input_id in inputs {
+    //        clusters[input_id].outputs.push(next_id);
+    //    }
+    //    next_id
+    //}
     #[inline(never)]
     pub fn update(&mut self) {
         let mut cluster_update_list = Vec::new();

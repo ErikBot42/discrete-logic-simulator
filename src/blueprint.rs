@@ -3,6 +3,7 @@
 #![allow(clippy::upper_case_acronyms)]
 use colored::Colorize;
 use std::collections::BTreeSet;
+use crate::logic::*;
 
 //use std::hash::{Hash, Hasher};
 //use std::collections::HashSet;
@@ -160,6 +161,30 @@ impl Trace {
             _ => None,
         }
     }
+    fn to_gate(self, input_count: usize) -> Option<GateType> {
+        // TODO: single input gate simplification.
+        if self.is_wire() {
+            Some(GateType::CLUSTER)
+        }
+        else {
+            match self {
+                Trace::Buffer   => Some(GateType::OR),
+                Trace::And      => Some(GateType::AND),
+                Trace::Or       => Some(GateType::OR),
+                Trace::Xor      => Some(GateType::XOR),
+                Trace::Not      => Some(GateType::NOR),
+                Trace::Nand     => Some(GateType::NAND),
+                Trace::Nor      => Some(GateType::NOR),
+                Trace::Xnor     => Some(GateType::XNOR),
+                Trace::LatchOn  => None,
+                Trace::LatchOff => None,
+                Trace::Clock    => None,
+                Trace::Led      => None,
+                _ => panic!(),
+
+            } 
+        }
+    }
 }
 //fn print_blueprint_data(data: &Vec<u8>, footer: &FooterInfo) 
 //{
@@ -200,11 +225,14 @@ impl BoardElement {
 struct BoardNode {
     inputs: BTreeSet<usize>,
     outputs: BTreeSet<usize>,
+    trace: Trace,
+    kind: Option<GateType>,
+    //networkId: Option<usize>,
     // TODO: type
 }
 impl BoardNode {
-    fn new(_trace: Trace) -> Self {
-        BoardNode {inputs: BTreeSet::new(), outputs: BTreeSet::new()}
+    fn new(trace: Trace) -> Self {
+        BoardNode {inputs: BTreeSet::new(), outputs: BTreeSet::new(), kind: None, trace}
     }
 }
 //connections: HashSet<(usize,usize)>,
@@ -213,6 +241,7 @@ impl BoardNode {
 struct VcbBoard {
     elements: Vec<BoardElement>,
     nodes: Vec<BoardNode>,
+    network: GateNetwork,
     width: usize,
     height: usize,
 }
@@ -223,7 +252,13 @@ impl VcbBoard {
         for i in 0..width*height {
             elements.push(BoardElement::new(&data[i*4..i*4+4])); 
         }
-        let mut board = VcbBoard{elements, nodes: Vec::new(), width, height};
+        let mut board = VcbBoard{
+            elements,
+            nodes: Vec::new(),
+            width,
+            height,
+            network: GateNetwork::default()
+        };
         board.print();
         for x in 0..num_elements {
             board.explore(x as i32, 0, board.nodes.len(), None);
@@ -233,7 +268,21 @@ impl VcbBoard {
             let node = &board.nodes[i];
             println!("{i}: {node:?}");
         }
+        board.set_node_gate_type();
+
+        // create network
+        for node in &mut board.nodes {
+            
+        }
+
+
+
         board
+    }
+    fn set_node_gate_type(&mut self) {
+        for node in &mut self.nodes {
+            node.kind = node.trace.to_gate(node.inputs.len());
+        }
     }
     fn add_connection(&mut self, connection: (usize,usize), swp_dir: bool) {
         let (start, end) = if swp_dir {(connection.1,connection.0)} else {connection};
