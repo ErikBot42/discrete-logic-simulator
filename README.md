@@ -1,2 +1,2 @@
 # discrete-logic-simulator
-Logic simulator for tick based games such as VCB
+(unfinished) Logic simulator for tick based games such as VCB
