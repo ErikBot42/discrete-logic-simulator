@@ -12,18 +12,31 @@ pub enum GateType {
     CLUSTER, // equivilent to OR
 }
 
+/// the only cases that matter at the hot code sections
+enum RunTimeGateType {
+    OR_NAND,
+    AND_NOR,
+    XOR_XNOR,
+}
+impl RunTimeGateType {
+    fn new(kind: GateType) -> Self {
+        match kind {
+            GateType::AND => RunTimeGateType::AND_NOR,
+            GateType::OR => RunTimeGateType::OR_NAND,
+            GateType::NOR => RunTimeGateType::AND_NOR,
+            GateType::NAND => RunTimeGateType::OR_NAND,
+            GateType::XOR => RunTimeGateType::XOR_XNOR,
+            GateType::XNOR => RunTimeGateType::XOR_XNOR,
+            GateType::CLUSTER => RunTimeGateType::OR_NAND, // equivilent to OR
+        }
+    }
+}
+
 // will only support about 128 inputs/outputs (or about 255 if wrapped add)
 //
 type AccType = i8;
 
 /// data needed after processing network
-/// constant:
-/// outputs: Vec<usize>, // list of ids
-/// kind: GateType,
-/// variable:
-/// acc: AccType, 
-/// state: bool,
-/// in_update_list: bool,
 #[derive(Debug)]
 pub struct Gate {
     // constant:
@@ -134,6 +147,7 @@ impl GateNetwork {
     /// Add inputs to gate_id fron inputs.
     /// Connection must be between cluster and a non cluster gate. 
     /// Only add connection once plz (TODO: Enforce with assertion)
+    /// Above assertion will guarantee the shape of the network.
     pub fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
         let gate = &mut self.gates[gate_id];
         gate.add_inputs(inputs.len() as i32);
@@ -153,11 +167,15 @@ impl GateNetwork {
         }
         //println!("cluster_update_list: {:?}", cluster_update_list);
         self.update_list.clear();
+        // TODO: call diffrent update function that makes more assumptions here.
+        // this will be guaranteed safe since shape of network is known.
         for cluster_id in &cluster_update_list {
             Gate::update(*cluster_id, &mut self.update_list, &mut self.gates);
         }
     }
-    pub fn add_all_gates_to_update_list(&mut self) {
+    /// Adds all gates to update list and performs initialization
+    /// and TODO: network optimizatoin.
+    pub fn init_network(&mut self) {
         for gate_id in 0..self.gates.len() {
             self.update_list.push(gate_id); 
             self.gates[gate_id].in_update_list = true;

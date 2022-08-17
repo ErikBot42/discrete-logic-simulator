@@ -263,7 +263,7 @@ impl BoardNode {
 //connections: HashSet<(usize,usize)>,
 
 #[derive(Debug)]
-struct VcbBoard {
+pub struct VcbBoard {
     elements: Vec<BoardElement>,
     nodes: Vec<BoardNode>,
     network: GateNetwork,
@@ -271,6 +271,9 @@ struct VcbBoard {
     height: usize,
 }
 impl VcbBoard {
+    pub fn update(&mut self) {
+        self.network.update();
+    }
     fn new(data: Vec<u8>, width: usize, height: usize) -> Self {
         let num_elements = width*height;
         let mut elements = Vec::with_capacity(num_elements);
@@ -284,16 +287,9 @@ impl VcbBoard {
             height,
             network: GateNetwork::default()
         };
-        board.print();
         for x in 0..num_elements {
             board.explore(x as i32, 0, board.nodes.len(), None);
         }
-        board.print();
-        //for i in 0..10 {
-        //    let node = &board.nodes[i];
-        //    println!("{i}: {node:?}");
-        //}
-
         // add vertexes to network
         for node in &mut board.nodes {
             node.network_id = Some(board.network.add_vertex(node.kind));
@@ -304,27 +300,27 @@ impl VcbBoard {
         }
 
         //println!("{:#?}",board.network);
-        for i in 0..10 {
-            let node = &board.nodes[i];
-            println!("{i}: {node:?}");
-        }
-        board.network.add_all_gates_to_update_list();
+        //for i in 0..10 {
+        //    let node = &board.nodes[i];
+        //    println!("{i}: {node:?}");
+        //}
+        board.network.init_network();
         
-        let start = Instant::now();
-        let iterations = 100_000_000;
-        // TODO: terminal buffer
-        for _ in 0..iterations {
-            print!("\x1B[0;0H");
-            board.print();
-            board.network.update();
-            //print!("\x1B[0m");
-            let mut child = Command::new("sleep").arg("0.1").spawn().unwrap();
-            let _result = child.wait().unwrap();
-        }
-        let elapsed_time = start.elapsed().as_millis();
+        //let start = Instant::now();
+        //let iterations = 100_000_000;
+        //// TODO: terminal buffer
+        //for _ in 0..iterations {
+        //    print!("\x1B[0;0H");
+        //    board.print();
+        //    board.network.update();
+        //    //print!("\x1B[0m");
+        //    let mut child = Command::new("sleep").arg("0.1").spawn().unwrap();
+        //    let _result = child.wait().unwrap();
+        //}
+        //let elapsed_time = start.elapsed().as_millis();
 
-        board.print();
-        println!("running {} iterations took {} ms, {} MTPS",iterations, elapsed_time, (iterations as f32)/(elapsed_time as f32) / 1_000.0);
+        //board.print();
+        //println!("running {} iterations took {} ms, {} MTPS",iterations, elapsed_time, (iterations as f32)/(elapsed_time as f32) / 1_000.0);
         board
     }
     //fn set_node_gate_type(&mut self) {
@@ -344,7 +340,7 @@ impl VcbBoard {
         match self.nodes[end].kind {
             _ => (),
         };
-        if a {println!("connect: {start}, {end}");}
+        //if a {println!("connect: {start}, {end}");}
     }
     fn explore(&mut self, mut x: i32, dx: i32, id: usize, prev: Option<(Trace, usize)>) {
         x+=dx;
@@ -398,7 +394,7 @@ impl VcbBoard {
             },
         }
     }
-    fn print(&self) {
+    pub fn print(&self) {
         println!("\nBoard:");
         for y in 0..self.height{
             for x in 0..self.width {
@@ -412,7 +408,7 @@ impl VcbBoard {
 #[derive(Default)]
 pub struct BlueprintParser {}
 impl BlueprintParser {
-    pub fn parse(&mut self, data: &str) {
+    pub fn parse(&mut self, data: &str) -> VcbBoard{
         let bytes = base64::decode_config(data, base64::STANDARD).unwrap();
 
         let data_bytes = &bytes[..bytes.len()-Footer::SIZE];
@@ -444,7 +440,7 @@ impl BlueprintParser {
         //}
         
         //print_blueprint_data(&data, &footer);
-        let board = VcbBoard::new(data, footer.width, footer.height);
+        VcbBoard::new(data, footer.width, footer.height)
         //println!("{:?}",board);
     }
 }
