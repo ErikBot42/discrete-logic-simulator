@@ -4,8 +4,7 @@
 use colored::Colorize;
 use std::collections::BTreeSet;
 use crate::logic::*;
-use std::process::Command;
-use std::time::Instant;
+//use std::time::Instant;
 
 //use std::hash::{Hash, Hasher};
 //use std::collections::HashSet;
@@ -147,7 +146,7 @@ impl Trace {
         }
     }
     fn should_merge(self, other: Trace) -> bool {
-        other == Trace::Cross || self == other || self.is_wire() == other.is_wire()
+        other == Trace::Cross || self == other || self.is_wire() && other.is_wire()
     }
 
     /// returns bool if connection should be made, 
@@ -226,15 +225,16 @@ impl BoardElement {
                     if board.network.get_state(board.nodes[t].kind, id) {
                         brfac = 255;
                     }; 
-                    match board.nodes[t].kind {
-                        GateType::AND => format!(" A"),
-                        GateType::NAND => format!("NA"),
-                        GateType::OR => format!(" O"),
-                        GateType::NOR => format!("NO"),
-                        GateType::XOR => format!(" X"),
-                        GateType::XNOR => format!("NX"),
-                        GateType::CLUSTER => format!(" C"),
-                    }
+                    //match board.nodes[t].kind {
+                    //    GateType::AND => format!(" A"),
+                    //    GateType::NAND => format!("NA"),
+                    //    GateType::OR => format!(" O"),
+                    //    GateType::NOR => format!("NO"),
+                    //    GateType::XOR => format!(" X"),
+                    //    GateType::XNOR => format!("NX"),
+                    //    GateType::CLUSTER => format!(" C"),
+                    //}
+                    format!("{:>2}",t%100)
                 }
                 None => format!("{:>2}",t%100),    
             }
@@ -440,8 +440,9 @@ impl BlueprintParser {
         //}
         
         //print_blueprint_data(&data, &footer);
+        
         VcbBoard::new(data, footer.width, footer.height)
-        //println!("{:?}",board);
+
     }
 }
 

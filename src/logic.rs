@@ -121,7 +121,7 @@ impl Gate {
 
 #[derive(Debug, Default)]
 pub struct GateNetwork {
-    gates: Vec<Gate>,
+    pub gates: Vec<Gate>,
     //clusters: Vec<Gate>,
     update_list: Vec<usize>,
     // outputs: Vec<BTreeSet<usize>>,
@@ -176,9 +176,13 @@ impl GateNetwork {
     /// Adds all gates to update list and performs initialization
     /// and TODO: network optimizatoin.
     pub fn init_network(&mut self) {
+        // add all gates to update list.
         for gate_id in 0..self.gates.len() {
-            self.update_list.push(gate_id); 
-            self.gates[gate_id].in_update_list = true;
+            let kind = self.gates[gate_id].kind;
+            if kind != GateType::CLUSTER {
+                self.update_list.push(gate_id); 
+                self.gates[gate_id].in_update_list = true;
+            }
         } 
     }
 }
