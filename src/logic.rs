@@ -1,7 +1,7 @@
 // logic.rs: contains the simulaion engine itself.
 
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum GateType {
     AND,
     OR,
@@ -16,7 +16,14 @@ pub enum GateType {
 //
 type AccType = i8;
 
-// data needed after processing network
+/// data needed after processing network
+/// constant:
+/// outputs: Vec<usize>, // list of ids
+/// kind: GateType,
+/// variable:
+/// acc: AccType, 
+/// state: bool,
+/// in_update_list: bool,
 #[derive(Debug)]
 pub struct Gate {
     // constant:
@@ -31,10 +38,8 @@ pub struct Gate {
 impl Gate {
     fn new(kind: GateType, outputs: Vec<usize>) -> Self {
         let start_acc = match kind {
-            GateType::XNOR 
-                => 1,
-            GateType::AND | GateType::OR | GateType::NOR | GateType::NAND | GateType::XOR | GateType::CLUSTER 
-                => 0
+            GateType::XNOR => 1,
+            _ => 0,
         };
         Gate {
             outputs,
@@ -68,7 +73,7 @@ impl Gate {
             GateType::AND | GateType::NOR
                 => self.acc == 0,
             GateType::XOR | GateType::XNOR
-                => self.acc & 1 == 0,
+                => self.acc & 1 == 1,
         } 
     }
     #[inline(never)]
@@ -83,6 +88,7 @@ impl Gate {
         if self.state != next {
             //println!("new state!");
             for output_id in &self.outputs {
+                //let cluster = &mut clusters[*output_id];
                 let cluster = &mut clusters[*output_id];
                 cluster.acc += if next {1} else {-1};
                 if !cluster.in_update_list {
@@ -127,28 +133,25 @@ impl GateNetwork {
         next_id
     }
 
-    /// Add edges from start id, type to end id, type
+    /// Add inputs to gate_id fron inputs.
     /// Connection MUST be between cluster and a non cluster gate. 
+    /// Only add connection once plz (TODO: Enforce with assertion)
     pub fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
-        let gate = &mut self.gates[gate_id];
+        let (g_list, c_list) = if kind == GateType::CLUSTER {
+            (&mut self.clusters, &mut self.gates)
+        } else {
+            (&mut self.gates,    &mut self.clusters)
+        };
+        let gate = &mut g_list[gate_id];
         gate.add_inputs(inputs.len() as i32);
-
+        for input_id in inputs {
+            c_list[input_id].outputs.push(gate_id)
+        }
     }
-    //fn add_cluster(&mut self) -> usize {
-    //    GateNetwork::internal_add_circuit(Gate::new_cluster(), &mut self.clusters, &mut self.gates, Vec::new())
-    //}
-    //fn add_gate(&mut self, kind: GateType) -> usize {
-    //    GateNetwork::internal_add_circuit(Gate::from_gate_type(kind), &mut self.gates, &mut self.clusters, Vec::new())
-    //}
-    //fn internal_add_circuit(mut gate: Gate, gates: &mut Vec<Gate>, clusters: &mut Vec<Gate>, inputs: Vec<usize>) -> usize {
-    //    gate.add_inputs(inputs.len().try_into().unwrap());
-    //    let next_id = gates.len();
-    //    gates.push(gate);
-    //    for input_id in inputs {
-    //        clusters[input_id].outputs.push(next_id);
-    //    }
-    //    next_id
-    //}
+    pub fn get_state(&self, kind: GateType, gate_id: usize) -> bool {
+        (if kind == GateType::CLUSTER {
+&self.clusters} else {&self.gates})[gate_id].state
+    }
     #[inline(never)]
     pub fn update(&mut self) {
         let mut cluster_update_list = Vec::new();

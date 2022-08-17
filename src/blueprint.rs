@@ -4,6 +4,8 @@
 use colored::Colorize;
 use std::collections::BTreeSet;
 use crate::logic::*;
+use std::process::Command;
+use std::time::Instant;
 
 //use std::hash::{Hash, Hasher};
 //use std::collections::HashSet;
@@ -161,25 +163,25 @@ impl Trace {
             _ => None,
         }
     }
-    fn to_gate(self, input_count: usize) -> Option<GateType> {
+    fn to_gate(self) -> GateType {
         // TODO: single input gate simplification.
         if self.is_wire() {
-            Some(GateType::CLUSTER)
+            GateType::CLUSTER
         }
         else {
             match self {
-                Trace::Buffer   => Some(GateType::OR),
-                Trace::And      => Some(GateType::AND),
-                Trace::Or       => Some(GateType::OR),
-                Trace::Xor      => Some(GateType::XOR),
-                Trace::Not      => Some(GateType::NOR),
-                Trace::Nand     => Some(GateType::NAND),
-                Trace::Nor      => Some(GateType::NOR),
-                Trace::Xnor     => Some(GateType::XNOR),
-                Trace::LatchOn  => None,
-                Trace::LatchOff => None,
-                Trace::Clock    => None,
-                Trace::Led      => None,
+                Trace::Buffer   => GateType::OR,
+                Trace::And      => GateType::AND,
+                Trace::Or       => GateType::OR,
+                Trace::Xor      => GateType::XOR,
+                Trace::Not      => GateType::NOR,
+                Trace::Nand     => GateType::NAND,
+                Trace::Nor      => GateType::NOR,
+                Trace::Xnor     => GateType::XNOR,
+                Trace::LatchOn  => GateType::XNOR,
+                Trace::LatchOff => GateType::XOR,
+                Trace::Clock    => panic!(),
+                Trace::Led      => (GateType::OR),
                 _ => panic!(),
 
             } 
@@ -216,8 +218,31 @@ impl BoardElement {
     fn new(color: &[u8]) -> Self {
         BoardElement {color: color.try_into().unwrap(), kind: Trace::from_color(color), id: None}
     }
-    fn print(&self) {
-        print!("{}",match self.id {Some(t) => format!("{:>2}",t%100), None => format!("  ")}.on_truecolor(self.color[0],self.color[1],self.color[2]));
+    fn print(&self, board: &VcbBoard) {
+        let mut brfac: u32 = 70;
+        print!("{}", match self.id {
+            Some(t) => match board.nodes[t].network_id {
+                Some(id) => {
+                    if board.network.get_state(board.nodes[t].kind, id) {
+                        brfac = 255;
+                    }; 
+                    match board.nodes[t].kind {
+                        GateType::AND => format!(" A"),
+                        GateType::NAND => format!("NA"),
+                        GateType::OR => format!(" O"),
+                        GateType::NOR => format!("NO"),
+                        GateType::XOR => format!(" X"),
+                        GateType::XNOR => format!("NX"),
+                        GateType::CLUSTER => format!(" C"),
+                    }
+                }
+                None => format!("{:>2}",t%100),    
+            }
+            None => format!("  ")
+        }.on_truecolor(
+            (self.color[0] as u32 * brfac / 255) as u8,
+            (self.color[1] as u32 * brfac / 255) as u8,
+            (self.color[2] as u32 * brfac / 255) as u8));
     }
 }
 /// Represents one gate or trace
@@ -226,13 +251,13 @@ struct BoardNode {
     inputs: BTreeSet<usize>,
     outputs: BTreeSet<usize>,
     trace: Trace,
-    kind: Option<GateType>,
-    //networkId: Option<usize>,
+    kind: GateType,
+    network_id: Option<usize>,
     // TODO: type
 }
 impl BoardNode {
     fn new(trace: Trace) -> Self {
-        BoardNode {inputs: BTreeSet::new(), outputs: BTreeSet::new(), kind: None, trace}
+        BoardNode {inputs: BTreeSet::new(), outputs: BTreeSet::new(), kind: trace.to_gate(), trace, network_id: None}
     }
 }
 //connections: HashSet<(usize,usize)>,
@@ -264,32 +289,61 @@ impl VcbBoard {
             board.explore(x as i32, 0, board.nodes.len(), None);
         }
         board.print();
+        //for i in 0..10 {
+        //    let node = &board.nodes[i];
+        //    println!("{i}: {node:?}");
+        //}
+
+        // add vertexes to network
+        for node in &mut board.nodes {
+            node.network_id = Some(board.network.add_vertex(node.kind));
+        }
+        // add edges to network
+        for node in &board.nodes {
+            board.network.add_inputs(node.kind, node.network_id.unwrap(), node.inputs.clone().into_iter().map(|x| board.nodes[x].network_id.unwrap()).collect());
+        }
+
+        //println!("{:#?}",board.network);
         for i in 0..10 {
             let node = &board.nodes[i];
             println!("{i}: {node:?}");
         }
-        board.set_node_gate_type();
-
-        // create network
-        for node in &mut board.nodes {
-            
+        board.network.add_all_gates_to_update_list();
+        
+        let start = Instant::now();
+        let iterations = 100_000_000;
+        // TODO: terminal buffer
+        for _ in 0..iterations {
+            print!("\x1B[0;0H");
+            board.print();
+            board.network.update();
+            //print!("\x1B[0m");
+            let mut child = Command::new("sleep").arg("0.1").spawn().unwrap();
+            let _result = child.wait().unwrap();
         }
+        let elapsed_time = start.elapsed().as_millis();
 
-
-
+        board.print();
+        println!("running {} iterations took {} ms, {} MTPS",iterations, elapsed_time, (iterations as f32)/(elapsed_time as f32) / 1_000.0);
         board
     }
-    fn set_node_gate_type(&mut self) {
-        for node in &mut self.nodes {
-            node.kind = node.trace.to_gate(node.inputs.len());
-        }
-    }
+    //fn set_node_gate_type(&mut self) {
+    //    for node in &mut self.nodes {
+    //        node.kind = node.trace.to_gate(node.inputs.len());
+    //    }
+    //}
     fn add_connection(&mut self, connection: (usize,usize), swp_dir: bool) {
         let (start, end) = if swp_dir {(connection.1,connection.0)} else {connection};
         assert!(start != end);
         let a = self.nodes[start].inputs.insert(end);
         let b = self.nodes[end].outputs.insert(start);
         assert!(a == b);
+        match self.nodes[start].kind {
+            _ => (),
+        };
+        match self.nodes[end].kind {
+            _ => (),
+        };
         if a {println!("connect: {start}, {end}");}
     }
     fn explore(&mut self, mut x: i32, dx: i32, id: usize, prev: Option<(Trace, usize)>) {
@@ -349,7 +403,7 @@ impl VcbBoard {
         for y in 0..self.height{
             for x in 0..self.width {
                 let i = x+y*self.width;
-                self.elements[i].print();
+                self.elements[i].print(self);
             }
             println!();
         }
