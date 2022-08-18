@@ -1,8 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 
-use logic_simulator::fibonacci;
-
 use logic_simulator::blueprint::*;
 
 fn criterion_benchmark(c: &mut Criterion) {

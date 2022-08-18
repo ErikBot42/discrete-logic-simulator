@@ -13,7 +13,7 @@ pub enum GateType {
 }
 
 /// the only cases that matter at the hot code sections
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 enum RunTimeGateType {
     OrNand,
     AndNor,
@@ -109,8 +109,8 @@ impl Gate {
     #[inline(always)]
     fn evaluate_from_runtime(&self, kind:RunTimeGateType) -> bool {
         match kind {
-            RunTimeGateType::OrNand => self.acc != 0,
-            RunTimeGateType::AndNor => self.acc == 0,
+            RunTimeGateType::OrNand  => self.acc != 0,
+            RunTimeGateType::AndNor  => self.acc == 0,
             RunTimeGateType::XorXnor => self.acc & 1 == 1,
         } 
     }
@@ -125,6 +125,7 @@ pub struct GateNetwork {
     packed_outputs: Vec<IndexType>,
     packed_output_indexes: Vec<IndexType>,
     runtime_gate_kind: Vec<RunTimeGateType>,
+    //acc: Vec<AccType>,
 
 
     // outputs: Vec<BTreeSet<IndexType>>,
@@ -178,7 +179,8 @@ impl GateNetwork {
             unsafe {
                 GateNetwork::update_kind(
                     *gate_id,
-                    self.gates.get_unchecked(*gate_id as usize).kind,
+                    //self.gates.get_unchecked(*gate_id as usize).kind,
+                    *self.runtime_gate_kind.get_unchecked(*gate_id as usize),
                     &mut cluster_update_list,
                     &mut self.gates,
                     &self.packed_outputs,
@@ -194,7 +196,7 @@ impl GateNetwork {
             //Gate::update(*cluster_id, &mut self.update_list, &mut self.gates);
             //Gate::update_assume_or(*cluster_id, &mut self.update_list, &mut self.gates);
             //Gate::update_kind(*cluster_id, self.gates[*cluster_id].kind, &mut self.update_list, &mut self.gates);
-            GateNetwork::update_kind(*cluster_id, GateType::OR, &mut self.update_list, &mut self.gates, &self.packed_outputs, &self.packed_output_indexes);
+            GateNetwork::update_kind(*cluster_id, RunTimeGateType::OrNand, &mut self.update_list, &mut self.gates, &self.packed_outputs, &self.packed_output_indexes);
         }
     }
     /// Adds all gates to update list and performs initialization
@@ -214,7 +216,6 @@ impl GateNetwork {
             self.packed_outputs.append(&mut gate.outputs.clone());
         }
         self.packed_output_indexes.push(self.packed_outputs.len() as IndexType);
-
         
         for gate_id in 0..self.gates.len() {
             let gate = &self.gates[gate_id];
@@ -223,39 +224,25 @@ impl GateNetwork {
         }
     }
 
-
-
     #[inline(always)]
     fn update_kind(
         id: IndexType,
-        kind: GateType,
+        kind: RunTimeGateType,
         update_list: &mut Vec<IndexType>,
         gates: &mut Vec<Gate>,
         packed_outputs: &Vec<IndexType>,
         packed_output_indexes: &Vec<IndexType>) {
-        //TODO: make idiomatic
-        //let this = &mut clusters[gate_id];
+
         // if this assert fails, the system will recover anyways
         // but that would probably have been caused by a bug.
-        //let gate = unsafe { gates.get_unchecked(id) };
         debug_assert!(gates[id as usize].in_update_list); 
 
-        //println!("Update:\n{:?}",this);
-            // TODO move setting update list to aid compiler optimizer
-                //println!("new state!");
-                //TODO: move up the chain.
-                //for i in 0..gates.get_unchecked(id as usize).outputs.len() {
-                //    let output_id = gates.get_unchecked(id as usize).outputs[i];
-                    //let cluster = &mut clusters[*output_id];
-                    //let cluster = &mut gates[*output_id as usize];
-                    //println!("Cluster:\n{:?}",this);
         unsafe {
-            let next = gates.get_unchecked(id as usize).evaluate_from_kind(kind);
+            let next = gates.get_unchecked(id as usize).evaluate_from_runtime(kind);
             if gates.get_unchecked(id as usize).state != next {
                 let delta = if next {1} else {-1};
                 for i in *packed_output_indexes.get_unchecked(id as usize)..*packed_output_indexes.get_unchecked(id as usize+1) {
                     let output_id = packed_outputs.get_unchecked(i as usize);
-                    //assert!(*output_id != id);
                     let cluster = gates.get_unchecked_mut(*output_id as usize);
                     cluster.acc += delta;
                     if !cluster.in_update_list {

@@ -2,21 +2,8 @@
 pub mod logic;
 pub mod blueprint;
 
-//use crate::BlueprintParser;
-
-
-#[inline]
-pub fn fibonacci(n: u64) -> u64 {
-    match n {
-        0 => 1,
-        1 => 1,
-        n => fibonacci(n-1) + fibonacci(n-2),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    
     use crate::blueprint::BlueprintParser;
     #[test]
     fn basic_gate_test() {
