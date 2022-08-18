@@ -1,6 +1,8 @@
 // logic.rs: contains the simulaion engine itself.
 use std::collections::BTreeSet;
 
+
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum GateType {
     AND,
@@ -79,39 +81,36 @@ impl Gate {
         }
     }
     //#[inline(always)]
-    #[inline(always)]
-    fn evaluate(&self) -> bool {
-        match self.kind {
-            GateType::NAND | GateType::OR | GateType::CLUSTER 
-                => self.acc != 0,
-            GateType::AND | GateType::NOR
-                => self.acc == 0,
-            GateType::XOR | GateType::XNOR
-                => self.acc & 1 == 1,
-        } 
-    }
-
-    #[inline(always)]
-    fn evaluate_from_kind(&self, kind:GateType) -> bool {
-        match kind {
-            GateType::NAND | GateType::OR | GateType::CLUSTER 
-                => self.acc != 0,
-            GateType::AND | GateType::NOR
-                => self.acc == 0,
-            GateType::XOR | GateType::XNOR
-                => self.acc & 1 == 1,
-        } 
-    }
-
-    
-    #[inline(always)]
-    fn evaluate_from_runtime(&self, kind:RunTimeGateType) -> bool {
-        match kind {
-            RunTimeGateType::OrNand  => self.acc != 0,
-            RunTimeGateType::AndNor  => self.acc == 0,
-            RunTimeGateType::XorXnor => self.acc & 1 == 1,
-        } 
-    }
+    //#[inline(always)]
+    //fn evaluate(&self) -> bool {
+    //    match self.kind {
+    //        GateType::NAND | GateType::OR | GateType::CLUSTER 
+    //            => self.acc != 0,
+    //        GateType::AND | GateType::NOR
+    //            => self.acc == 0,
+    //        GateType::XOR | GateType::XNOR
+    //            => self.acc & 1 == 1,
+    //    } 
+    //}
+    //#[inline(always)]
+    //fn evaluate_from_kind(&self, kind:GateType) -> bool {
+    //    match kind {
+    //        GateType::NAND | GateType::OR | GateType::CLUSTER 
+    //            => self.acc != 0,
+    //        GateType::AND | GateType::NOR
+    //            => self.acc == 0,
+    //        GateType::XOR | GateType::XNOR
+    //            => self.acc & 1 == 1,
+    //    } 
+    //}
+    //#[inline(always)]
+    //fn evaluate_from_runtime(&self, kind:RunTimeGateType) -> bool {
+    //    match kind {
+    //        RunTimeGateType::OrNand  => self.acc != 0,
+    //        RunTimeGateType::AndNor  => self.acc == 0,
+    //        RunTimeGateType::XorXnor => self.acc & 1 == 1,
+    //    } 
+    //}
 
     #[inline(always)]
     fn evaluate_from_runtime_static(acc: AccType, kind:RunTimeGateType) -> bool {
@@ -201,7 +200,6 @@ impl GateNetwork {
                     //self.gates.get_unchecked(*gate_id as usize).kind,
                     *self.runtime_gate_kind.get_unchecked(*gate_id as usize),
                     &mut cluster_update_list,
-                    &mut self.gates,
                     &self.packed_outputs,
                     &self.packed_output_indexes,
                     &mut self.acc,
@@ -222,7 +220,6 @@ impl GateNetwork {
                 *cluster_id,
                 RunTimeGateType::OrNand,
                 &mut self.update_list,
-                &mut self.gates,
                 &self.packed_outputs,
                 &self.packed_output_indexes,
                 &mut self.acc,
@@ -259,7 +256,7 @@ impl GateNetwork {
             self.runtime_gate_kind.push(RunTimeGateType::new(gate.kind));
             self.acc.push(gate.acc);
             self.state.push(gate.state); 
-            self.in_update_list.push(gate.state);
+            self.in_update_list.push(gate.in_update_list);
         }
         self.initialized = true;
     }
@@ -269,7 +266,6 @@ impl GateNetwork {
         id: IndexType,
         kind: RunTimeGateType,
         update_list: &mut Vec<IndexType>,
-        gates: &mut Vec<Gate>,
         packed_outputs: &Vec<IndexType>,
         packed_output_indexes: &Vec<IndexType>,
         acc: &mut Vec<AccType>,
@@ -278,7 +274,8 @@ impl GateNetwork {
 
         // if this assert fails, the system will recover anyways
         // but that would probably have been caused by a bug.
-        debug_assert!(gates[id as usize].in_update_list); 
+        //debug_assert!(gates[id as usize].in_update_list); 
+        debug_assert!(in_update_list[id as usize]); 
 
         unsafe {
             //let next = Gate::evaluate_from_runtime_static(gates.get_unchecked(id as usize).acc, kind);
@@ -287,16 +284,16 @@ impl GateNetwork {
                 let delta = if next {1} else {-1};
                 for i in *packed_output_indexes.get_unchecked(id as usize)..*packed_output_indexes.get_unchecked(id as usize+1) {
                     let output_id = packed_outputs.get_unchecked(i as usize);
-                    let cluster = gates.get_unchecked_mut(*output_id as usize);
                     *acc.get_unchecked_mut(*output_id as usize) += delta;
-                    if !cluster.in_update_list {
-                        cluster.in_update_list = true;
+                    if !*in_update_list.get_unchecked_mut(*output_id as usize) {
+                        *in_update_list.get_unchecked_mut(*output_id as usize) = true;
                         update_list.push(*output_id);
                     }
                 }
                 *state.get_unchecked_mut(id as usize) = next;
             }
-            gates.get_unchecked_mut(id as usize).in_update_list = false; // this gate should be ready to be readded to the update list.
+            //gates.get_unchecked_mut(id as usize).in_update_list = false; // this gate should be ready to be readded to the update list.
+            *in_update_list.get_unchecked_mut(id as usize) = false; // this gate should be ready to be readded to the update list.
         }
     }
 }
