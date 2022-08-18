@@ -103,38 +103,6 @@ impl Gate {
         } 
     }
 
-    #[inline(always)]
-    fn update_kind(id: usize, kind: GateType, update_list: &mut Vec<usize>, gates: &mut Vec<Gate>) {
-        //TODO: make idiomatic
-        //let this = &mut clusters[gate_id];
-        // if this assert fails, the system will recover anyways
-        // but that would probably have been caused by a bug.
-        let gate = unsafe { gates.get_unchecked(id) };
-        debug_assert!(gates[id].in_update_list); 
-
-        //println!("Update:\n{:?}",this);
-        unsafe {
-            gates.get_unchecked_mut(id).in_update_list = false; // this gate should be ready to be readded to the update list.
-            let next = gates.get_unchecked(id).evaluate_from_kind(kind);
-            if gates.get_unchecked(id).state != next {
-                //println!("new state!");
-                let delta = if next {1} else {-1};
-                for i in 0..gates.get_unchecked(id).outputs.len() {
-                    let output_id = gates.get_unchecked(id).outputs[i];
-                    //let cluster = &mut clusters[*output_id];
-                    let cluster = &mut gates[output_id];
-                    cluster.acc += delta;
-                    if !cluster.in_update_list {
-                        cluster.in_update_list = true;
-                        update_list.push(output_id);
-                    }
-                    //println!("Cluster:\n{:?}",this);
-
-                }
-                gates.get_unchecked_mut(id).state = next;
-            }
-        }
-    }
     
 
 }
@@ -185,13 +153,13 @@ impl GateNetwork {
     pub fn get_state(&self, gate_id: usize) -> bool {
         self.gates[gate_id].state
     }
-    //#[inline(always)]
+    #[inline(always)]
     pub fn update(&mut self) {
         let mut cluster_update_list = Vec::new();
         //println!("update_list: {:?}", self.update_list);
         for gate_id in &self.update_list {
             //Gate::update(*gate_id, &mut cluster_update_list, &mut self.gates);
-            Gate::update_kind(*gate_id, self.gates[*gate_id].kind, &mut cluster_update_list, &mut self.gates);
+            GateNetwork::update_kind(*gate_id, self.gates[*gate_id].kind, &mut cluster_update_list, &mut self.gates, &self.packed_outputs, &self.packed_output_indexes);
             //Gate::update_kind2(*gate_id, self.gates[*gate_id].kind, &mut cluster_update_list, &mut self.gates);
         }
         //println!("cluster_update_list: {:?}", cluster_update_list);
@@ -202,7 +170,7 @@ impl GateNetwork {
             //Gate::update(*cluster_id, &mut self.update_list, &mut self.gates);
             //Gate::update_assume_or(*cluster_id, &mut self.update_list, &mut self.gates);
             //Gate::update_kind(*cluster_id, self.gates[*cluster_id].kind, &mut self.update_list, &mut self.gates);
-            Gate::update_kind(*cluster_id, GateType::OR, &mut self.update_list, &mut self.gates);
+            GateNetwork::update_kind(*cluster_id, GateType::OR, &mut self.update_list, &mut self.gates, &self.packed_outputs, &self.packed_output_indexes);
         }
     }
     /// Adds all gates to update list and performs initialization
@@ -216,10 +184,56 @@ impl GateNetwork {
                 self.gates[gate_id].in_update_list = true;
             }
         } 
-        //for gate_id in 0..self.gates.len() {
-        //    let gate = self.gates[gate_id];
-        //    self.packed_outputs
-        //    
-        //}
+        for gate_id in 0..self.gates.len() {
+            let gate = &self.gates[gate_id];
+            self.packed_output_indexes.push(self.packed_outputs.len());
+            self.packed_outputs.append(&mut gate.outputs.clone());
+        }
+        self.packed_output_indexes.push(self.packed_outputs.len());
+    }
+
+
+
+    #[inline(always)]
+    fn update_kind(
+        id: usize,
+        kind: GateType,
+        update_list: &mut Vec<usize>,
+        gates: &mut Vec<Gate>,
+        packed_outputs: &Vec<usize>,
+        packed_output_indexes: &Vec<usize>) {
+        //TODO: make idiomatic
+        //let this = &mut clusters[gate_id];
+        // if this assert fails, the system will recover anyways
+        // but that would probably have been caused by a bug.
+        //let gate = unsafe { gates.get_unchecked(id) };
+        debug_assert!(gates[id].in_update_list); 
+
+        //println!("Update:\n{:?}",this);
+        unsafe {
+            // TODO move setting update list to aid compiler optimizer
+            let next = gates.get_unchecked(id).evaluate_from_kind(kind);
+            if gates.get_unchecked(id).state != next {
+                //println!("new state!");
+                let delta = if next {1} else {-1};
+                //TODO: move up the chain.
+                //for i in 0..gates.get_unchecked(id).outputs.len() {
+                //    let output_id = gates.get_unchecked(id).outputs[i];
+                for i in *packed_output_indexes.get_unchecked(id)..*packed_output_indexes.get_unchecked(id+1) {
+                    let output_id = packed_outputs[i];
+                    //let cluster = &mut clusters[*output_id];
+                    let cluster = &mut gates[output_id];
+                    cluster.acc += delta;
+                    if !cluster.in_update_list {
+                        cluster.in_update_list = true;
+                        update_list.push(output_id);
+                    }
+                    //println!("Cluster:\n{:?}",this);
+
+                }
+                gates.get_unchecked_mut(id).state = next;
+            }
+            gates.get_unchecked_mut(id).in_update_list = false; // this gate should be ready to be readded to the update list.
+        }
     }
 }
