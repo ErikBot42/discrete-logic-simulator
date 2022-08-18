@@ -13,6 +13,7 @@ pub enum GateType {
 }
 
 /// the only cases that matter at the hot code sections
+#[derive(Debug)]
 enum RunTimeGateType {
     OrNand,
     AndNor,
@@ -113,7 +114,9 @@ pub struct GateNetwork {
     //clusters: Vec<Gate>,
     update_list: Vec<usize>,
     packed_outputs: Vec<usize>,
-    packed_output_indexes: Vec<usize>
+    packed_output_indexes: Vec<usize>,
+    runtime_gate_kind: Vec<RunTimeGateType>,
+
 
     // outputs: Vec<BTreeSet<usize>>,
     // inputs: Vec<BTreeSet<usize>>,
@@ -155,6 +158,7 @@ impl GateNetwork {
     }
     #[inline(always)]
     pub fn update(&mut self) {
+        // TODO: swap buffers instead of 2 lists.
         let mut cluster_update_list = Vec::new();
         //println!("update_list: {:?}", self.update_list);
         for gate_id in &self.update_list {
@@ -190,6 +194,13 @@ impl GateNetwork {
             self.packed_outputs.append(&mut gate.outputs.clone());
         }
         self.packed_output_indexes.push(self.packed_outputs.len());
+
+        
+        for gate_id in 0..self.gates.len() {
+            let gate = &self.gates[gate_id];
+            self.runtime_gate_kind.push(RunTimeGateType::new(gate.kind));
+
+        }
     }
 
 
@@ -217,10 +228,10 @@ impl GateNetwork {
                 //println!("new state!");
                 let delta = if next {1} else {-1};
                 //TODO: move up the chain.
-                //for i in 0..gates.get_unchecked(id).outputs.len() {
-                //    let output_id = gates.get_unchecked(id).outputs[i];
-                for i in *packed_output_indexes.get_unchecked(id)..*packed_output_indexes.get_unchecked(id+1) {
-                    let output_id = packed_outputs[i];
+                for i in 0..gates.get_unchecked(id).outputs.len() {
+                    let output_id = gates.get_unchecked(id).outputs[i];
+                //for i in *packed_output_indexes.get_unchecked(id)..*packed_output_indexes.get_unchecked(id+1) {
+                //    let output_id = packed_outputs[i];
                     //let cluster = &mut clusters[*output_id];
                     let cluster = &mut gates[output_id];
                     cluster.acc += delta;
