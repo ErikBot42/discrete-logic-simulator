@@ -222,7 +222,7 @@ impl BoardElement {
         print!("{}", match self.id {
             Some(t) => match board.nodes[t].network_id {
                 Some(id) => {
-                    if board.network.get_state(board.nodes[t].kind, id) {
+                    if board.network.get_state(id) {
                         brfac = 255;
                     }; 
                     //match board.nodes[t].kind {
@@ -266,11 +266,25 @@ impl BoardNode {
 pub struct VcbBoard {
     elements: Vec<BoardElement>,
     nodes: Vec<BoardNode>,
-    network: GateNetwork,
+    pub network: GateNetwork,
     width: usize,
     height: usize,
 }
 impl VcbBoard {
+    /// To do regression testing
+    pub fn make_state_vec(&self) -> Vec<bool> {
+        let mut a = Vec::new();
+        for i in 0..self.elements.len() {
+            a.push(match self.elements[i].id {
+                None => false,
+                Some(node_id) => match self.nodes[node_id].network_id {
+                    None => false,
+                    Some(id) => self.network.get_state(id),
+                }
+            });
+        };
+        a
+    }
     pub fn update(&mut self) {
         self.network.update();
     }

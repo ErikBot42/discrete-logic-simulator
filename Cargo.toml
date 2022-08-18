@@ -2,6 +2,7 @@
 name = "logic_simulator"
 version = "0.1.0"
 edition = "2021"
+autotests = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,6 +17,9 @@ edition = "2021"
 #[rust]
 #debuginfo-level = 1
 
+#[lib]
+#test = true
+#path = "src/lib.rs"
 
 [dependencies]
 base64 = "0.13.0"

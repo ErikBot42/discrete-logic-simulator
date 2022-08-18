@@ -79,6 +79,7 @@ impl Gate {
         }
     }
     //#[inline(never)]
+    #[inline(always)]
     fn evaluate(&self) -> bool {
         match self.kind {
             GateType::NAND | GateType::OR | GateType::CLUSTER 
@@ -89,7 +90,80 @@ impl Gate {
                 => self.acc & 1 == 1,
         } 
     }
+
+    #[inline(always)]
+    fn evaluate_kind(&self, kind:GateType) -> bool {
+        match kind {
+            GateType::NAND | GateType::OR | GateType::CLUSTER 
+                => self.acc != 0,
+            GateType::AND | GateType::NOR
+                => self.acc == 0,
+            GateType::XOR | GateType::XNOR
+                => self.acc & 1 == 1,
+        } 
+    }
     //#[inline(never)]
+
+
+    #[inline(always)]
+    fn update_kind2(id: usize, kind: GateType, update_list: &mut Vec<usize>, gates: &mut Vec<Gate>) {
+        //TODO: make idiomatic
+        //let this = &mut clusters[gate_id];
+        // if this assert fails, the system will recover anyways
+        // but that would probably have been caused by a bug.
+        debug_assert!(gates[id].in_update_list); 
+
+        //println!("Update:\n{:?}",this);
+        gates[id].in_update_list = false; // this gate should be ready to be readded to the update list.
+        let next = gates[id].evaluate_kind(kind);
+        if gates[id].state != next {
+            //println!("new state!");
+            for i in 0..gates[id].outputs.len() {
+                let output_id = gates[id].outputs[i];
+                //let cluster = &mut clusters[*output_id];
+                let cluster = &mut gates[output_id];
+                cluster.acc += if next {1} else {-1};
+                if !cluster.in_update_list {
+                    cluster.in_update_list = true;
+                    update_list.push(output_id);
+                }
+                //println!("Cluster:\n{:?}",this);
+
+            }
+            gates[id].state = next;
+        }
+    }
+
+    #[inline(always)]
+    fn update_kind(id: usize, kind: GateType, update_list: &mut Vec<usize>, gates: &mut Vec<Gate>) {
+        //TODO: make idiomatic
+        //let this = &mut clusters[gate_id];
+        // if this assert fails, the system will recover anyways
+        // but that would probably have been caused by a bug.
+        debug_assert!(gates[id].in_update_list); 
+
+        //println!("Update:\n{:?}",this);
+        gates[id].in_update_list = false; // this gate should be ready to be readded to the update list.
+        let next = gates[id].evaluate_kind(kind);
+        if gates[id].state != next {
+            //println!("new state!");
+            for i in 0..gates[id].outputs.len() {
+                let output_id = gates[id].outputs[i];
+                //let cluster = &mut clusters[*output_id];
+                let cluster = &mut gates[output_id];
+                cluster.acc += if next {1} else {-1};
+                if !cluster.in_update_list {
+                    cluster.in_update_list = true;
+                    update_list.push(output_id);
+                }
+                //println!("Cluster:\n{:?}",this);
+
+            }
+            gates[id].state = next;
+        }
+    }
+    
+    #[inline(always)]
     fn update(id: usize, update_list: &mut Vec<usize>, gates: &mut Vec<Gate>) {
         //TODO: make idiomatic
         //let this = &mut clusters[gate_id];
@@ -116,6 +190,36 @@ impl Gate {
             }
             gates[id].state = next;
         }
+    }
+
+    #[inline(always)]
+    fn update_assume_or(id: usize, update_list: &mut Vec<usize>, gates: &mut Vec<Gate>) {
+        debug_assert!(gates[id].in_update_list); 
+
+        //println!("Update:\n{:?}",this);
+        gates[id].in_update_list = false; // this gate should be ready to be readded to the update list.
+        let next = gates[id].evaluate_assume_or();
+        if gates[id].state != next {
+            //println!("new state!");
+            for i in 0..gates[id].outputs.len() {
+                let output_id = gates[id].outputs[i];
+                //let cluster = &mut clusters[*output_id];
+                let cluster = &mut gates[output_id];
+                cluster.acc += if next {1} else {-1};
+                if !cluster.in_update_list {
+                    cluster.in_update_list = true;
+                    update_list.push(output_id);
+                }
+                //println!("Cluster:\n{:?}",this);
+
+            }
+            gates[id].state = next;
+        }
+    }
+
+    #[inline(always)]
+    fn evaluate_assume_or(&self) -> bool {
+        self.acc != 0
     }
 }
 
@@ -155,7 +259,8 @@ impl GateNetwork {
             self.gates[input_id].outputs.push(gate_id);
         }
     }
-    pub fn get_state(&self, kind: GateType, gate_id: usize) -> bool {
+
+    pub fn get_state(&self, gate_id: usize) -> bool {
         self.gates[gate_id].state
     }
     //#[inline(never)]
@@ -163,14 +268,19 @@ impl GateNetwork {
         let mut cluster_update_list = Vec::new();
         //println!("update_list: {:?}", self.update_list);
         for gate_id in &self.update_list {
-            Gate::update(*gate_id, &mut cluster_update_list, &mut self.gates);
+            //Gate::update(*gate_id, &mut cluster_update_list, &mut self.gates);
+            Gate::update_kind(*gate_id, self.gates[*gate_id].kind, &mut cluster_update_list, &mut self.gates);
+            //Gate::update_kind2(*gate_id, self.gates[*gate_id].kind, &mut cluster_update_list, &mut self.gates);
         }
         //println!("cluster_update_list: {:?}", cluster_update_list);
         self.update_list.clear();
         // TODO: call diffrent update function that makes more assumptions here.
         // this will be guaranteed safe since shape of network is known.
         for cluster_id in &cluster_update_list {
-            Gate::update(*cluster_id, &mut self.update_list, &mut self.gates);
+            //Gate::update(*cluster_id, &mut self.update_list, &mut self.gates);
+            //Gate::update_assume_or(*cluster_id, &mut self.update_list, &mut self.gates);
+            //Gate::update_kind(*cluster_id, self.gates[*cluster_id].kind, &mut self.update_list, &mut self.gates);
+            Gate::update_kind(*cluster_id, GateType::OR, &mut self.update_list, &mut self.gates);
         }
     }
     /// Adds all gates to update list and performs initialization
