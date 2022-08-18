@@ -34,8 +34,9 @@ impl RunTimeGateType {
 }
 
 // will only support about 128 inputs/outputs (or about 255 if wrapped add)
-//
 type AccType = i8;
+
+// tests don't need that many indexes, but this is obviusly a big limitation.
 type IndexType = u8;
 
 /// data needed after processing network
@@ -67,9 +68,6 @@ impl Gate {
     fn from_gate_type(kind: GateType) -> Self {
         Self::new(kind, Vec::new())
     }
-    //fn new_cluster() -> Self {
-    //    Self::new(GateType::CLUSTER, Vec::new())
-    //}
     /// Change number of inputs to handle logic correctly
     /// Can be called multiple times for *diffrent* inputs
     fn add_inputs(&mut self, inputs: i32) {
@@ -115,16 +113,30 @@ impl Gate {
         } 
     }
 
+    #[inline(always)]
+    fn evaluate_from_runtime_static(acc: AccType, kind:RunTimeGateType) -> bool {
+        match kind {
+            RunTimeGateType::OrNand  => acc != 0,
+            RunTimeGateType::AndNor  => acc == 0,
+            RunTimeGateType::XorXnor => acc & 1 == 1,
+        } 
+    }
 }
 
 #[derive(Debug, Default)]
 pub struct GateNetwork {
     pub gates: Vec<Gate>,
     //clusters: Vec<Gate>,
+    
     update_list: Vec<IndexType>,
     packed_outputs: Vec<IndexType>,
     packed_output_indexes: Vec<IndexType>,
     runtime_gate_kind: Vec<RunTimeGateType>,
+    state: Vec<bool>,
+    acc: Vec<AccType>,
+
+
+    initialized: bool,
     //acc: Vec<AccType>,
 
 
@@ -142,6 +154,7 @@ impl GateNetwork {
     /// Returns vertex id
     /// ids of gates are guaranteed to be unique
     pub fn add_vertex(&mut self, kind: GateType) -> usize {
+        assert!(!self.initialized);
         let next_id = self.gates.len();
         self.gates.push(Gate::from_gate_type(kind));
         next_id
@@ -152,6 +165,7 @@ impl GateNetwork {
     /// Only add connection once plz (TODO: Enforce with assertion)
     /// Above assertion will guarantee the shape of the network.
     pub fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
+        assert!(!self.initialized);
         let gate = &mut self.gates[gate_id];
         gate.add_inputs(inputs.len() as i32);
         for input_id in inputs {
@@ -166,10 +180,12 @@ impl GateNetwork {
     }
 
     pub fn get_state(&self, gate_id: usize) -> bool {
+        assert!(self.initialized);
         self.gates[gate_id].state
     }
     #[inline(always)]
     pub fn update(&mut self) {
+        assert!(self.initialized);
         // TODO: swap buffers instead of 2 lists.
         let mut cluster_update_list = Vec::new();
         //println!("update_list: {:?}", self.update_list);
@@ -201,7 +217,10 @@ impl GateNetwork {
     }
     /// Adds all gates to update list and performs initialization
     /// and TODO: network optimizaton.
+    /// Currently cannot be modified after initialization.
     pub fn init_network(&mut self) {
+        assert!(!self.initialized);
+
         // add all gates to update list.
         for gate_id in 0..self.gates.len() {
             let kind = self.gates[gate_id as usize].kind;
@@ -210,6 +229,8 @@ impl GateNetwork {
                 self.gates[gate_id].in_update_list = true;
             }
         } 
+
+        // pack outputs
         for gate_id in 0..self.gates.len() {
             let gate = &self.gates[gate_id];
             self.packed_output_indexes.push(self.packed_outputs.len() as IndexType);
@@ -217,11 +238,14 @@ impl GateNetwork {
         }
         self.packed_output_indexes.push(self.packed_outputs.len() as IndexType);
         
+        // pack gatetype, acc, state
         for gate_id in 0..self.gates.len() {
             let gate = &self.gates[gate_id];
             self.runtime_gate_kind.push(RunTimeGateType::new(gate.kind));
-
+            self.acc.push(gate.acc);
+            self.state.push(gate.state); 
         }
+        self.initialized = true;
     }
 
     #[inline(always)]
@@ -238,7 +262,7 @@ impl GateNetwork {
         debug_assert!(gates[id as usize].in_update_list); 
 
         unsafe {
-            let next = gates.get_unchecked(id as usize).evaluate_from_runtime(kind);
+            let next = Gate::evaluate_from_runtime_static(gates.get_unchecked(id as usize).acc, kind);
             if gates.get_unchecked(id as usize).state != next {
                 let delta = if next {1} else {-1};
                 for i in *packed_output_indexes.get_unchecked(id as usize)..*packed_output_indexes.get_unchecked(id as usize+1) {
