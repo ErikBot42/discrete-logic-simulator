@@ -14,20 +14,20 @@ pub enum GateType {
 
 /// the only cases that matter at the hot code sections
 enum RunTimeGateType {
-    OR_NAND,
-    AND_NOR,
-    XOR_XNOR,
+    OrNand,
+    AndNor,
+    XorXnor,
 }
 impl RunTimeGateType {
     fn new(kind: GateType) -> Self {
         match kind {
-            GateType::AND => RunTimeGateType::AND_NOR,
-            GateType::OR => RunTimeGateType::OR_NAND,
-            GateType::NOR => RunTimeGateType::AND_NOR,
-            GateType::NAND => RunTimeGateType::OR_NAND,
-            GateType::XOR => RunTimeGateType::XOR_XNOR,
-            GateType::XNOR => RunTimeGateType::XOR_XNOR,
-            GateType::CLUSTER => RunTimeGateType::OR_NAND, // equivilent to OR
+            GateType::AND => RunTimeGateType::AndNor,
+            GateType::OR => RunTimeGateType::OrNand,
+            GateType::NOR => RunTimeGateType::AndNor,
+            GateType::NAND => RunTimeGateType::OrNand,
+            GateType::XOR => RunTimeGateType::XorXnor,
+            GateType::XNOR => RunTimeGateType::XorXnor,
+            GateType::CLUSTER => RunTimeGateType::OrNand, // equivilent to OR
         }
     }
 }
@@ -78,7 +78,7 @@ impl Gate {
                 => (),
         }
     }
-    //#[inline(never)]
+    //#[inline(always)]
     #[inline(always)]
     fn evaluate(&self) -> bool {
         match self.kind {
@@ -92,7 +92,7 @@ impl Gate {
     }
 
     #[inline(always)]
-    fn evaluate_kind(&self, kind:GateType) -> bool {
+    fn evaluate_from_kind(&self, kind:GateType) -> bool {
         match kind {
             GateType::NAND | GateType::OR | GateType::CLUSTER 
                 => self.acc != 0,
@@ -102,37 +102,6 @@ impl Gate {
                 => self.acc & 1 == 1,
         } 
     }
-    //#[inline(never)]
-
-
-    #[inline(always)]
-    fn update_kind2(id: usize, kind: GateType, update_list: &mut Vec<usize>, gates: &mut Vec<Gate>) {
-        //TODO: make idiomatic
-        //let this = &mut clusters[gate_id];
-        // if this assert fails, the system will recover anyways
-        // but that would probably have been caused by a bug.
-        debug_assert!(gates[id].in_update_list); 
-
-        //println!("Update:\n{:?}",this);
-        gates[id].in_update_list = false; // this gate should be ready to be readded to the update list.
-        let next = gates[id].evaluate_kind(kind);
-        if gates[id].state != next {
-            //println!("new state!");
-            for i in 0..gates[id].outputs.len() {
-                let output_id = gates[id].outputs[i];
-                //let cluster = &mut clusters[*output_id];
-                let cluster = &mut gates[output_id];
-                cluster.acc += if next {1} else {-1};
-                if !cluster.in_update_list {
-                    cluster.in_update_list = true;
-                    update_list.push(output_id);
-                }
-                //println!("Cluster:\n{:?}",this);
-
-            }
-            gates[id].state = next;
-        }
-    }
 
     #[inline(always)]
     fn update_kind(id: usize, kind: GateType, update_list: &mut Vec<usize>, gates: &mut Vec<Gate>) {
@@ -140,87 +109,34 @@ impl Gate {
         //let this = &mut clusters[gate_id];
         // if this assert fails, the system will recover anyways
         // but that would probably have been caused by a bug.
+        let gate = unsafe { gates.get_unchecked(id) };
         debug_assert!(gates[id].in_update_list); 
 
         //println!("Update:\n{:?}",this);
-        gates[id].in_update_list = false; // this gate should be ready to be readded to the update list.
-        let next = gates[id].evaluate_kind(kind);
-        if gates[id].state != next {
-            //println!("new state!");
-            for i in 0..gates[id].outputs.len() {
-                let output_id = gates[id].outputs[i];
-                //let cluster = &mut clusters[*output_id];
-                let cluster = &mut gates[output_id];
-                cluster.acc += if next {1} else {-1};
-                if !cluster.in_update_list {
-                    cluster.in_update_list = true;
-                    update_list.push(output_id);
-                }
-                //println!("Cluster:\n{:?}",this);
+        unsafe {
+            gates.get_unchecked_mut(id).in_update_list = false; // this gate should be ready to be readded to the update list.
+            let next = gates.get_unchecked(id).evaluate_from_kind(kind);
+            if gates.get_unchecked(id).state != next {
+                //println!("new state!");
+                let delta = if next {1} else {-1};
+                for i in 0..gates.get_unchecked(id).outputs.len() {
+                    let output_id = gates.get_unchecked(id).outputs[i];
+                    //let cluster = &mut clusters[*output_id];
+                    let cluster = &mut gates[output_id];
+                    cluster.acc += delta;
+                    if !cluster.in_update_list {
+                        cluster.in_update_list = true;
+                        update_list.push(output_id);
+                    }
+                    //println!("Cluster:\n{:?}",this);
 
+                }
+                gates.get_unchecked_mut(id).state = next;
             }
-            gates[id].state = next;
         }
     }
     
-    #[inline(always)]
-    fn update(id: usize, update_list: &mut Vec<usize>, gates: &mut Vec<Gate>) {
-        //TODO: make idiomatic
-        //let this = &mut clusters[gate_id];
-        // if this assert fails, the system will recover anyways
-        // but that would probably have been caused by a bug.
-        debug_assert!(gates[id].in_update_list); 
 
-        //println!("Update:\n{:?}",this);
-        gates[id].in_update_list = false; // this gate should be ready to be readded to the update list.
-        let next = gates[id].evaluate();
-        if gates[id].state != next {
-            //println!("new state!");
-            for i in 0..gates[id].outputs.len() {
-                let output_id = gates[id].outputs[i];
-                //let cluster = &mut clusters[*output_id];
-                let cluster = &mut gates[output_id];
-                cluster.acc += if next {1} else {-1};
-                if !cluster.in_update_list {
-                    cluster.in_update_list = true;
-                    update_list.push(output_id);
-                }
-                //println!("Cluster:\n{:?}",this);
-
-            }
-            gates[id].state = next;
-        }
-    }
-
-    #[inline(always)]
-    fn update_assume_or(id: usize, update_list: &mut Vec<usize>, gates: &mut Vec<Gate>) {
-        debug_assert!(gates[id].in_update_list); 
-
-        //println!("Update:\n{:?}",this);
-        gates[id].in_update_list = false; // this gate should be ready to be readded to the update list.
-        let next = gates[id].evaluate_assume_or();
-        if gates[id].state != next {
-            //println!("new state!");
-            for i in 0..gates[id].outputs.len() {
-                let output_id = gates[id].outputs[i];
-                //let cluster = &mut clusters[*output_id];
-                let cluster = &mut gates[output_id];
-                cluster.acc += if next {1} else {-1};
-                if !cluster.in_update_list {
-                    cluster.in_update_list = true;
-                    update_list.push(output_id);
-                }
-                //println!("Cluster:\n{:?}",this);
-
-            }
-            gates[id].state = next;
-        }
-    }
-
-    #[inline(always)]
-    fn evaluate_assume_or(&self) -> bool {
-        self.acc != 0
-    }
 }
 
 #[derive(Debug, Default)]
@@ -228,12 +144,14 @@ pub struct GateNetwork {
     pub gates: Vec<Gate>,
     //clusters: Vec<Gate>,
     update_list: Vec<usize>,
+    packed_outputs: Vec<usize>,
+    packed_output_indexes: Vec<usize>
+
     // outputs: Vec<BTreeSet<usize>>,
     // inputs: Vec<BTreeSet<usize>>,
     //TODO: packed outputs representation
     // just storing start of indexes is enough, but a slice is safer.
 }
-// TODO: merge gates & cluster lists?
 // TODO: only add to update list if state will change?
 // TODO: add layer after cluster directly?
 // TODO: atomics do not seem to significantly impact performance, therefore, they could be used.
@@ -256,14 +174,18 @@ impl GateNetwork {
         let gate = &mut self.gates[gate_id];
         gate.add_inputs(inputs.len() as i32);
         for input_id in inputs {
+            for output in &self.gates[input_id].outputs {
+                assert_ne!(*output,gate_id);
+            }
             self.gates[input_id].outputs.push(gate_id);
+            self.gates[input_id].outputs.sort();
         }
     }
 
     pub fn get_state(&self, gate_id: usize) -> bool {
         self.gates[gate_id].state
     }
-    //#[inline(never)]
+    //#[inline(always)]
     pub fn update(&mut self) {
         let mut cluster_update_list = Vec::new();
         //println!("update_list: {:?}", self.update_list);
@@ -284,7 +206,7 @@ impl GateNetwork {
         }
     }
     /// Adds all gates to update list and performs initialization
-    /// and TODO: network optimizatoin.
+    /// and TODO: network optimizaton.
     pub fn init_network(&mut self) {
         // add all gates to update list.
         for gate_id in 0..self.gates.len() {
@@ -294,5 +216,10 @@ impl GateNetwork {
                 self.gates[gate_id].in_update_list = true;
             }
         } 
+        //for gate_id in 0..self.gates.len() {
+        //    let gate = self.gates[gate_id];
+        //    self.packed_outputs
+        //    
+        //}
     }
 }

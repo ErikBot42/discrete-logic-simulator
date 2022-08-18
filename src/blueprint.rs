@@ -217,7 +217,7 @@ impl BoardElement {
     fn new(color: &[u8]) -> Self {
         BoardElement {color: color.try_into().unwrap(), kind: Trace::from_color(color), id: None}
     }
-    fn print(&self, board: &VcbBoard) {
+    fn print(&self, board: &VcbBoard, i: usize) {
         let mut brfac: u32 = 70;
         print!("{}", match self.id {
             Some(t) => match board.nodes[t].network_id {
@@ -234,9 +234,10 @@ impl BoardElement {
                     //    GateType::XNOR => format!("NX"),
                     //    GateType::CLUSTER => format!(" C"),
                     //}
-                    format!("{:>2}",t%100)
+                    //format!("{:>2}",t%100)
+                    format!("{:>2}",i%100)
                 }
-                None => format!("{:>2}",t%100),    
+                None => format!("{:>2}",i%100),    
             }
             None => format!("  ")
         }.on_truecolor(
@@ -271,7 +272,7 @@ pub struct VcbBoard {
     height: usize,
 }
 impl VcbBoard {
-    /// To do regression testing
+    /// For regression testing
     pub fn make_state_vec(&self) -> Vec<bool> {
         let mut a = Vec::new();
         for i in 0..self.elements.len() {
@@ -312,36 +313,11 @@ impl VcbBoard {
         for node in &board.nodes {
             board.network.add_inputs(node.kind, node.network_id.unwrap(), node.inputs.clone().into_iter().map(|x| board.nodes[x].network_id.unwrap()).collect());
         }
-
-        //println!("{:#?}",board.network);
-        //for i in 0..10 {
-        //    let node = &board.nodes[i];
-        //    println!("{i}: {node:?}");
-        //}
         board.network.init_network();
         
-        //let start = Instant::now();
-        //let iterations = 100_000_000;
-        //// TODO: terminal buffer
-        //for _ in 0..iterations {
-        //    print!("\x1B[0;0H");
-        //    board.print();
-        //    board.network.update();
-        //    //print!("\x1B[0m");
-        //    let mut child = Command::new("sleep").arg("0.1").spawn().unwrap();
-        //    let _result = child.wait().unwrap();
-        //}
-        //let elapsed_time = start.elapsed().as_millis();
-
-        //board.print();
-        //println!("running {} iterations took {} ms, {} MTPS",iterations, elapsed_time, (iterations as f32)/(elapsed_time as f32) / 1_000.0);
+        // TODO: terminal buffer
         board
     }
-    //fn set_node_gate_type(&mut self) {
-    //    for node in &mut self.nodes {
-    //        node.kind = node.trace.to_gate(node.inputs.len());
-    //    }
-    //}
     fn add_connection(&mut self, connection: (usize,usize), swp_dir: bool) {
         let (start, end) = if swp_dir {(connection.1,connection.0)} else {connection};
         assert!(start != end);
@@ -360,9 +336,6 @@ impl VcbBoard {
         x+=dx;
 
         let el = match self.elements.get_mut(x as usize) {Some(el) => el, None => {return}};
-        
-        //if let Some(_) = el.id {return};
-        // ^ && root search => early exit.
 
         if let Some((prev_trace,prev_id)) = prev {
             if !prev_trace.should_merge(el.kind) {
@@ -371,49 +344,50 @@ impl VcbBoard {
                     assert!(id != prev_id);
                     assert!(prev != None);
                     if let Some(v) = prev_trace.should_invert_connection(el.kind) {
-                        self.add_connection((id, prev_id),v); return;
+                        self.add_connection((id, prev_id),v); 
+                        return;
                     }
                 };
                 return
             }
         };
-
-        // merge with prev OR assign new id to el
+        // merge with prev 
         match el.kind {
             Trace::Empty => return,
             Trace::Cross => {
                 if dx != 0 {
-                    //panic!("x:{x}, y:{y}, dx:{dx}, dy:{dy}, i:{i}");
                     self.explore(x,dx,id,prev);
                 } 
                 return 
             }
             _ => (),
         }
-        match el.id {
-            Some(_) => (),
-            None => {
-                el.id = Some(id);
-                let kind = el.kind;
-                // origin of search
-                // add id before using it
-                if prev == None {
-                    self.nodes.push(BoardNode::new(kind));
-                    assert!(id == self.nodes.len()-1);
-                }
-                self.explore(x,   1,                  id, Some((kind, id))); 
-                self.explore(x,  -1,                  id, Some((kind, id))); 
-                self.explore(x,   self.width as i32,  id, Some((kind, id))); 
-                self.explore(x, -(self.width as i32), id, Some((kind, id))); 
-            },
-        }
+        // assign new id to el
+        if el.id == None {
+            el.id = Some(id);
+            let kind = el.kind;
+            // origin of search
+            // add id before using it
+            if prev == None {
+                self.nodes.push(BoardNode::new(kind));
+                assert!(id == self.nodes.len()-1);
+            }
+            if x % self.width as i32 != 0 {
+                self.explore(x, -1, id, Some((kind, id))); 
+            }
+            if x as i32 % self.width as i32 != self.width as i32 -1 {
+                self.explore(x, 1, id, Some((kind, id))); 
+            }
+            self.explore(x,   self.width as i32,  id, Some((kind, id))); 
+            self.explore(x, -(self.width as i32), id, Some((kind, id))); 
+        };
     }
     pub fn print(&self) {
         println!("\nBoard:");
         for y in 0..self.height{
             for x in 0..self.width {
                 let i = x+y*self.width;
-                self.elements[i].print(self);
+                self.elements[i].print(self, i);
             }
             println!();
         }
