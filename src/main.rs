@@ -28,7 +28,7 @@ fn main() {
             board.update();
         }
         let now = Instant::now();
-        for i in 0..10_000_000 {
+        for i in 0..100_000_000 {
             board.update();
         }
         let elapsed = now.elapsed();

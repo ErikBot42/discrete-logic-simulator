@@ -36,6 +36,7 @@ impl RunTimeGateType {
 // will only support about 128 inputs/outputs (or about 255 if wrapped add)
 //
 type AccType = i8;
+type IndexType = u32;
 
 /// data needed after processing network
 #[derive(Debug)]
