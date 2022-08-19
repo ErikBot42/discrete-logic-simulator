@@ -20,9 +20,10 @@ struct GateFlags {
     inner: u8,
 }
 impl GateFlags {
-    const STATE_MASK:   u8 = 0b0000_0001; // must be in this spot
-    const AND_NOR_MASK: u8 = 0b0000_0010; // can change
-    const XOR_MASK:     u8 = 0b0000_0100; // can change
+    const STATE_MASK:       u8 = 0b0000_0001; // must be in this spot
+    const AND_NOR_MASK:     u8 = 0b0000_0010; // can change
+    const XOR_MASK:         u8 = 0b0000_0100; // can change
+    const UPDATE_LIST_MASK: u8 = 0b0000_1000; // can change
     fn new(kind: GateType) -> Self {
         GateFlags{inner: match RunTimeGateType::new(kind) {
             RunTimeGateType::OrNand => 0,
@@ -30,8 +31,14 @@ impl GateFlags {
             RunTimeGateType::XorXnor => Self::XOR_MASK,
         }}
     }
+    fn in_update_list(self) -> bool {
+        self.inner & Self::UPDATE_LIST_MASK == Self::UPDATE_LIST_MASK
+    }
+    fn set_in_update_list(&mut self, set: bool) {
 
-    fn state(&self) -> bool {
+    }
+
+    fn state(self) -> bool {
         // equivilent to inner & mask as bool, but would 
         // need a panic branch
         self.inner & Self::STATE_MASK == Self::STATE_MASK
@@ -62,8 +69,8 @@ impl GateFlags {
                 unsafe { std::mem::transmute::<i8,u8>(acc & 1) }
             };
 
-        let state: u8 = self.inner & Self::STATE_MASK;
-        let rval = if new_state == state {
+        let state_curr: u8 = self.inner & Self::STATE_MASK;
+        let rval = if new_state == state_curr {
             None
         } else {
             Some(if new_state == 1 {1} else {-1})
@@ -354,8 +361,8 @@ impl GateNetwork {
 
         // if this assert fails, the system will recover anyways
         // but that would probably have been caused by a bug.
-        //debug_assert!(gates[id as usize].in_update_list); 
         debug_assert!(in_update_list[id as usize]); 
+
         unsafe {
             //let next = Gate::evaluate_from_runtime_static(gates.get_unchecked(id as usize).acc, kind);
 
