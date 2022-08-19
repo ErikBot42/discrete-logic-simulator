@@ -49,25 +49,29 @@ impl GateFlags {
         // to be put in a register.
         // TODO: keep in u8 longer to aid compiler?
         let new_state: u8 = 
-        if self.inner & Self::XOR_MASK == 0 {
-            if self.inner & Self::AND_NOR_MASK == 0 {
-                // or, nand
-                (acc != 0) as u8
+            if self.inner & Self::XOR_MASK == 0 {
+                if self.inner & Self::AND_NOR_MASK == 0 {
+                    // or, nand
+                    (acc != 0) as u8
+                } else {
+                    // and, nor 
+                    (acc == 0) as u8
+                }
             } else {
-                // and, nor 
-                (acc == 0) as u8
-            }
-        } else {
-            // xor, xnor
-            unsafe { std::mem::transmute::<i8,u8>(acc & 1) }
-        };
+                // xor, xnor
+                unsafe { std::mem::transmute::<i8,u8>(acc & 1) }
+            };
 
         let state: u8 = self.inner & Self::STATE_MASK;
-        if new_state == state {
+        let rval = if new_state == state {
             None
         } else {
             Some(if new_state == 1 {1} else {-1})
-        }
+        };
+        self.set_state(new_state == 1);
+
+
+        rval
     }
 }
 
@@ -133,8 +137,8 @@ impl Gate {
         match self.kind {
             GateType::AND | GateType::NAND 
                 => self.acc -= inputs as AccType,
-            GateType::OR | GateType::NOR | GateType::XOR | GateType::XNOR | GateType::CLUSTER
-                => (),
+                GateType::OR | GateType::NOR | GateType::XOR | GateType::XNOR | GateType::CLUSTER
+                    => (),
         }
     }
     //#[inline(always)]
@@ -196,7 +200,7 @@ pub struct GateNetwork {
     //TODO: bitvec
     gates: Vec<Gate>,
     //clusters: Vec<Gate>,
-    
+
     update_list: Vec<IndexType>,
     packed_outputs: Vec<IndexType>,
     packed_output_indexes: Vec<IndexType>,
@@ -254,7 +258,8 @@ impl GateNetwork {
     pub fn get_state(&self, gate_id: usize) -> bool {
         assert!(self.initialized);
         //self.gates[gate_id].state
-        self.state[gate_id]
+        //self.state[gate_id]
+        self.gate_flags[gate_id].state()
     }
     #[inline(always)]
     pub fn update(&mut self) {
@@ -275,7 +280,8 @@ impl GateNetwork {
                     &self.packed_output_indexes,
                     &mut self.acc,
                     &mut self.state,
-                    &mut self.in_update_list);
+                    &mut self.in_update_list,
+                    &mut self.gate_flags);
             }
             //Gate::update_kind2(*gate_id, self.gates[*gate_id].kind, &mut cluster_update_list, &mut self.gates);
         }
@@ -295,7 +301,8 @@ impl GateNetwork {
                 &self.packed_output_indexes,
                 &mut self.acc,
                 &mut self.state,
-                &mut self.in_update_list);
+                &mut self.in_update_list,
+                &mut self.gate_flags);
         }
     }
     /// Adds all gates to update list and performs initialization
@@ -320,7 +327,7 @@ impl GateNetwork {
             self.packed_outputs.append(&mut gate.outputs.clone());
         }
         self.packed_output_indexes.push(self.packed_outputs.len() as IndexType);
-        
+
         // pack gatetype, acc, state
         for gate_id in 0..self.gates.len() {
             let gate = &self.gates[gate_id];
@@ -328,6 +335,7 @@ impl GateNetwork {
             self.acc.push(gate.acc);
             self.state.push(gate.state); 
             self.in_update_list.push(gate.in_update_list);
+            self.gate_flags.push(GateFlags::new(gate.kind));
         }
         self.initialized = true;
     }
@@ -341,30 +349,33 @@ impl GateNetwork {
         packed_output_indexes: &Vec<IndexType>,
         acc: &mut Vec<AccType>,
         state: &mut Vec<bool>,
-        in_update_list: &mut Vec<bool>) {
+        in_update_list: &mut Vec<bool>,
+        gate_flags: &mut Vec<GateFlags>) {
 
         // if this assert fails, the system will recover anyways
         // but that would probably have been caused by a bug.
         //debug_assert!(gates[id as usize].in_update_list); 
         debug_assert!(in_update_list[id as usize]); 
-
         unsafe {
             //let next = Gate::evaluate_from_runtime_static(gates.get_unchecked(id as usize).acc, kind);
-            let next = Gate::evaluate_from_runtime_static(*acc.get_unchecked(id as usize), kind);
-            if *state.get_unchecked(id as usize) != next {
-                let delta = if next {1} else {-1};
-                for i in *packed_output_indexes.get_unchecked(id as usize)..*packed_output_indexes.get_unchecked(id as usize+1) {
-                    let output_id = packed_outputs.get_unchecked(i as usize);
-                    *acc.get_unchecked_mut(*output_id as usize) += delta;
-                    if !*in_update_list.get_unchecked_mut(*output_id as usize) {
-                        *in_update_list.get_unchecked_mut(*output_id as usize) = true;
-                        update_list.push(*output_id);
+
+            //fn eval_set(&mut self, acc: AccType) -> Option<AccType> {
+            let gate_flag = gate_flags.get_unchecked_mut(id as usize);
+            match gate_flag.eval_set(*acc.get_unchecked(id as usize)) {
+                None => (),
+                Some(delta) => {
+                    for i in *packed_output_indexes.get_unchecked(id as usize)..*packed_output_indexes.get_unchecked(id as usize+1) {
+                        let output_id = packed_outputs.get_unchecked(i as usize);
+                        *acc.get_unchecked_mut(*output_id as usize) += delta;
+                        if !*in_update_list.get_unchecked_mut(*output_id as usize) {
+                            *in_update_list.get_unchecked_mut(*output_id as usize) = true;
+                            update_list.push(*output_id);
+                        }
                     }
-                }
-                *state.get_unchecked_mut(id as usize) = next;
-            }
+                },
+            };
             //gates.get_unchecked_mut(id as usize).in_update_list = false; // this gate should be ready to be readded to the update list.
             *in_update_list.get_unchecked_mut(id as usize) = false; // this gate should be ready to be readded to the update list.
         }
+        }
     }
-}

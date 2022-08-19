@@ -11,7 +11,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut board_bcd_count= parser_bcd_count.parse("KLUv/WAIG40WANQCAABj8v//KjVB/y5HXf9NOD7/ZniO/6IAMNn/xmP/Yor/pgD//650YoouR13/gayo0QeQACEFRhkkpbwKEsAjAAEvIAJPMIUmBIBgwgkAAiQB1gE3nHx77w1qUwLONuKnqpvla2Wbmf/JVx0tY+ZTc0KFCyYLvvYPXyOmqLorbJuszy/sCb+8kJ808mKnXzKmv+TmZw9b3ivHGWzhgti0/rCj9lB2L5xsM+RFwBeIs/R9y1zsD2gZi87hHv/Cdu4S/B/cMsJrlFtoBp2N5Gc7HA2H5Gv5TjN+vVDn8p+wQLDwIZ5xkgt+nUUjOz9TaGcfoBk/1Z5fvCHsyT394DZXdlRi0YuX61iPxqf+vB21v8vLXMdOfuzeOHJkjpXDwmfR1rfUfOHdq03sZ+EL1/cQ6S+PO/iU//btQvhGf+atkt97SwTuDx/3APBN1ONzv8j0AD7xbt72NXTk951f0lmxROkGdtduG+I61VG0+aU/MJy2eNnnI3SNcVF8bcBU346Dl5v5oQNnE/2UjmKneZKfn1+qC/3c7uR3cCz2HjYws/pe2xu/707nop/8xnlEam7/T208VqT5R8fBzL0b6RFk7Qhq20Be9IzPKbe7M/cam5M78MhOHz92oEeHej7wVtq95GN/1ecQe8HCez5LsfYM+9VSvy8Gvp1rrWibfPGKL9ubnnePB9/SLwop35Q++mx8Ym/pQe1x97KPz8Mpb/Fq2KHl/KhhsIbgxtQW7cj61kV3l2LQru/Ubxitt9CtkrfI4j38Am2gByB9CAGa1f4LfCDgHHB+h5Yz8u5P2XVQfmXzOJrPQT12UV7c5bl6cPkhBtv5dXidrXewiZ4m1s/0vD0XG7zjuPD3NzYRjhO9Ji8/Rw/dszvZ7a3zc/Fh3ewNUH2nCaUXFcFODDuhabnRDilDVujXo7+x11daa23lQ36VkfBnYwGrwMTSsvs98AcCAAAAJwAAAAIAAAAuAAAAAgAAAAgcAAACAAAAAAABAA==");
 
     let mut c = c.benchmark_group("all");
-    //c.measurement_time(std::time::Duration::new(20,0));
+    c.measurement_time(std::time::Duration::new(20,0));
 
     c.bench_function(
         "logic iterations intro", 
