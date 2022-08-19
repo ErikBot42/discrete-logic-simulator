@@ -14,8 +14,20 @@ pub enum GateType {
     CLUSTER, // equivilent to OR
 }
 
+// encode gate information & state in flags
+struct GateFlags {
+    inner: u8,
+}
+impl GateFlags {
+    const STATE_MASK:  u8 = 0b0000_0001;
+    const AND_OR_MASK: u8 = 0b0000_0010;
+    const XOR_MASK:    u8 = 0b0000_0100;
+
+    pub fn state(&self) -> bool {self.inner & Self::STATE_MASK == Self::STATE_MASK}
+}
+
 /// the only cases that matter at the hot code sections
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 enum RunTimeGateType {
     OrNand,
     AndNor,
@@ -120,6 +132,18 @@ impl Gate {
             RunTimeGateType::XorXnor => acc & 1 == 1,
         } 
     }
+
+
+    //#[inline(always)]
+    //fn evaluate_from_runtime_static(acc: AccType, kind:RunTimeGateType) -> bool {
+    //    kind == RunTimeGateType::OrNand  && (acc != 0)||
+    //    kind == RunTimeGateType::AndNor  && (acc == 0)||
+    //    kind == RunTimeGateType::XorXnor && (acc & 1 == 1)
+    //}
+    // xor_xnor is a bit mask
+    //fn evaluate(acc: AccType, or_nand: bool, xor_xnor: u8) -> bool {
+    //    acc == 0 
+    //}
 }
 
 #[derive(Debug, Default)]
@@ -131,11 +155,12 @@ pub struct GateNetwork {
     update_list: Vec<IndexType>,
     packed_outputs: Vec<IndexType>,
     packed_output_indexes: Vec<IndexType>,
-    runtime_gate_kind: Vec<RunTimeGateType>,
     state: Vec<bool>,
     acc: Vec<AccType>,
     in_update_list: Vec<bool>,
 
+
+    runtime_gate_kind: Vec<RunTimeGateType>,
 
     initialized: bool,
     //acc: Vec<AccType>,
