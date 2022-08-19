@@ -15,6 +15,7 @@ pub enum GateType {
 }
 
 // encode gate information & state in flags
+#[derive(Debug)]
 struct GateFlags {
     inner: u8,
 }
@@ -52,33 +53,27 @@ impl GateFlags {
             if self.inner & Self::AND_NOR_MASK == 0 {
                 // or, nand
                 (acc != 0) as u8
-            }
-            else {
+            } else {
                 // and, nor 
                 (acc == 0) as u8
             }
-        }
-        else {
+        } else {
             // xor, xnor
             unsafe { std::mem::transmute::<i8,u8>(acc & 1) }
         };
 
         let state: u8 = self.inner & Self::STATE_MASK;
-
-
-        if new_state 
-
-
-
-        
-        unimplemented!()
+        if new_state == state {
+            None
+        } else {
+            Some(if new_state == 1 {1} else {-1})
+        }
     }
-    //fn 
 }
 
 /// the only cases that matter at the hot code sections
 #[derive(Debug, Copy, Clone, PartialEq)]
-enum RunTimeGateType {
+pub enum RunTimeGateType {
     OrNand,
     AndNor,
     XorXnor,
@@ -208,6 +203,7 @@ pub struct GateNetwork {
     state: Vec<bool>,
     acc: Vec<AccType>,
     in_update_list: Vec<bool>,
+    gate_flags: Vec<GateFlags>,
 
 
     runtime_gate_kind: Vec<RunTimeGateType>,

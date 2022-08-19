@@ -162,25 +162,25 @@ impl Trace {
             _ => None,
         }
     }
-    fn to_gate(self) -> RunTimeGateType {
+    fn to_gate(self) -> GateType {
         // TODO: single input gate simplification.
         if self.is_wire() {
-            RunTimeGateType::CLUSTER
+            GateType::CLUSTER
         }
         else {
             match self {
-                Trace::Buffer   => RunTimeGateType::OR,
-                Trace::And      => RunTimeGateType::AND,
-                Trace::Or       => RunTimeGateType::OR,
-                Trace::Xor      => RunTimeGateType::XOR,
-                Trace::Not      => RunTimeGateType::NOR,
-                Trace::Nand     => RunTimeGateType::NAND,
-                Trace::Nor      => RunTimeGateType::NOR,
-                Trace::Xnor     => RunTimeGateType::XNOR,
-                Trace::LatchOn  => RunTimeGateType::XNOR,
-                Trace::LatchOff => RunTimeGateType::XOR,
+                Trace::Buffer   => GateType::OR,
+                Trace::And      => GateType::AND,
+                Trace::Or       => GateType::OR,
+                Trace::Xor      => GateType::XOR,
+                Trace::Not      => GateType::NOR,
+                Trace::Nand     => GateType::NAND,
+                Trace::Nor      => GateType::NOR,
+                Trace::Xnor     => GateType::XNOR,
+                Trace::LatchOn  => GateType::XNOR,
+                Trace::LatchOff => GateType::XOR,
                 Trace::Clock    => panic!(),
-                Trace::Led      => (RunTimeGateType::OR),
+                Trace::Led      => (GateType::OR),
                 _ => panic!(),
 
             } 
@@ -252,7 +252,7 @@ struct BoardNode {
     inputs: BTreeSet<usize>,
     outputs: BTreeSet<usize>,
     trace: Trace,
-    kind: RunTimeGateType,
+    kind: GateType,
     network_id: Option<usize>,
     // TODO: type
 }
