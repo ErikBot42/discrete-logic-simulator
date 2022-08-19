@@ -31,14 +31,19 @@ impl GateFlags {
             RunTimeGateType::XorXnor => Self::XOR_MASK,
         }}
     }
-    fn in_update_list(self) -> bool {
-        self.inner & Self::UPDATE_LIST_MASK == Self::UPDATE_LIST_MASK
-    }
-    fn set_in_update_list(&mut self, set: bool) {
+    //fn in_update_list(self) -> bool {
+    //    self.inner & Self::UPDATE_LIST_MASK == Self::UPDATE_LIST_MASK
+    //}
+    //fn set_in_update_list(&mut self, set: bool) {
+    //    if set {
+    //        self.inner |= Self::UPDATE_LIST_MASK;
+    //    }
+    //    else {
+    //        self.inner &= !Self::UPDATE_LIST_MASK;
+    //    }
+    //}
 
-    }
-
-    fn state(self) -> bool {
+    fn state(&self) -> bool {
         // equivilent to inner & mask as bool, but would 
         // need a panic branch
         self.inner & Self::STATE_MASK == Self::STATE_MASK
