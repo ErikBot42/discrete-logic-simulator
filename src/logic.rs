@@ -19,11 +19,61 @@ struct GateFlags {
     inner: u8,
 }
 impl GateFlags {
-    const STATE_MASK:  u8 = 0b0000_0001;
-    const AND_OR_MASK: u8 = 0b0000_0010;
-    const XOR_MASK:    u8 = 0b0000_0100;
+    const STATE_MASK:   u8 = 0b0000_0001; // must be in this spot
+    const AND_NOR_MASK: u8 = 0b0000_0010; // can change
+    const XOR_MASK:     u8 = 0b0000_0100; // can change
+    fn new(kind: GateType) -> Self {
+        GateFlags{inner: match RunTimeGateType::new(kind) {
+            RunTimeGateType::OrNand => 0,
+            RunTimeGateType::AndNor => Self::AND_NOR_MASK,
+            RunTimeGateType::XorXnor => Self::XOR_MASK,
+        }}
+    }
 
-    pub fn state(&self) -> bool {self.inner & Self::STATE_MASK == Self::STATE_MASK}
+    fn state(&self) -> bool {
+        // equivilent to inner & mask as bool, but would 
+        // need a panic branch
+        self.inner & Self::STATE_MASK == Self::STATE_MASK
+    }
+
+    #[inline(always)]
+    fn set_state(&mut self, new_state: bool) {
+        self.inner = (!Self::STATE_MASK)&self.inner|new_state as u8;
+    }
+
+    /// update gate state, if state changed, return count delta
+    #[inline(always)]
+    fn eval_set(&mut self, acc: AccType) -> Option<AccType> {
+        // hopefully only a single 0 will need
+        // to be put in a register.
+        // TODO: keep in u8 longer to aid compiler?
+        let new_state: u8 = 
+        if self.inner & Self::XOR_MASK == 0 {
+            if self.inner & Self::AND_NOR_MASK == 0 {
+                // or, nand
+                (acc != 0) as u8
+            }
+            else {
+                // and, nor 
+                (acc == 0) as u8
+            }
+        }
+        else {
+            // xor, xnor
+            unsafe { std::mem::transmute::<i8,u8>(acc & 1) }
+        };
+
+        let state: u8 = self.inner & Self::STATE_MASK;
+
+
+        if new_state 
+
+
+
+        
+        unimplemented!()
+    }
+    //fn 
 }
 
 /// the only cases that matter at the hot code sections
