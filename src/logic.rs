@@ -248,18 +248,19 @@ impl GateNetwork {
         next_id
     }
 
-    /// Add inputs to gate_id fron inputs.
-    /// Connection must be between cluster and a non cluster gate. 
-    /// Panics if connection is added more than once.
-    /// Above assertion will guarantee the shape of the network.
+    /// Add inputs to `gate_id` from `inputs`.
+    /// Connection must be between cluster and a non cluster gate 
+    /// and a connection can only be made once for a given pair of gates.
+    /// Panics if precondition is not held.
     pub fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
         assert!(!self.initialized);
         let gate = &mut self.gates[gate_id];
         gate.add_inputs(inputs.len() as i32);
         for input_id in inputs {
-            assert!(input_id<self.gates.len());
+            assert!(input_id<self.gates.len(), "Invalid input index {input_id}");
+            assert_ne!((kind == GateType::CLUSTER),(self.gates[input_id].kind == GateType::CLUSTER), "Connection was made between cluster and non cluster for gate {gate_id}");
             for output in &self.gates[input_id].outputs {
-                assert_ne!(*output,gate_id as IndexType);
+                assert_ne!(*output,gate_id as IndexType, "Connection was made multiple times for gate {gate_id}");
             }
             // panics if it cannot fit in IndexType
             self.gates[input_id].outputs.push(gate_id as IndexType);
@@ -270,8 +271,8 @@ impl GateNetwork {
     pub fn get_state(&self, gate_id: usize) -> bool {
         assert!(self.initialized);
         //self.gates[gate_id].state
-        //self.state[gate_id]
-        self.gate_flags[gate_id].state()
+        self.state[gate_id]
+        //self.gate_flags[gate_id].state()
     }
     #[inline(always)]
     pub fn update(&mut self) {
@@ -368,7 +369,26 @@ impl GateNetwork {
         // but that would probably have been caused by a bug.
         debug_assert!(in_update_list[id as usize]); 
 
+
         unsafe {
+            //let next = Gate::evaluate_from_runtime_static(gates.get_unchecked(id as usize).acc, kind);
+            let next = Gate::evaluate_from_runtime_static(*acc.get_unchecked(id as usize), kind);
+            if *state.get_unchecked(id as usize) != next {
+                let delta = if next {1} else {-1};
+                for i in *packed_output_indexes.get_unchecked(id as usize)..*packed_output_indexes.get_unchecked(id as usize+1) {
+                    let output_id = packed_outputs.get_unchecked(i as usize);
+                    *acc.get_unchecked_mut(*output_id as usize) += delta;
+                    if !*in_update_list.get_unchecked_mut(*output_id as usize) {
+                        *in_update_list.get_unchecked_mut(*output_id as usize) = true;
+                        update_list.push(*output_id);
+                    }
+                }
+                *state.get_unchecked_mut(id as usize) = next;
+            }
+            //gates.get_unchecked_mut(id as usize).in_update_list = false; // this gate should be ready to be readded to the update list.
+            *in_update_list.get_unchecked_mut(id as usize) = false; // this gate should be ready to be readded to the update list.
+        }
+        /*unsafe {
             //let next = Gate::evaluate_from_runtime_static(gates.get_unchecked(id as usize).acc, kind);
 
             //fn eval_set(&mut self, acc: AccType) -> Option<AccType> {
@@ -388,6 +408,6 @@ impl GateNetwork {
             };
             //gates.get_unchecked_mut(id as usize).in_update_list = false; // this gate should be ready to be readded to the update list.
             *in_update_list.get_unchecked_mut(id as usize) = false; // this gate should be ready to be readded to the update list.
-        }
+        }*/
         }
     }

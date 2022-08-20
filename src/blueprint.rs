@@ -10,22 +10,6 @@ use crate::logic::*;
 //use std::collections::HashSet;
 //use std::collections::HashMap;
 
-// contains the raw data.
-#[derive(Debug, Default)]
-#[repr(C)]
-struct Footer {
-    height_type: i32,
-    height: i32,
-    width_type: i32,
-    width: i32,
-    bytes_type: i32,
-    bytes: i32,
-    layer_type: i32,
-    layer: i32,
-}
-impl Footer {
-    const SIZE: usize = 32; // 8*4 bytes
-}
 #[derive(Debug)]
 enum Layer {
     Logic,
@@ -267,7 +251,7 @@ impl BoardNode {
 pub struct VcbBoard {
     elements: Vec<BoardElement>,
     nodes: Vec<BoardNode>,
-    pub network: GateNetwork,
+    pub network: GateNetwork, //TODO
     width: usize,
     height: usize,
 }
@@ -393,44 +377,34 @@ impl VcbBoard {
         }
     }
 }
+// contains the raw data.
+#[derive(Debug, Default)]
+#[repr(C)]
+struct Footer {
+    height_type: i32,
+    height: i32,
+    width_type: i32,
+    width: i32,
+    bytes_type: i32,
+    bytes: i32,
+    layer_type: i32,
+    layer: i32,
+}
+impl Footer {
+    const SIZE: usize = 32; // 8*4 bytes
+}
 #[derive(Default)]
 pub struct BlueprintParser {}
 impl BlueprintParser {
-    pub fn parse(&mut self, data: &str) -> VcbBoard{
-        let bytes = base64::decode_config(data, base64::STANDARD).unwrap();
-
+    pub fn parse(&mut self, data: &str) -> VcbBoard {
+        let bytes = base64::decode_config(data.trim(), base64::STANDARD).unwrap();
         let data_bytes = &bytes[..bytes.len()-Footer::SIZE];
         let footer_bytes: [u8; Footer::SIZE] = bytes[bytes.len()-Footer::SIZE..bytes.len()].try_into().unwrap();
-        
-        // TODO: this is easy but bad and non portable and does not consider endian etc...
-        let footer;
-        unsafe {footer = std::mem::transmute::<[u8; Footer::SIZE], Footer>(footer_bytes);}
-        let footer = FooterInfo::new(footer); 
-
-        let data = zstd::bulk::decompress(data_bytes, 9999999).unwrap_or_default();
+        let footer = FooterInfo::new(unsafe { std::mem::transmute::<[u8; Footer::SIZE], Footer>(footer_bytes) });
+        let data = zstd::bulk::decompress(data_bytes, 9999999).unwrap();
+        assert!(data.len() != 0);
         assert!(data.len() == footer.count*4);
-        //println!("{:#?}",data);
-        //for y in 0..footer.height {
-        //    for x in 0..footer.width {
-        //        let i = (x + y*footer.width)*4;
-        //        let p = "  ".on_truecolor(
-        //            data[i],
-        //            data[i+1],
-        //            data[i+2],
-        //            );
-        //        println!("{}: {:#?}",p, Trace::from_color(&[data[i],data[i+1],data[i+2],data[i+3]]));
-        //    }
-        //}
-
-        //for c in 0..footer.count {
-        //    let i = c*4;
-        //    println!("{:?}",(data[i],data[i+1],data[i+2],data[i+3]) );
-        //}
-        
-        //print_blueprint_data(&data, &footer);
-        
         VcbBoard::new(data, footer.width, footer.height)
-
     }
 }
 
