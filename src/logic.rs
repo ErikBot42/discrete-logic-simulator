@@ -254,13 +254,14 @@ impl GateNetwork {
     /// Panics if precondition is not held.
     pub fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
         assert!(!self.initialized);
+        debug_assert!(inputs.len()!=0);//TODO: remove me
         let gate = &mut self.gates[gate_id];
         gate.add_inputs(inputs.len() as i32);
         for input_id in inputs {
             assert!(input_id<self.gates.len(), "Invalid input index {input_id}");
             assert_ne!((kind == GateType::CLUSTER),(self.gates[input_id].kind == GateType::CLUSTER), "Connection was made between cluster and non cluster for gate {gate_id}");
             for output in &self.gates[input_id].outputs {
-                assert_ne!(*output,gate_id as IndexType, "Connection was made multiple times for gate {gate_id}");
+                assert_ne!(*output,gate_id as IndexType, "Connection was made multiple times for gate {gate_id} to gate {output}");
             }
             // panics if it cannot fit in IndexType
             self.gates[input_id].outputs.push(gate_id as IndexType);
@@ -367,7 +368,7 @@ impl GateNetwork {
 
         // if this assert fails, the system will recover anyways
         // but that would probably have been caused by a bug.
-        debug_assert!(in_update_list[id as usize]); 
+        assert!(in_update_list[id as usize]); 
 
 
         unsafe {

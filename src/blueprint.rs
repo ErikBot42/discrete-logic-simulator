@@ -114,7 +114,7 @@ impl Trace {
             [255, 255, 255, 255] => Trace::Led,
             [58,  69,  81,  255] => Trace::Annotation,
             [140, 171, 161, 255] => Trace::Filler,
-            _                    => panic!(),
+            _                    => panic!("Invalid trace color"),
         }
     }
     fn is_wire(self) -> bool {
@@ -137,9 +137,15 @@ impl Trace {
     /// containing whether to swap order of the connection
     fn should_invert_connection(self, other: Trace) -> Option<bool> {
         let swp; 
-        if self.is_gate() {swp = true;}
-        else if other.is_gate() {swp = false;}
-        else {return None};
+        if self.is_gate() {
+            swp = true;
+        } else if other.is_gate() {
+            swp = false;
+        } else {
+            return None
+        };
+        assert_ne!((self.to_gate() == GateType::CLUSTER),
+                  (other.to_gate() == GateType::CLUSTER));
         match if swp {other} else {self} {
             Trace::Read => Some(swp),
             Trace::Write => Some(!swp),
@@ -188,7 +194,7 @@ impl Trace {
 //}
 
 /// Represents one pixel.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 struct BoardElement {
     color: [u8; 4],
     kind: Trace,
@@ -287,15 +293,24 @@ impl VcbBoard {
             network: GateNetwork::default()
         };
         for x in 0..num_elements {
-            board.explore(x as i32, 0, board.nodes.len(), None);
+            board.explore_rec(x as i32, 0, board.nodes.len(), None);
         }
         // add vertexes to network
         for node in &mut board.nodes {
             node.network_id = Some(board.network.add_vertex(node.kind));
         }
         // add edges to network
-        for node in &board.nodes {
-            board.network.add_inputs(node.kind, node.network_id.unwrap(), node.inputs.clone().into_iter().map(|x| board.nodes[x].network_id.unwrap()).collect());
+        for i in 0..board.nodes.len() {
+        //for node in &board.nodes {
+            let node = &board.nodes[i];
+            for input in &node.inputs{
+                assert!(board.nodes[*input].outputs.contains(&i));
+            }
+            board.network.add_inputs(
+                node.kind,
+                node.network_id.unwrap(),
+                node.inputs.clone().into_iter().map(|x| board.nodes[x].network_id.unwrap()).collect()
+                );
         }
         board.network.init_network();
         
@@ -316,7 +331,61 @@ impl VcbBoard {
         };
         //if a {println!("connect: {start}, {end}");}
     }
-    fn explore(&mut self, mut x: i32, dx: i32, id: usize, prev: Option<(Trace, usize)>) {
+    fn explore_it(&mut self, x: i32, id_counter: &mut usize) {
+
+        // this trace, must be a valid index
+        let this = self.elements[x as usize];
+        
+        let this_is_gate = this.kind.is_gate();
+        let this_is_wire = this.kind.is_wire();
+        
+        // a trace must be either wire or gate to get an id.
+        if !this_is_wire && !this_is_gate {return}
+        
+        // TODO: optimize direction based on iteration order.
+        'side: for dx in [1,-1,self.width as i32,-(self.width as i32)] {
+            'forward: for ddx in [1,2] { // disallow double crosses.
+                let other_x = x + dx*ddx;
+                // edge hit case
+                if (other_x%self.width as i32 - x%self.width as i32).abs()>ddx {continue 'side}
+                let other = match self.elements.get(other_x as usize) {
+                    None => continue 'side, 
+                    Some(other) => other
+                };
+
+                // Can't provide id if neither gate has id. This handles the 
+                // case of the other gate being a non active logic gate.
+                if other.id == None && this.id == None {continue 'side};
+                let other_is_gate = other.kind.is_gate();
+                let other_is_wire = this.kind.is_wire();
+                if other.kind == Trace::Cross {continue 'forward};
+                if !other_is_gate && !other_is_wire {continue 'side}
+                assert!(other_is_gate != other_is_wire);
+                assert!(this_is_gate != this_is_wire);
+
+                // merge traces if applicable
+                if (this.kind == other.kind) || (this_is_wire && other_is_wire) {
+                    self.elements[x as usize].id = this.id.or(other.id);
+                    self.elements[other_x as usize].id = this.id;
+                } else { // cannot connect AND merge
+                    if ddx > 1 {continue 'side}; // disallow gate connection through cross.
+                    let inv_connection_dir = match if this_is_wire {this.kind} else {other.kind} {
+                        Trace::Read => this_is_wire,
+                        Trace::Write => !this_is_wire,
+                        _ => continue 'side, 
+                    };
+                    self.add_connection((this.id.unwrap(), other.id.unwrap()),inv_connection_dir); 
+                }
+            }
+        }
+        if this.id == None { // new gate
+            self.nodes.push(BoardNode::new(this.kind));
+            self.elements[x as usize].id = Some(*id_counter);
+            *id_counter += 1;
+        }
+    }
+
+    fn explore_rec(&mut self, mut x: i32, dx: i32, id: usize, prev: Option<(Trace, usize)>) {
         x+=dx;
 
         let el = match self.elements.get_mut(x as usize) {Some(el) => el, None => {return}};
@@ -340,7 +409,7 @@ impl VcbBoard {
             Trace::Empty => return,
             Trace::Cross => {
                 if dx != 0 {
-                    self.explore(x,dx,id,prev);
+                    self.explore_rec(x,dx,id,prev);
                 } 
                 return 
             }
@@ -357,13 +426,13 @@ impl VcbBoard {
                 assert!(id == self.nodes.len()-1);
             }
             if x % self.width as i32 != 0 {
-                self.explore(x, -1, id, Some((kind, id))); 
+                self.explore_rec(x, -1, id, Some((kind, id))); 
             }
             if x as i32 % self.width as i32 != self.width as i32 -1 {
-                self.explore(x, 1, id, Some((kind, id))); 
+                self.explore_rec(x, 1, id, Some((kind, id))); 
             }
-            self.explore(x,   self.width as i32,  id, Some((kind, id))); 
-            self.explore(x, -(self.width as i32), id, Some((kind, id))); 
+            self.explore_rec(x,   self.width as i32,  id, Some((kind, id))); 
+            self.explore_rec(x, -(self.width as i32), id, Some((kind, id))); 
         };
     }
     pub fn print(&self) {
