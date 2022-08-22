@@ -1,4 +1,13 @@
 
+macro_rules! unwrap_or_else {
+  ($expression:expr, $block:expr) => {
+    match $expression {
+      Some(value) => value,
+      _ => $block,
+    }
+  }
+}
+
 pub mod logic;
 pub mod blueprint;
 

@@ -254,7 +254,7 @@ impl GateNetwork {
     /// Panics if precondition is not held.
     pub fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
         assert!(!self.initialized);
-        debug_assert!(inputs.len()!=0);//TODO: remove me
+        //debug_assert!(inputs.len()!=0);//TODO: remove me
         let gate = &mut self.gates[gate_id];
         gate.add_inputs(inputs.len() as i32);
         for input_id in inputs {
@@ -279,6 +279,8 @@ impl GateNetwork {
     pub fn update(&mut self) {
         assert!(self.initialized);
         // TODO: swap buffers instead of 2 lists.
+        // allow gate to add to "wrong" update list
+        // after network optimization
         let mut cluster_update_list = Vec::new();
         //println!("update_list: {:?}", self.update_list);
         for gate_id in &self.update_list {
@@ -379,6 +381,7 @@ impl GateNetwork {
                 for i in *packed_output_indexes.get_unchecked(id as usize)..*packed_output_indexes.get_unchecked(id as usize+1) {
                     let output_id = packed_outputs.get_unchecked(i as usize);
                     *acc.get_unchecked_mut(*output_id as usize) += delta;
+                    //TODO: only add if state will likley change.
                     if !*in_update_list.get_unchecked_mut(*output_id as usize) {
                         *in_update_list.get_unchecked_mut(*output_id as usize) = true;
                         update_list.push(*output_id);
