@@ -112,7 +112,7 @@ impl RunTimeGateType {
 type AccType = i8;
 
 // tests don't need that many indexes, but this is obviusly a big limitation.
-type IndexType = u8;
+type IndexType = u16;
 
 /// data needed after processing network
 #[derive(Debug)]
@@ -245,6 +245,7 @@ impl GateNetwork {
         assert!(!self.initialized);
         let next_id = self.gates.len();
         self.gates.push(Gate::from_gate_type(kind));
+        self.gates.len() as IndexType; // test indextype capacity.
         next_id
     }
 
@@ -260,12 +261,12 @@ impl GateNetwork {
         for input_id in inputs {
             assert!(input_id<self.gates.len(), "Invalid input index {input_id}");
             assert_ne!((kind == GateType::CLUSTER),(self.gates[input_id].kind == GateType::CLUSTER), "Connection was made between cluster and non cluster for gate {gate_id}");
-            for output in &self.gates[input_id].outputs {
-                assert_ne!(*output,gate_id as IndexType, "Connection was made multiple times for gate {gate_id} to gate {output}");
-            }
             // panics if it cannot fit in IndexType
             self.gates[input_id].outputs.push(gate_id as IndexType);
             self.gates[input_id].outputs.sort();
+            for output in &self.gates[input_id].outputs {
+                assert_ne!(*output,gate_id as IndexType, "Connection was made multiple times for gate {gate_id} to gate {output}");
+            }
         }
     }
 
@@ -370,7 +371,7 @@ impl GateNetwork {
 
         // if this assert fails, the system will recover anyways
         // but that would probably have been caused by a bug.
-        assert!(in_update_list[id as usize]); 
+        //assert!(in_update_list[id as usize], "{id:?}"); 
 
 
         unsafe {

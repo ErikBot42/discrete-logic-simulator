@@ -128,6 +128,13 @@ impl Trace {
             _ => false,
         }
     }
+    fn is_logic(self) -> bool {
+        self.is_wire() || self.is_gate()
+    }
+    // is logically same as other, will connect
+    fn is_same_as(self, other: Self) -> bool {
+        (self == other) || (self.is_wire() && other.is_wire())
+    }
     fn should_merge(self, other: Trace) -> bool {
         other == Trace::Cross || self == other || self.is_wire() && other.is_wire()
     }
@@ -301,7 +308,7 @@ impl VcbBoard {
         //std::mem::swap(&mut elements_copy, &mut board.elements);
         for x in 0..num_elements {
             //board.explore_rec(x as i32, 0, board.nodes.len(), None);
-            board.explore_rec2(x as i32, &mut counter, None);
+            board.explore_rec2(x as i32, &mut counter);
             //board.explore_it(&mut elements_copy, x as i32, &mut counter);
         }
         //std::mem::swap(&mut elements_copy, &mut board.elements);
@@ -310,7 +317,7 @@ impl VcbBoard {
         for node in &mut board.nodes {
             node.network_id = Some(board.network.add_vertex(node.kind));
         }
-        println!("{:?}",board.nodes[23]);
+        //println!("{:?}",board.nodes[23]);
         // add edges to network
         for i in 0..board.nodes.len() {
         //for node in &board.nodes {
@@ -318,10 +325,13 @@ impl VcbBoard {
             for input in &node.inputs{
                 assert!(board.nodes[*input].outputs.contains(&i));
             }
+            let mut inputs: Vec<usize> = node.inputs.clone().into_iter().map(|x| board.nodes[x].network_id.unwrap()).collect();
+            inputs.sort();
+            inputs.dedup();
             board.network.add_inputs(
                 node.kind,
                 node.network_id.unwrap(),
-                node.inputs.clone().into_iter().map(|x| board.nodes[x].network_id.unwrap()).collect()
+                inputs,
                 );
         }
         board.network.init_network();
@@ -339,8 +349,76 @@ impl VcbBoard {
                    (self.nodes[end].  kind == GateType::CLUSTER));
         //if a {println!("connect: {start}, {end}");}
     }
+
+    // floodfill with id at given index
+    // pre: logic trace, otherwise id could have been
+    // assigned to nothing, this_x valid
+    fn fill_id(&mut self, this_x: i32, id: usize) {
+        let this = &mut self.elements[this_x as usize];
+        let this_kind = this.kind;
+        assert!(this_kind.is_logic());
+        match this.id {
+            None => this.id = Some(id),
+            Some(this_id) => {assert_eq!(this_id, id); return},
+        }
+        'side: for dx in [1,-1,(self.width as i32),-(self.width as i32)] {
+            'forward: for ddx in [1,2] {
+                let other_x = this_x + dx*ddx;
+                let other_kind = unwrap_or_else!(self.elements.get(other_x as usize), continue 'side).kind;
+                if other_kind == Trace::Cross {continue 'forward}
+                if !other_kind.is_same_as(this_kind) {continue 'side}
+                self.fill_id(other_x, id);
+                continue 'side;
+            }
+        }
+        
+    }
+    // Connect gate with immediate neighbor
+    // pre: this is gate, this_x valid, this has id.
+    fn connect_id(&mut self, this_x: i32, this_id: usize, id_counter: &mut usize) {
+        let this = &mut self.elements[this_x as usize];
+        let this_kind = this.kind;
+        assert!(this_kind.is_gate());
+        assert!(this.id.is_some());
+
+
+        'side: for dx in [1,-1,(self.width as i32),-(self.width as i32)] {
+            let other_x = this_x + dx;
+            let other = unwrap_or_else!(self.elements.get(other_x as usize), continue 'side);
+            let other_kind = other.kind;
+
+            let dir = match other.kind {
+                Trace::Read => false,
+                Trace::Write => true,
+                _ => continue,
+            };
+            let other_id = unwrap_or_else!(other.id, {
+                self.add_new_id(other_x, id_counter)
+            });
+            self.add_connection((this_id, other_id), dir); 
+
+
+
+
+        }
+    }
+
+    // pre: this trace is logic
+    fn add_new_id(&mut self, this_x: i32, id_counter: &mut usize) -> usize {
+        let this = &self.elements[this_x as usize];
+        assert!(this.kind.is_logic());
+        // create a new id.
+        self.nodes.push(BoardNode::new(this.kind));
+        let this_id = *id_counter;
+        *id_counter += 1;
+
+        // fill with this_id
+        self.fill_id(this_x, this_id);
+        this_id  
+    }
+
     // this HAS to be recursive since gates have arbitrary shapes.
-    fn explore_rec2(&mut self, this_x: i32, id_counter: &mut usize, prev_id: Option<usize>) {
+    fn explore_rec2(&mut self, this_x: i32, id_counter: &mut usize) {
         // if prev_id is Some, merge should be done.
         // don't merge if id already exists, since that wouldn't make sense
         // TODO: Cross
@@ -348,78 +426,95 @@ impl VcbBoard {
         // all here is correct
         let this = &self.elements[this_x as usize];
         let this_kind = this.kind;
-        let this_is_gate = this_kind.is_gate();
-        let this_is_wire = this_kind.is_wire();
 
-        if !this_is_gate && !this_is_wire {assert!(prev_id.is_none());return}
-        assert_ne!(this_is_gate, this_is_wire);
-        
-        if prev_id.is_some() {dbg!(prev_id);};
+        if !this.kind.is_logic() {return}
 
-        let this_id = this.id;
-        let this_id = unwrap_or_else!(this_id.or(prev_id), {
-            // new id needs to be allocated to 
-            // this trace group
-            self.nodes.push(BoardNode::new(this.kind));
-            let this_id = *id_counter;
-            dbg!(*id_counter, this_kind);
-            *id_counter += 1;
-            self.elements[this_x as usize].id = Some(this_id);
-            //let this_kind = &self.elements[this_x as usize].kind;
-            'side: for dx in [1,-1,(self.width as i32),-(self.width as i32)] {
-                'forward: for ddx in [1,2] {
-                    let other_x = this_x + dx*ddx;
-                    let other = self.elements.get(other_x as usize);
-                    let other = unwrap_or_else!(other, continue 'side);
-                    if other.kind == Trace::Cross {continue 'forward}
-                    let other_is_wire = dbg!(other.kind.is_wire());
-                    let other_is_gate = dbg!(other.kind.is_gate());
-                    if !other_is_wire && !other_is_gate {continue 'side}
-                    if dbg!((other_is_wire != this_is_wire) && this_kind != other.kind) {continue 'side}
-                    assert!(other_is_gate || other_is_wire, "{other_is_wire} {other_is_gate} {this_is_wire} {this_is_gate} {other:?}, {this_kind:?}");
-                    self.explore_rec2(other_x, id_counter, Some(this_id));
-                }
-            }
-            this_id
+        let this_id = unwrap_or_else!(this.id, {
+            self.add_new_id(this_x, id_counter)
         });
-        self.elements[this_x as usize].id = Some(this_id);
 
-        
-        // prev_id may be some.
-        // we are doing this from the perspective of a gate.
-        if !this_is_gate {return};
-        // check immediate neighbors (NOT through crosses)
-        // only check if gate, so that redundant work is not done.
-        for dx in [1,-1,(self.width as i32),-(self.width as i32)] {
-            let other_x = this_x + dx;
-            //TODO: wrap around
-            let other = unwrap_or_else!(self.elements.get(other_x as usize),continue);
-            let other_is_wire = other.kind.is_wire();
-            if !other_is_wire {continue}
-            let other_id = other.id.or({
-                self.explore_rec2(other_x, id_counter, None);
-                let other = &self.elements[other_x as usize]; // valid index because of previous access
-                other.id // other is wire => will get id.
-            }).unwrap();
-            let other = unwrap_or_else!(self.elements.get(other_x as usize), continue);
+        assert!(this_kind.is_logic());
+        if !this_kind.is_gate() {return}
 
-            let this = &self.elements[this_x as usize];
-            // this and other now have ids
-            assert!(this.id.is_some());
-            assert!(this.id.and(other.id).is_some());
+        self.connect_id(this_x, this_id, id_counter);
 
-            // this is gate, and other is wire.
-            assert!(this_is_gate && other_is_wire);
 
-            // (id => gate ^ wire) => (id => gate != id) 
+        //let this_is_gate = this_kind.is_gate();
+        //let this_is_wire = this_kind.is_wire();
 
-            let dir = match other.kind {
-                Trace::Read => false,
-                Trace::Write => true,
-                _ => continue,
-            };
-            self.add_connection((this_id, other_id), dir); 
-        }
+        //if !this_is_gate && !this_is_wire {assert!(prev_id.is_none());return}
+        //assert_ne!(this_is_gate, this_is_wire);
+        //
+        //if prev_id.is_some() {dbg!(prev_id);};
+
+        //let this_id = this.id;
+        //let this_id = unwrap_or_else!(this_id.or(prev_id), {
+        //    // new id needs to be allocated to 
+        //    // this trace group
+        //    self.nodes.push(BoardNode::new(this.kind));
+        //    let this_id = *id_counter;
+        //    assert!(this_id == 0);
+        //    dbg!(*id_counter, this_kind);
+        //    *id_counter += 1;
+        //    self.elements[this_x as usize].id = Some(this_id);
+        //    //let this_kind = &self.elements[this_x as usize].kind;
+        //    'side: for dx in [1,-1,(self.width as i32),-(self.width as i32)] {
+        //        'forward: for ddx in [1,2] {
+        //            let other_x = this_x + dx*ddx;
+        //            let other = self.elements.get(other_x as usize);
+        //            let other = unwrap_or_else!(other, continue 'side);
+        //            if other.kind == Trace::Cross {continue 'forward}
+        //            let other_is_wire = dbg!(other.kind.is_wire());
+        //            let other_is_gate = dbg!(other.kind.is_gate());
+        //            if !other_is_wire && !other_is_gate {continue 'side}
+        //            if dbg!((other_is_wire != this_is_wire) && this_kind != other.kind) {continue 'side}
+        //            assert!(other_is_gate || other_is_wire, "{other_is_wire} {other_is_gate} {this_is_wire} {this_is_gate} {other:?}, {this_kind:?}");
+        //            self.explore_rec2(other_x, id_counter, Some(this_id));
+        //            continue 'side;
+        //        }
+        //    }
+        //    this_id
+        //});
+        //self.elements[this_x as usize].id = Some(this_id);
+
+        //// if prev_id, then this will be searched later.
+        //if prev_id.is_some() {return}
+
+        //
+        //// we are doing this from the perspective of a gate.
+        //if !this_is_gate {return};
+        //// check immediate neighbors (NOT through crosses)
+        //// only check if gate, so that redundant work is not done.
+        //for dx in [1,-1,(self.width as i32),-(self.width as i32)] {
+        //    let other_x = this_x + dx;
+        //    //TODO: wrap around
+        //    let other = unwrap_or_else!(self.elements.get(other_x as usize),continue);
+        //    let other_is_wire = other.kind.is_wire();
+        //    if !other_is_wire {continue}
+        //    let other_id = other.id.or({
+        //        self.explore_rec2(other_x, id_counter, None);
+        //        let other = &self.elements[other_x as usize]; // valid index because of previous access
+        //        other.id // other is wire => will get id.
+        //    }).unwrap();
+        //    let other = unwrap_or_else!(self.elements.get(other_x as usize), continue);
+
+        //    let this = &self.elements[this_x as usize];
+        //    // this and other now have ids
+        //    assert!(this.id.is_some());
+        //    assert!(this.id.and(other.id).is_some());
+
+        //    // this is gate, and other is wire.
+        //    assert!(this_is_gate && other_is_wire);
+
+        //    // (id => gate ^ wire) => (id => gate != id) 
+
+        //    let dir = match other.kind {
+        //        Trace::Read => false,
+        //        Trace::Write => true,
+        //        _ => continue,
+        //    };
+        //    self.add_connection((this_id, other_id), dir); 
+        //}
 
     }
 
