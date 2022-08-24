@@ -53,7 +53,7 @@ fn main() {
             board.print();
             board.update();
             //let mut child = Command::new("sleep").arg("0.1").spawn().unwrap();
-            let mut child = Command::new("sleep").arg("2").spawn().unwrap();
+            let mut child = Command::new("sleep").arg("0.5").spawn().unwrap();
             let _result = child.wait().unwrap();
         }
     }

@@ -312,7 +312,6 @@ impl VcbBoard {
             //board.explore_it(&mut elements_copy, x as i32, &mut counter);
         }
         //std::mem::swap(&mut elements_copy, &mut board.elements);
-        board.print();
         // add vertexes to network
         for node in &mut board.nodes {
             node.network_id = Some(board.network.add_vertex(node.kind));
