@@ -7,14 +7,14 @@ autotests = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [profile.release]
-#lto = true
-#codegen-units = 1
-#panic = "abort"
-#opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+opt-level = 3
 
-debug = 1
-[rust]
-debuginfo-level = 1
+#debug = 1
+#[rust]
+#debuginfo-level = 1
 
 #[lib]
 #test = true

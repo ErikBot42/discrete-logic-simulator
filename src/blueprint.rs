@@ -300,7 +300,7 @@ impl VcbBoard {
             'forward: for ddx in [1,2] {
                 //TODO: handle wrapping
                 let other_x = this_x + dx*ddx;
-                let other_kind = unwrap_or_else!(self.elements.get(TryInto::<usize>::try_into(other_x).unwrap()), continue 'side).kind;
+                let other_kind = unwrap_or_else!(self.elements.get(other_x as usize), continue 'side).kind;
                 if other_kind == Trace::Cross {continue 'forward}
                 if !other_kind.is_same_as(this_kind) {continue 'side}
                 self.fill_id(other_x, id);
@@ -321,7 +321,7 @@ impl VcbBoard {
         'side: for dx in [1,-1,width, -width] {
             //TODO: handle wrapping
             let other_x = this_x + dx;
-            let other = unwrap_or_else!(self.elements.get(TryInto::<usize>::try_into(other_x).unwrap()), continue 'side);
+            let other = unwrap_or_else!(self.elements.get(other_x as usize), continue 'side);
 
             let dir = match other.kind {
                 Trace::Read => false,
@@ -381,7 +381,8 @@ impl VcbBoard {
         }
     }
 }
-// contains the raw data.
+
+/// contains the raw footer data.
 #[derive(Debug, Default)]
 #[repr(C)]
 struct Footer {

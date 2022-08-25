@@ -179,17 +179,13 @@ pub struct GateNetwork {
     state: Vec<bool>,
     acc: Vec<AccType>,
     in_update_list: Vec<bool>,
-    //gate_flags: Vec<GateFlags>,
 
 
     runtime_gate_kind: Vec<RunTimeGateType>,
 
     initialized: bool,
-    //acc: Vec<AccType>,
 
 
-    // outputs: Vec<BTreeSet<IndexType>>,
-    // inputs: Vec<BTreeSet<IndexType>>,
     //TODO: packed outputs representation
     // just storing start of indexes is enough, but a slice is safer.
 }
