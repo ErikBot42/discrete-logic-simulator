@@ -2,6 +2,7 @@
 // use std::collections::BTreeSet;
 // use std::collections::HashSet;
 // use std::collections::HashMap;
+#![allow(clippy::inline_always)]
 
 
 
@@ -147,9 +148,10 @@ impl Gate {
     /// Change number of inputs to handle logic correctly
     /// Can be called multiple times for *diffrent* inputs
     fn add_inputs(&mut self, inputs: i32) {
+        let diff: AccType = inputs.try_into().unwrap();
         match self.kind {
             GateType::AND | GateType::NAND 
-                => self.acc -= inputs as AccType,
+                => self.acc -= diff,
                 GateType::OR | GateType::NOR | GateType::XOR | GateType::XNOR | GateType::CLUSTER
                     => (),
         }
@@ -199,6 +201,8 @@ impl GateNetwork {
     /// Internally creates a vertex.
     /// Returns vertex id
     /// ids of gates are guaranteed to be unique
+    /// # Panics
+    /// If more than `IndexType::MAX` are added, or after initialized 
     pub fn add_vertex(&mut self, kind: GateType) -> usize {
         assert!(!self.initialized);
         let next_id = self.gates.len();
@@ -210,15 +214,16 @@ impl GateNetwork {
     /// Add inputs to `gate_id` from `inputs`.
     /// Connection must be between cluster and a non cluster gate 
     /// and a connection can only be made once for a given pair of gates.
-    /// Panics if precondition is not held.
+    /// # Panics
+    /// if precondition is not held.
     pub fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
         assert!(!self.initialized);
         //debug_assert!(inputs.len()!=0);//TODO: remove me
         let gate = &mut self.gates[gate_id];
-        gate.add_inputs(inputs.len() as i32);
+        gate.add_inputs(inputs.len().try_into().unwrap());
         let mut in2 = Vec::new();
         for input in &inputs {
-            in2.push(*input as IndexType);
+            in2.push((*input).try_into().unwrap());
         }
         gate.inputs.append(&mut in2);
         gate.inputs.sort_unstable();
@@ -235,7 +240,10 @@ impl GateNetwork {
             //}
         }
     }
-
+    
+    #[must_use]
+    /// # Panics
+    /// Not initialized, if `gate_id` is out of range
     pub fn get_state(&self, gate_id: usize) -> bool {
         assert!(self.initialized);
         //self.gates[gate_id].state
@@ -243,6 +251,8 @@ impl GateNetwork {
         //self.gate_flags[gate_id].state()
     }
     #[inline(always)]
+    /// # Panics
+    /// Not initialized
     pub fn update(&mut self) {
         assert!(self.initialized);
         // TODO: swap buffers instead of 2 lists.
@@ -287,6 +297,8 @@ impl GateNetwork {
     /// Adds all gates to update list and performs initialization
     /// and TODO: network optimizaton.
     /// Currently cannot be modified after initialization.
+    /// # Panics
+    /// Not initialized
     pub fn init_network(&mut self) {
         assert!(!self.initialized);
 

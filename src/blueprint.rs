@@ -2,7 +2,7 @@
 #![allow(clippy::upper_case_acronyms)]
 use colored::Colorize;
 use std::collections::BTreeSet;
-use crate::logic::*;
+use crate::logic::{GateNetwork, GateType};
 //use std::time::Instant;
 
 //use std::hash::{Hash, Hasher};
@@ -24,16 +24,16 @@ struct FooterInfo {
     layer: Layer,
 }
 impl FooterInfo {
-    fn new(footer: Footer) -> Self {
+    fn new(footer: &Footer) -> Self {
         FooterInfo {
-            width: footer.width as usize,
-            height: footer.height as usize,
-            count: (footer.width*footer.height) as usize,
+            width: footer.width.try_into().unwrap(),
+            height: footer.height.try_into().unwrap(),
+            count: (footer.width*footer.height).try_into().unwrap(),
             layer: match footer.layer {
-                65_536 => Layer::Logic,
+                 65_536 => Layer::Logic,
                 131_072 => Layer::On,
                 262_144 => Layer::Off,
-                _ => panic!(),
+                _       => panic!(),
             }
         }
     }
@@ -137,20 +137,13 @@ impl Trace {
         }
         else {
             match self {
-                Trace::Buffer   => GateType::OR,
-                Trace::And      => GateType::AND,
-                Trace::Or       => GateType::OR,
-                Trace::Xor      => GateType::XOR,
-                Trace::Not      => GateType::NOR,
-                Trace::Nand     => GateType::NAND,
-                Trace::Nor      => GateType::NOR,
-                Trace::Xnor     => GateType::XNOR,
-                Trace::LatchOn  => GateType::XNOR,
-                Trace::LatchOff => GateType::XOR,
-                Trace::Clock    => panic!(),
-                Trace::Led      => (GateType::OR),
-                _ => panic!(),
-
+                Trace::Buffer | Trace::Or | Trace::Led => GateType::OR,
+                Trace::Not | Trace::Nor                => GateType::NOR,
+                Trace::And                             => GateType::AND,
+                Trace::Nand                            => GateType::NAND,
+                Trace::Xor | Trace::LatchOff           => GateType::XOR,
+                Trace::Xnor | Trace::LatchOn           => GateType::XNOR,
+                _                                      => panic!("unsupported logic trace: {self:?}"),
             } 
         }
     }
@@ -171,32 +164,28 @@ impl BoardElement {
     }
     fn print(&self, board: &VcbBoard, _i: usize) {
         let mut brfac: u32 = 100;
-        let tmpstr = match self.id {
-            Some(t) => match board.nodes[t].network_id {
-                Some(id) => {
-                    if board.network.get_state(id) {
-                        brfac = 255;
-                    }; 
-                    //match board.nodes[t].kind {
-                    //    GateType::AND => format!(" A"),
-                    //    GateType::NAND => format!("NA"),
-                    //    GateType::OR => format!(" O"),
-                    //    GateType::NOR => format!("NO"),
-                    //    GateType::XOR => format!(" X"),
-                    //    GateType::XNOR => format!("NX"),
-                    //    GateType::CLUSTER => format!(" C"),
-                    //}
-                    //format!("{:>2}",t%100)
-                    format!("{:>2}",t%100)
-                }
-                None => format!("{:>2}",t%100),    
-            }
-            None => "  ".to_string()
-        };
+        let tmpstr = if let Some(t) = self.id {
+            if let Some(id) = board.nodes[t].network_id {
+                if board.network.get_state(id) {
+                    brfac = 255;
+                }; 
+                //match board.nodes[t].kind {
+                //    GateType::AND => format!(" A"),
+                //    GateType::NAND => format!("NA"),
+                //    GateType::OR => format!(" O"),
+                //    GateType::NOR => format!("NO"),
+                //    GateType::XOR => format!(" X"),
+                //    GateType::XNOR => format!("NX"),
+                //    GateType::CLUSTER => format!(" C"),
+                //}
+                //format!("{:>2}",t%100)
+                format!("{:>2}",t%100)
+            } else {format!("{:>2}",t%100)}
+        } else {"  ".to_string()};
         print!("{}", tmpstr.on_truecolor(
-            ((self.color[0] as u32 * brfac) / 255) as u8,
-            ((self.color[1] as u32 * brfac) / 255) as u8,
-            ((self.color[2] as u32 * brfac) / 255) as u8));
+            ((u32::from(self.color[0]) * brfac) / 255).try_into().unwrap(),
+            ((u32::from(self.color[1]) * brfac) / 255).try_into().unwrap(),
+            ((u32::from(self.color[2]) * brfac) / 255).try_into().unwrap()));
     }
 }
 /// Represents one gate or trace
@@ -223,6 +212,7 @@ pub struct VcbBoard {
 }
 impl VcbBoard {
     /// For regression testing
+    #[must_use]
     pub fn make_state_vec(&self) -> Vec<bool> {
         let mut a = Vec::new();
         for i in 0..self.elements.len() {
@@ -239,7 +229,7 @@ impl VcbBoard {
     pub fn update(&mut self) {
         self.network.update();
     }
-    fn new(data: Vec<u8>, width: usize, height: usize) -> Self {
+    fn new(data: &[u8], width: usize, height: usize) -> Self {
         let num_elements = width*height;
         let mut elements = Vec::with_capacity(num_elements);
 
@@ -257,7 +247,7 @@ impl VcbBoard {
         };
         let mut counter = 0;
         for x in 0..num_elements {
-            board.explore(x as i32, &mut counter);
+            board.explore(x.try_into().unwrap(), &mut counter);
         }
         // add vertexes to network
         for node in &mut board.nodes {
@@ -298,18 +288,19 @@ impl VcbBoard {
     // pre: logic trace, otherwise id could have been
     // assigned to nothing, this_x valid
     fn fill_id(&mut self, this_x: i32, id: usize) {
-        let this = &mut self.elements[this_x as usize];
+        let this = &mut self.elements[TryInto::<usize>::try_into(this_x).unwrap()];
         let this_kind = this.kind;
         assert!(this_kind.is_logic());
         match this.id {
             None => this.id = Some(id),
             Some(this_id) => {assert_eq!(this_id, id); return},
         }
-        'side: for dx in [1,-1,(self.width as i32),-(self.width as i32)] {
+        let width: i32 = self.width.try_into().unwrap();
+        'side: for dx in [1,-1,width, -width] {
             'forward: for ddx in [1,2] {
                 //TODO: handle wrapping
                 let other_x = this_x + dx*ddx;
-                let other_kind = unwrap_or_else!(self.elements.get(other_x as usize), continue 'side).kind;
+                let other_kind = unwrap_or_else!(self.elements.get(TryInto::<usize>::try_into(other_x).unwrap()), continue 'side).kind;
                 if other_kind == Trace::Cross {continue 'forward}
                 if !other_kind.is_same_as(this_kind) {continue 'side}
                 self.fill_id(other_x, id);
@@ -321,15 +312,16 @@ impl VcbBoard {
     // Connect gate with immediate neighbor
     // pre: this is gate, this_x valid, this has id.
     fn connect_id(&mut self, this_x: i32, this_id: usize, id_counter: &mut usize) {
-        let this = &mut self.elements[this_x as usize];
+        let this = &mut self.elements[TryInto::<usize>::try_into(this_x).unwrap()];
         let this_kind = this.kind;
         assert!(this_kind.is_gate());
         assert!(this.id.is_some());
 
-        'side: for dx in [1,-1,(self.width as i32),-(self.width as i32)] {
+        let width: i32 = self.width.try_into().unwrap();
+        'side: for dx in [1,-1,width, -width] {
             //TODO: handle wrapping
             let other_x = this_x + dx;
-            let other = unwrap_or_else!(self.elements.get(other_x as usize), continue 'side);
+            let other = unwrap_or_else!(self.elements.get(TryInto::<usize>::try_into(other_x).unwrap()), continue 'side);
 
             let dir = match other.kind {
                 Trace::Read => false,
@@ -345,7 +337,7 @@ impl VcbBoard {
 
     // pre: this trace is logic
     fn add_new_id(&mut self, this_x: i32, id_counter: &mut usize) -> usize {
-        let this = &self.elements[this_x as usize];
+        let this = &self.elements[TryInto::<usize>::try_into(this_x).unwrap()];
         assert!(this.kind.is_logic());
         // create a new id.
         self.nodes.push(BoardNode::new(this.kind));
@@ -363,7 +355,7 @@ impl VcbBoard {
         // don't merge if id already exists, since that wouldn't make sense
         
         // all here is correct
-        let this = &self.elements[this_x as usize];
+        let this = &self.elements[TryInto::<usize>::try_into(this_x).unwrap()];
         let this_kind = this.kind;
 
         if !this.kind.is_logic() {return}
@@ -406,18 +398,21 @@ impl Footer {
     const SIZE: usize = 32; // 8*4 bytes
 }
 #[derive(Default)]
-pub struct BlueprintParser {}
-impl BlueprintParser {
-    pub fn parse(&mut self, data: &str) -> VcbBoard {
+pub struct Parser {}
+impl Parser {
+    /// # Panics
+    /// invalid base64 string, invalid zstd, invalid colors
+    #[must_use]
+    pub fn parse(data: &str) -> VcbBoard {
         let bytes = base64::decode_config(data.trim(), base64::STANDARD).unwrap();
         let data_bytes = &bytes[..bytes.len()-Footer::SIZE];
         let footer_bytes: [u8; Footer::SIZE] = bytes[bytes.len()-Footer::SIZE..bytes.len()].try_into().unwrap();
-        let footer = FooterInfo::new(unsafe { std::mem::transmute::<[u8; Footer::SIZE], Footer>(footer_bytes) });
+        let footer = FooterInfo::new(&unsafe { std::mem::transmute::<[u8; Footer::SIZE], Footer>(footer_bytes) });
         assert!(footer.layer == Layer::Logic);
         let data = zstd::bulk::decompress(data_bytes, 1 << 32).unwrap();
         assert!(!data.is_empty());
         assert!(data.len() == footer.count*4);
-        VcbBoard::new(data, footer.width, footer.height)
+        VcbBoard::new(&data, footer.width, footer.height)
     }
 }
 

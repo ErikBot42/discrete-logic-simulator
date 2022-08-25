@@ -13,10 +13,10 @@ pub mod blueprint;
 
 #[cfg(test)]
 mod tests {
-    use crate::blueprint::BlueprintParser;
+    use crate::blueprint::Parser;
     #[test]
     fn basic_gate_test() {
-        let mut board = BlueprintParser::default().parse("KLUv/WA0B7UDAGQCAABNOD7/AC5HXf+S/2P//2KKOE1H/2P/n//GogBj8v8w2a50pgAnIEADohEcKSoYwniQsZIahhAejqmsAgvhcAz3IvibY4UcEECAQAIJEEAgARNYEQJSI4XmCNA3BiKUhRqacHMCAiA0X2C2ck8UYn3SjgUCAAAAFQAAAAIAAAAZAAAAAgAAADQIAAACAAAAAAABAA==");
+        let mut board = Parser::parse("KLUv/WA0B7UDAGQCAABNOD7/AC5HXf+S/2P//2KKOE1H/2P/n//GogBj8v8w2a50pgAnIEADohEcKSoYwniQsZIahhAejqmsAgvhcAz3IvibY4UcEECAQAIJEEAgARNYEQJSI4XmCNA3BiKUhRqacHMCAiA0X2C2ck8UYn3SjgUCAAAAFQAAAAIAAAAZAAAAAgAAADQIAAACAAAAAAABAA==");
 
         assert_eq!(board.make_state_vec(),[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0].iter().map(|x|*x!=0).collect::<Vec<bool>>());
         board.update();
