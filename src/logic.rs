@@ -1,7 +1,8 @@
 // logic.rs: contains the simulaion engine itself.
-use std::collections::BTreeSet;
-use std::collections::HashSet;
-use std::collections::HashMap;
+// use std::collections::BTreeSet;
+// use std::collections::HashSet;
+// use std::collections::HashMap;
+
 
 
 
@@ -17,7 +18,7 @@ pub enum GateType {
 }
 
 // encode gate information & state in flags
-#[derive(Debug)]
+/*#[derive(Debug)]
 struct GateFlags {
     inner: u8,
 }
@@ -87,7 +88,7 @@ impl GateFlags {
 
         rval
     }
-}
+}*/
 
 /// the only cases that matter at the hot code sections
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -99,13 +100,9 @@ pub enum RunTimeGateType {
 impl RunTimeGateType {
     fn new(kind: GateType) -> Self {
         match kind {
-            GateType::AND => RunTimeGateType::AndNor,
-            GateType::OR => RunTimeGateType::OrNand,
-            GateType::NOR => RunTimeGateType::AndNor,
-            GateType::NAND => RunTimeGateType::OrNand,
-            GateType::XOR => RunTimeGateType::XorXnor,
-            GateType::XNOR => RunTimeGateType::XorXnor,
-            GateType::CLUSTER => RunTimeGateType::OrNand, // equivilent to OR
+            GateType::AND | GateType::NOR                      => RunTimeGateType::AndNor,
+            GateType::OR  | GateType::NAND | GateType::CLUSTER => RunTimeGateType::OrNand,
+            GateType::XOR | GateType::XNOR                     => RunTimeGateType::XorXnor,
         }
     }
 }
@@ -157,37 +154,6 @@ impl Gate {
                     => (),
         }
     }
-    //#[inline(always)]
-    //#[inline(always)]
-    //fn evaluate(&self) -> bool {
-    //    match self.kind {
-    //        GateType::NAND | GateType::OR | GateType::CLUSTER 
-    //            => self.acc != 0,
-    //        GateType::AND | GateType::NOR
-    //            => self.acc == 0,
-    //        GateType::XOR | GateType::XNOR
-    //            => self.acc & 1 == 1,
-    //    } 
-    //}
-    //#[inline(always)]
-    //fn evaluate_from_kind(&self, kind:GateType) -> bool {
-    //    match kind {
-    //        GateType::NAND | GateType::OR | GateType::CLUSTER 
-    //            => self.acc != 0,
-    //        GateType::AND | GateType::NOR
-    //            => self.acc == 0,
-    //        GateType::XOR | GateType::XNOR
-    //            => self.acc & 1 == 1,
-    //    } 
-    //}
-    //#[inline(always)]
-    //fn evaluate_from_runtime(&self, kind:RunTimeGateType) -> bool {
-    //    match kind {
-    //        RunTimeGateType::OrNand  => self.acc != 0,
-    //        RunTimeGateType::AndNor  => self.acc == 0,
-    //        RunTimeGateType::XorXnor => self.acc & 1 == 1,
-    //    } 
-    //}
 
     #[inline(always)]
     fn evaluate_from_runtime_static(acc: AccType, kind:RunTimeGateType) -> bool {
@@ -197,18 +163,6 @@ impl Gate {
             RunTimeGateType::XorXnor => acc & 1 == 1,
         } 
     }
-
-
-    //#[inline(always)]
-    //fn evaluate_from_runtime_static(acc: AccType, kind:RunTimeGateType) -> bool {
-    //    kind == RunTimeGateType::OrNand  && (acc != 0)||
-    //    kind == RunTimeGateType::AndNor  && (acc == 0)||
-    //    kind == RunTimeGateType::XorXnor && (acc & 1 == 1)
-    //}
-    // xor_xnor is a bit mask
-    //fn evaluate(acc: AccType, or_nand: bool, xor_xnor: u8) -> bool {
-    //    acc == 0 
-    //}
 }
 
 #[derive(Debug, Default)]
@@ -223,7 +177,7 @@ pub struct GateNetwork {
     state: Vec<bool>,
     acc: Vec<AccType>,
     in_update_list: Vec<bool>,
-    gate_flags: Vec<GateFlags>,
+    //gate_flags: Vec<GateFlags>,
 
 
     runtime_gate_kind: Vec<RunTimeGateType>,
@@ -249,7 +203,7 @@ impl GateNetwork {
         assert!(!self.initialized);
         let next_id = self.gates.len();
         self.gates.push(Gate::from_gate_type(kind));
-        self.gates.len() as IndexType; // test indextype capacity.
+        assert!(self.gates.len() < IndexType::MAX as usize);
         next_id
     }
 
@@ -267,17 +221,18 @@ impl GateNetwork {
             in2.push(*input as IndexType);
         }
         gate.inputs.append(&mut in2);
-        gate.inputs.sort();
+        gate.inputs.sort_unstable();
         gate.inputs.dedup();
         for input_id in inputs {
             assert!(input_id<self.gates.len(), "Invalid input index {input_id}");
             assert_ne!((kind == GateType::CLUSTER),(self.gates[input_id].kind == GateType::CLUSTER), "Connection was made between cluster and non cluster for gate {gate_id}");
             // panics if it cannot fit in IndexType
-            self.gates[input_id].outputs.push(gate_id as IndexType);
-            self.gates[input_id].outputs.sort();
-            for output in &self.gates[input_id].outputs {
-                //assert_ne!(*output,gate_id as IndexType, "Connection was made multiple times for gate {gate_id} to gate {output}");
-            }
+            self.gates[input_id].outputs.push(gate_id.try_into().unwrap());
+            self.gates[input_id].outputs.sort_unstable();
+            // TODO: add this back.
+            //for output in &self.gates[input_id].outputs {
+            //    assert_ne!(*output,gate_id as IndexType, "Connection was made multiple times for gate {gate_id} to gate {output}");
+            //}
         }
     }
 
@@ -294,10 +249,7 @@ impl GateNetwork {
         // allow gate to add to "wrong" update list
         // after network optimization
         let mut cluster_update_list = Vec::new();
-        //println!("update_list: {:?}", self.update_list);
         for gate_id in &self.update_list {
-            //Gate::update(*gate_id, &mut cluster_update_list, &mut self.gates);
-            //GateNetwork::update_kind(*gate_id, self.gates[*gate_id as usize].kind, &mut cluster_update_list, &mut self.gates, &self.packed_outputs, &self.packed_output_indexes);
             unsafe {
                 GateNetwork::update_kind(
                     *gate_id,
@@ -309,19 +261,15 @@ impl GateNetwork {
                     &mut self.acc,
                     &mut self.state,
                     &mut self.in_update_list,
-                    &mut self.gate_flags,
-                    &self.runtime_gate_kind);
+                    //&mut self.gate_flags,
+                    //&self.runtime_gate_kind
+                    );
             }
-            //Gate::update_kind2(*gate_id, self.gates[*gate_id].kind, &mut cluster_update_list, &mut self.gates);
         }
-        //println!("cluster_update_list: {:?}", cluster_update_list);
         self.update_list.clear();
         // TODO: call diffrent update function that makes more assumptions here.
         // this will be guaranteed safe since shape of network is known.
         for cluster_id in &cluster_update_list {
-            //Gate::update(*cluster_id, &mut self.update_list, &mut self.gates);
-            //Gate::update_assume_or(*cluster_id, &mut self.update_list, &mut self.gates);
-            //Gate::update_kind(*cluster_id, self.gates[*cluster_id].kind, &mut self.update_list, &mut self.gates);
             GateNetwork::update_kind(
                 *cluster_id,
                 RunTimeGateType::OrNand,
@@ -331,8 +279,9 @@ impl GateNetwork {
                 &mut self.acc,
                 &mut self.state,
                 &mut self.in_update_list,
-                &mut self.gate_flags,
-                &self.runtime_gate_kind);
+                //&mut self.gate_flags,
+                //&self.runtime_gate_kind
+                );
         }
     }
     /// Adds all gates to update list and performs initialization
@@ -343,9 +292,9 @@ impl GateNetwork {
 
         // add all gates to update list.
         for gate_id in 0..self.gates.len() {
-            let kind = self.gates[gate_id as usize].kind;
+            let kind = self.gates[gate_id].kind;
             if kind != GateType::CLUSTER {
-                self.update_list.push(gate_id as IndexType); 
+                self.update_list.push(gate_id.try_into().unwrap()); 
                 self.gates[gate_id].in_update_list = true;
             }
         } 
@@ -353,10 +302,10 @@ impl GateNetwork {
         // pack outputs
         for gate_id in 0..self.gates.len() {
             let gate = &self.gates[gate_id];
-            self.packed_output_indexes.push(self.packed_outputs.len() as IndexType);
+            self.packed_output_indexes.push(self.packed_outputs.len().try_into().unwrap());
             self.packed_outputs.append(&mut gate.outputs.clone());
         }
-        self.packed_output_indexes.push(self.packed_outputs.len() as IndexType);
+        self.packed_output_indexes.push(self.packed_outputs.len().try_into().unwrap());
 
         // pack gatetype, acc, state
         for gate_id in 0..self.gates.len() {
@@ -365,7 +314,7 @@ impl GateNetwork {
             self.acc.push(gate.acc);
             self.state.push(gate.state); 
             self.in_update_list.push(gate.in_update_list);
-            self.gate_flags.push(GateFlags::new(gate.kind));
+            //self.gate_flags.push(GateFlags::new(gate.kind));
         }
         //let mut gate_set: HashMap<(GateType, Vec<IndexType>), IndexType> = HashMap::new();
         //for gate_id in 0..self.gates.len() {
@@ -384,7 +333,7 @@ impl GateNetwork {
         self.initialized = true;
     }
 
-    fn generate_gate_key(gate: &Gate) -> (GateType, Vec<IndexType>) {
+    /*fn generate_gate_key(gate: &Gate) -> (GateType, Vec<IndexType>) {
         let mut kind = gate.kind;
         let inputs = gate.inputs.clone();
         let input_count = gate.inputs.len();
@@ -403,24 +352,25 @@ impl GateNetwork {
         }
 
         (kind, inputs)
-    }
+    }*/
 
     #[inline(always)]
     fn update_kind(
         id: IndexType,
         kind: RunTimeGateType,
         update_list: &mut Vec<IndexType>,
-        packed_outputs: &Vec<IndexType>,
-        packed_output_indexes: &Vec<IndexType>,
+        packed_outputs: &[IndexType],
+        packed_output_indexes: &[IndexType],
         acc: &mut Vec<AccType>,
         state: &mut Vec<bool>,
         in_update_list: &mut Vec<bool>,
-        gate_flags: &mut Vec<GateFlags>,
-        kinds: & Vec<RunTimeGateType>) {
+        //gate_flags: &mut Vec<GateFlags>,
+        //kinds: & Vec<RunTimeGateType>
+        ) {
 
         // if this assert fails, the system will recover anyways
         // but that would probably have been caused by a bug.
-        //assert!(in_update_list[id as usize], "{id:?}"); 
+        assert!(in_update_list[id as usize], "{id:?}"); 
 
 
         unsafe {
@@ -447,26 +397,5 @@ impl GateNetwork {
             //gates.get_unchecked_mut(id as usize).in_update_list = false; // this gate should be ready to be readded to the update list.
             *in_update_list.get_unchecked_mut(id as usize) = false; // this gate should be ready to be readded to the update list.
         }
-        /*unsafe {
-            //let next = Gate::evaluate_from_runtime_static(gates.get_unchecked(id as usize).acc, kind);
-
-            //fn eval_set(&mut self, acc: AccType) -> Option<AccType> {
-            let gate_flag = gate_flags.get_unchecked_mut(id as usize);
-            match gate_flag.eval_set(*acc.get_unchecked(id as usize)) {
-                None => (),
-                Some(delta) => {
-                    for i in *packed_output_indexes.get_unchecked(id as usize)..*packed_output_indexes.get_unchecked(id as usize+1) {
-                        let output_id = packed_outputs.get_unchecked(i as usize);
-                        *acc.get_unchecked_mut(*output_id as usize) += delta;
-                        if !*in_update_list.get_unchecked_mut(*output_id as usize) {
-                            *in_update_list.get_unchecked_mut(*output_id as usize) = true;
-                            update_list.push(*output_id);
-                        }
-                    }
-                },
-            };
-            //gates.get_unchecked_mut(id as usize).in_update_list = false; // this gate should be ready to be readded to the update list.
-            *in_update_list.get_unchecked_mut(id as usize) = false; // this gate should be ready to be readded to the update list.
-        }*/
         }
     }
