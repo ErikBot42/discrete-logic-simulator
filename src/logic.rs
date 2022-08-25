@@ -252,29 +252,21 @@ impl GateNetwork {
     /// Not initialized
     pub fn update(&mut self) {
         assert!(self.initialized);
-        // TODO: swap buffers instead of 2 lists.
-        // allow gate to add to "wrong" update list
+        // TODO: allow gate to add to "wrong" update list
         // after network optimization
         for gate_id in &self.update_list {
-            unsafe {
                 GateNetwork::update_kind(
                     *gate_id,
-                    //self.gates.get_unchecked(*gate_id as usize).kind,
-                    *self.runtime_gate_kind.get_unchecked(*gate_id as usize),
+                    unsafe{ *self.runtime_gate_kind.get_unchecked(*gate_id as usize)},
                     &mut self.cluster_update_list,
                     &self.packed_outputs,
                     &self.packed_output_indexes,
                     &mut self.acc,
                     &mut self.state,
                     &mut self.in_update_list,
-                    //&mut self.gate_flags,
-                    //&self.runtime_gate_kind
                     );
-            }
         }
         self.update_list.clear();
-        // TODO: call diffrent update function that makes more assumptions here.
-        // this will be guaranteed safe since shape of network is known.
         for cluster_id in &self.cluster_update_list {
             GateNetwork::update_kind(
                 *cluster_id,
@@ -285,8 +277,6 @@ impl GateNetwork {
                 &mut self.acc,
                 &mut self.state,
                 &mut self.in_update_list,
-                //&mut self.gate_flags,
-                //&self.runtime_gate_kind
                 );
         }
         self.cluster_update_list.clear();
