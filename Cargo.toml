@@ -12,9 +12,9 @@ codegen-units = 1
 panic = "abort"
 opt-level = 3
 
-#debug = 1
-#[rust]
-#debuginfo-level = 1
+debug = 1
+[rust]
+debuginfo-level = 1
 
 #[lib]
 #test = true

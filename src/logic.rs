@@ -174,6 +174,7 @@ pub struct GateNetwork {
     //clusters: Vec<Gate>,
 
     update_list: Vec<IndexType>,
+    cluster_update_list: Vec<IndexType>,
     packed_outputs: Vec<IndexType>,
     packed_output_indexes: Vec<IndexType>,
     state: Vec<bool>,
@@ -254,14 +255,13 @@ impl GateNetwork {
         // TODO: swap buffers instead of 2 lists.
         // allow gate to add to "wrong" update list
         // after network optimization
-        let mut cluster_update_list = Vec::new();
         for gate_id in &self.update_list {
             unsafe {
                 GateNetwork::update_kind(
                     *gate_id,
                     //self.gates.get_unchecked(*gate_id as usize).kind,
                     *self.runtime_gate_kind.get_unchecked(*gate_id as usize),
-                    &mut cluster_update_list,
+                    &mut self.cluster_update_list,
                     &self.packed_outputs,
                     &self.packed_output_indexes,
                     &mut self.acc,
@@ -275,7 +275,7 @@ impl GateNetwork {
         self.update_list.clear();
         // TODO: call diffrent update function that makes more assumptions here.
         // this will be guaranteed safe since shape of network is known.
-        for cluster_id in &cluster_update_list {
+        for cluster_id in &self.cluster_update_list {
             GateNetwork::update_kind(
                 *cluster_id,
                 RunTimeGateType::OrNand,
@@ -289,6 +289,7 @@ impl GateNetwork {
                 //&self.runtime_gate_kind
                 );
         }
+        self.cluster_update_list.clear();
     }
     /// Adds all gates to update list and performs initialization
     /// and TODO: network optimizaton.
