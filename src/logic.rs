@@ -5,6 +5,7 @@
 #![allow(clippy::inline_always)]
 
 
+use rayon::prelude::*;
 
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
@@ -18,78 +19,13 @@ pub enum GateType {
     CLUSTER, // equivilent to OR
 }
 
-// encode gate information & state in flags
-/*#[derive(Debug)]
-struct GateFlags {
-    inner: u8,
+impl GateType {
+    /// guaranteed to activate immediately
+    fn is_inverted(self) -> bool {
+        matches!(self, GateType::NOR | GateType::NAND | GateType::XNOR)
+    }
 }
-impl GateFlags {
-    const STATE_MASK:       u8 = 0b0000_0001; // must be in this spot
-    const AND_NOR_MASK:     u8 = 0b0000_0010; // can change
-    const XOR_MASK:         u8 = 0b0000_0100; // can change
-    const UPDATE_LIST_MASK: u8 = 0b0000_1000; // can change
-    fn new(kind: GateType) -> Self {
-        GateFlags{inner: match RunTimeGateType::new(kind) {
-            RunTimeGateType::OrNand => 0,
-            RunTimeGateType::AndNor => Self::AND_NOR_MASK,
-            RunTimeGateType::XorXnor => Self::XOR_MASK,
-        }}
-    }
-    //fn in_update_list(self) -> bool {
-    //    self.inner & Self::UPDATE_LIST_MASK == Self::UPDATE_LIST_MASK
-    //}
-    //fn set_in_update_list(&mut self, set: bool) {
-    //    if set {
-    //        self.inner |= Self::UPDATE_LIST_MASK;
-    //    }
-    //    else {
-    //        self.inner &= !Self::UPDATE_LIST_MASK;
-    //    }
-    //}
 
-    fn state(&self) -> bool {
-        // equivilent to inner & mask as bool, but would 
-        // need a panic branch
-        self.inner & Self::STATE_MASK == Self::STATE_MASK
-    }
-
-    #[inline(always)]
-    fn set_state(&mut self, new_state: bool) {
-        self.inner = (!Self::STATE_MASK)&self.inner|new_state as u8;
-    }
-
-    /// update gate state, if state changed, return count delta
-    #[inline(always)]
-    fn eval_set(&mut self, acc: AccType) -> Option<AccType> {
-        // hopefully only a single 0 will need
-        // to be put in a register.
-        // TODO: keep in u8 longer to aid compiler?
-        let new_state: u8 = 
-            if self.inner & Self::XOR_MASK == 0 {
-                if self.inner & Self::AND_NOR_MASK == 0 {
-                    // or, nand
-                    (acc != 0) as u8
-                } else {
-                    // and, nor 
-                    (acc == 0) as u8
-                }
-            } else {
-                // xor, xnor
-                unsafe { std::mem::transmute::<i8,u8>(acc & 1) }
-            };
-
-        let state_curr: u8 = self.inner & Self::STATE_MASK;
-        let rval = if new_state == state_curr {
-            None
-        } else {
-            Some(if new_state == 1 {1} else {-1})
-        };
-        self.set_state(new_state == 1);
-
-
-        rval
-    }
-}*/
 
 /// the only cases that matter at the hot code sections
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -109,7 +45,7 @@ impl RunTimeGateType {
 }
 
 // will only support about 128 inputs/outputs (or about 255 if wrapped add)
-type AccType = i8;
+type AccType = i16;
 
 // tests don't need that many indexes, but this is obviusly a big limitation.
 type IndexType = u16;
@@ -250,21 +186,24 @@ impl GateNetwork {
     #[inline(always)]
     /// # Panics
     /// Not initialized
+    /// pre: on first update, the list only contains gates that will change.
     pub fn update(&mut self) {
-        assert!(self.initialized);
+        assert!(self.initialized); // assert because cheap
         // TODO: allow gate to add to "wrong" update list
         // after network optimization
         for gate_id in &self.update_list {
-                GateNetwork::update_kind(
-                    *gate_id,
-                    unsafe{ *self.runtime_gate_kind.get_unchecked(*gate_id as usize)},
-                    &mut self.cluster_update_list,
-                    &self.packed_outputs,
-                    &self.packed_output_indexes,
-                    &mut self.acc,
-                    &mut self.state,
-                    &mut self.in_update_list,
-                    );
+            GateNetwork::update_kind(
+                *gate_id,
+                unsafe{ *self.runtime_gate_kind.get_unchecked(*gate_id as usize)},
+                &mut self.cluster_update_list,
+                &self.packed_outputs,
+                &self.packed_output_indexes,
+                &mut self.acc,
+                &mut self.state,
+                &mut self.in_update_list,
+                //& self.runtime_gate_kind,
+                //Some(RunTimeGateType::OrNand),
+                )
         }
         self.update_list.clear();
         for cluster_id in &self.cluster_update_list {
@@ -277,8 +216,12 @@ impl GateNetwork {
                 &mut self.acc,
                 &mut self.state,
                 &mut self.in_update_list,
-                );
+                //& self.runtime_gate_kind,
+                //None,
+                )
         }
+        //for cluster_id in &self.cluster_update_list {
+        //}
         self.cluster_update_list.clear();
     }
     /// Adds all gates to update list and performs initialization
@@ -289,10 +232,10 @@ impl GateNetwork {
     pub fn init_network(&mut self) {
         assert!(!self.initialized);
 
-        // add all gates to update list.
+        // add all gates to initial update list.
         for gate_id in 0..self.gates.len() {
             let kind = self.gates[gate_id].kind;
-            if kind != GateType::CLUSTER {
+            if kind.is_inverted() {
                 self.update_list.push(gate_id.try_into().unwrap()); 
                 self.gates[gate_id].in_update_list = true;
             }
@@ -363,38 +306,49 @@ impl GateNetwork {
         acc: &mut Vec<AccType>,
         state: &mut Vec<bool>,
         in_update_list: &mut Vec<bool>,
-        //gate_flags: &mut Vec<GateFlags>,
-        //kinds: & Vec<RunTimeGateType>
+        //kinds: &[RunTimeGateType],
+        //other_kind: Option<RunTimeGateType>,
         ) {
 
         // if this assert fails, the system will recover anyways
         // but that would probably have been caused by a bug.
-        assert!(in_update_list[id as usize], "{id:?}"); 
-
+        debug_assert!(in_update_list[id as usize], "{id:?}"); 
+        
+        // memory reads:
+        //
+        // id:        acc, 2*state, packed_output_indexes, in_update_list
+        // id+1:                    packed_output_indexes
+        //
+        // in loop (*iterations):
+        // i:         packed_outputs
+        // output_id: in_update_list, acc
+        //
+        // update_list push output_id
+        //
+        // acc - in_update_list = (8,8)
+        // state - packed_output_indexes = (8,16)
+        // packed_outputs = (16)
+        // update_list = (16)
 
         unsafe {
-            //let next = Gate::evaluate_from_runtime_static(gates.get_unchecked(id as usize).acc, kind);
             let next = Gate::evaluate_from_runtime_static(*acc.get_unchecked(id as usize), kind);
             if *state.get_unchecked(id as usize) != next {
                 let delta = if next {1} else {-1};
-                for i in *packed_output_indexes.get_unchecked(id as usize)..*packed_output_indexes.get_unchecked(id as usize+1) {
+                let from_index = *packed_output_indexes.get_unchecked(id as usize  );
+                let   to_index = *packed_output_indexes.get_unchecked(id as usize+1);
+                for i in from_index..to_index {
                     let output_id = packed_outputs.get_unchecked(i as usize);
-                    *acc.get_unchecked_mut(*output_id as usize) += delta;
-                    //TODO: only add if state will likley change.
-                    //if Gate::evaluate_from_runtime_static(
-                    //    *acc.get_unchecked(*output_id as usize),
-                    //    *kinds.get_unchecked(*output_id as usize)) 
-                    //== *state.get_unchecked(*output_id as usize){continue}
-
-                    if !*in_update_list.get_unchecked_mut(*output_id as usize) {
-                        *in_update_list.get_unchecked_mut(*output_id as usize) = true;
-                        update_list.push(*output_id);
-                    }
+                    let other_acc = acc.get_unchecked_mut(*output_id as usize);
+                    *other_acc = other_acc.wrapping_add(delta);
+                    let in_update_list = in_update_list.get_unchecked_mut(*output_id as usize);
+                    if *in_update_list {continue}
+                    *in_update_list = true;
+                    update_list.push(*output_id);
                 }
                 *state.get_unchecked_mut(id as usize) = next;
             }
-            //gates.get_unchecked_mut(id as usize).in_update_list = false; // this gate should be ready to be readded to the update list.
-            *in_update_list.get_unchecked_mut(id as usize) = false; // this gate should be ready to be readded to the update list.
+            // this gate should be ready to be readded to the update list.
+            *in_update_list.get_unchecked_mut(id as usize) = false; 
         }
         }
     }

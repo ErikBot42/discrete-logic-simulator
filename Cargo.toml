@@ -24,6 +24,7 @@ debuginfo-level = 1
 base64 = "0.13.0"
 zstd = "0.11"
 colored = "2.0.0"
+rayon = "*"
 #bitvec = "1"
 
 

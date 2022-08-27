@@ -22,17 +22,17 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
     c_run.finish();
 
-    let mut c_parse = c.benchmark_group("parse");
-    for test in tests {
-    c_parse.bench_function(
-        test.0, 
-        |b| b.iter(|| {
-            let mut board = Parser::parse(black_box(test.1));
-            board.update()
-        }
-        ));
-    }
-    c_parse.finish()
+    //let mut c_parse = c.benchmark_group("parse");
+    //for test in tests {
+    //c_parse.bench_function(
+    //    test.0, 
+    //    |b| b.iter(|| {
+    //        let mut board = Parser::parse(black_box(test.1));
+    //        board.update()
+    //    }
+    //    ));
+    //}
+    //c_parse.finish()
 }
 
 criterion_group!(benches, criterion_benchmark);

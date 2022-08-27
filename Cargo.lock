@@ -283,6 +283,7 @@ dependencies = [
  "base64",
  "colored",
  "criterion",
+ "rayon",
  "zstd",
 ]
 
