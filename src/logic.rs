@@ -9,7 +9,7 @@ use rayon::prelude::*;
 
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-pub enum GateType {
+pub(crate) enum GateType {
     AND,
     OR,
     NOR,
@@ -29,7 +29,7 @@ impl GateType {
 
 /// the only cases that matter at the hot code sections
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub enum RunTimeGateType {
+pub(crate) enum RunTimeGateType {
     OrNand,
     AndNor,
     XorXnor,
@@ -45,14 +45,14 @@ impl RunTimeGateType {
 }
 
 // will only support about 128 inputs/outputs (or about 255 if wrapped add)
-type AccType = i16;
+type AccType = i8;
 
 // tests don't need that many indexes, but this is obviusly a big limitation.
 type IndexType = u16;
 
 /// data needed after processing network
 #[derive(Debug)]
-pub struct Gate {
+pub(crate) struct Gate {
     // constant:
     inputs: Vec<IndexType>, // list of ids
     outputs: Vec<IndexType>, // list of ids
@@ -104,7 +104,7 @@ impl Gate {
 }
 
 #[derive(Debug, Default)]
-pub struct GateNetwork {
+pub(crate) struct GateNetwork {
     //TODO: bitvec
     gates: Vec<Gate>,
     //clusters: Vec<Gate>,
@@ -136,7 +136,7 @@ impl GateNetwork {
     /// ids of gates are guaranteed to be unique
     /// # Panics
     /// If more than `IndexType::MAX` are added, or after initialized 
-    pub fn add_vertex(&mut self, kind: GateType) -> usize {
+    pub(crate) fn add_vertex(&mut self, kind: GateType) -> usize {
         assert!(!self.initialized);
         let next_id = self.gates.len();
         self.gates.push(Gate::from_gate_type(kind));
@@ -149,7 +149,7 @@ impl GateNetwork {
     /// and a connection can only be made once for a given pair of gates.
     /// # Panics
     /// if precondition is not held.
-    pub fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
+    pub(crate) fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
         assert!(!self.initialized);
         //debug_assert!(inputs.len()!=0);//TODO: remove me
         let gate = &mut self.gates[gate_id];
@@ -177,7 +177,7 @@ impl GateNetwork {
     #[must_use]
     /// # Panics
     /// Not initialized, if `gate_id` is out of range
-    pub fn get_state(&self, gate_id: usize) -> bool {
+    pub(crate) fn get_state(&self, gate_id: usize) -> bool {
         assert!(self.initialized);
         //self.gates[gate_id].state
         self.state[gate_id]
@@ -187,7 +187,7 @@ impl GateNetwork {
     /// # Panics
     /// Not initialized
     /// pre: on first update, the list only contains gates that will change.
-    pub fn update(&mut self) {
+    pub(crate) fn update(&mut self) {
         assert!(self.initialized); // assert because cheap
         // TODO: allow gate to add to "wrong" update list
         // after network optimization
@@ -229,7 +229,7 @@ impl GateNetwork {
     /// Currently cannot be modified after initialization.
     /// # Panics
     /// Not initialized
-    pub fn init_network(&mut self) {
+    pub(crate) fn init_network(&mut self) {
         assert!(!self.initialized);
 
         // add all gates to initial update list.
@@ -327,6 +327,11 @@ impl GateNetwork {
         //
         // acc - in_update_list = (8,8)
         // state - packed_output_indexes = (8,16)
+        // packed_outputs = (16)
+        // update_list = (16)
+        //
+        // (acc, in_update_list/state, packed_output_indexes) = (8,8/8,16)
+        //
         // packed_outputs = (16)
         // update_list = (16)
         //
