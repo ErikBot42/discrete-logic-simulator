@@ -329,6 +329,11 @@ impl GateNetwork {
         // state - packed_output_indexes = (8,16)
         // packed_outputs = (16)
         // update_list = (16)
+        //
+        // TODO: inline abstract over reading/writing these
+        //
+        //
+        //
 
         unsafe {
             let next = Gate::evaluate_from_runtime_static(*acc.get_unchecked(id as usize), kind);
