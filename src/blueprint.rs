@@ -133,16 +133,16 @@ impl Trace {
     fn to_gate(self) -> GateType {
         // TODO: single input gate simplification.
         if self.is_wire() {
-            GateType::CLUSTER
+            GateType::Cluster
         }
         else {
             match self {
-                Trace::Buffer | Trace::Or | Trace::Led => GateType::OR,
-                Trace::Not | Trace::Nor                => GateType::NOR,
-                Trace::And                             => GateType::AND,
-                Trace::Nand                            => GateType::NAND,
-                Trace::Xor | Trace::LatchOff           => GateType::XOR,
-                Trace::Xnor | Trace::LatchOn           => GateType::XNOR,
+                Trace::Buffer | Trace::Or | Trace::Led => GateType::Or,
+                Trace::Not | Trace::Nor                => GateType::Nor,
+                Trace::And                             => GateType::And,
+                Trace::Nand                            => GateType::Nand,
+                Trace::Xor | Trace::LatchOff           => GateType::Xor,
+                Trace::Xnor | Trace::LatchOn           => GateType::Xnor,
                 _                                      => panic!("unsupported logic trace: {self:?}"),
             } 
         }
@@ -279,8 +279,8 @@ impl VcbBoard {
         let a = self.nodes[start].inputs.insert(end);
         let b = self.nodes[end].outputs.insert(start);
         assert!(a == b);
-        assert_ne!((self.nodes[start].kind == GateType::CLUSTER),
-                   (self.nodes[end].  kind == GateType::CLUSTER));
+        assert_ne!((self.nodes[start].kind == GateType::Cluster),
+                   (self.nodes[end].  kind == GateType::Cluster));
         //if a {println!("connect: {start}, {end}");}
     }
 
