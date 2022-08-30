@@ -45,7 +45,7 @@ impl RunTimeGateType {
 }
 
 // will only support about 128 inputs/outputs (or about 255 if wrapped add)
-type AccType = i16;
+type AccType = u16;
 
 // tests don't need that many indexes, but this is obviusly a big limitation.
 type IndexType = u16;
