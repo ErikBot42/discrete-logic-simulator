@@ -139,11 +139,21 @@ struct RawList {
     len: usize,
 }
 impl RawList {
+    #[inline(always)]
     fn clear(&mut self) {self.len = 0;}
+    #[inline(always)]
     fn push(&mut self, el: IndexType) {
-        self.list[self.len] = el;
+        //self.list[self.len] = el;
+        unsafe{*self.list.get_unchecked_mut(self.len) = el;}
         self.len += 1;
     }
+    // (hopefully) branchless push
+    #[inline(always)]
+    fn push_if(&mut self, el: IndexType, push: bool) {
+        unsafe{*self.list.get_unchecked_mut(self.len) = el;}
+        self.len += if push {1} else {0};
+    }
+    #[inline(always)]
     fn get_slice(&self) -> &[IndexType] {
         &self.list[0..self.len]
     }
@@ -329,8 +339,8 @@ impl GateNetwork {
 
             self.initialized = true;
         }
-        let b = self.gates.len();
-        let a = b-gate_set.len();
+        //let b = self.gates.len();
+        //let a = b-gate_set.len();
 
     }
 
