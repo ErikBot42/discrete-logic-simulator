@@ -44,13 +44,12 @@ impl RunTimeGateType {
     }
 }
 
-// will only support about 128 inputs/outputs (or about 255 if wrapped add)
 // speed: u8 < u16 = u32
 // Gates only care about this equalling 0 or parity, ergo signed/unsigned is irrelevant.
 // let n = 1 << bits_in_value(AccType)
-// OR, NAND: max active: n
-// NOR, AND: max inactive: n
-// XOR, XNOR: no limitation
+// Or, Nand: max active: n
+// Nor, And: max inactive: n
+// Xor, Xnor: no limitation
 type AccType = u16;
 
 // tests don't need that many indexes, but this is obviously a big limitation.
@@ -70,7 +69,6 @@ pub(crate) struct Gate {
     acc: AccType, 
     state: bool,
     in_update_list: bool,
-    associated_ids: Vec<usize>,
 }
 impl Gate {
     fn new(kind: GateType, outputs: Vec<IndexType>) -> Self {
@@ -85,7 +83,6 @@ impl Gate {
             kind,
             state: false, // all gates/clusters initialize to off
             in_update_list: false,
-            associated_ids: Vec::new(),
         }
     }
     fn from_gate_type(kind: GateType) -> Self {
@@ -135,28 +132,39 @@ impl Gate {
     }
 }
 
+// a list that is just a raw array that is manipulated directly.
+#[derive(Debug, Default)]
+struct RawList {
+    list: Box<[IndexType]>,
+    len: usize,
+}
+impl RawList {
+    fn clear(&mut self) {self.len = 0;}
+    fn push(&mut self, el: IndexType) {
+        self.list[self.len] = el;
+        self.len += 1;
+    }
+    fn get_slice(&self) -> &[IndexType] {
+        &self.list[0..self.len]
+    }
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct GateNetwork {
     //TODO: bitvec
     gates: Vec<Gate>,
     //clusters: Vec<Gate>,
 
-    update_list: Vec<IndexType>,
-    cluster_update_list: Vec<IndexType>,
     packed_outputs: Vec<IndexType>,
     packed_output_indexes: Vec<IndexType>,
     state: Vec<bool>,
     acc: Vec<AccType>,
     in_update_list: Vec<bool>,
-
-
     runtime_gate_kind: Vec<RunTimeGateType>,
-
     initialized: bool,
-
-
-    //TODO: packed outputs representation
-    // just storing start of indexes is enough, but a slice is safer.
+    
+    update_list: RawList,
+    cluster_update_list: RawList,
 }
 // TODO: only add to update list if state will change?
 // TODO: add layer after cluster directly?
@@ -223,7 +231,7 @@ impl GateNetwork {
         assert!(self.initialized); // assert because cheap
                                    // TODO: allow gate to add to "wrong" update list
                                    // after network optimization
-        for gate_id in &self.update_list {
+        for gate_id in self.update_list.get_slice() {
             GateNetwork::update_kind(
                 *gate_id,
                 unsafe{ *self.runtime_gate_kind.get_unchecked(*gate_id as usize)},
@@ -238,7 +246,7 @@ impl GateNetwork {
                 );
         }
         self.update_list.clear();
-        for cluster_id in &self.cluster_update_list {
+        for cluster_id in self.cluster_update_list.get_slice() {
             GateNetwork::update_kind(
                 *cluster_id,
                 RunTimeGateType::OrNand,
@@ -268,6 +276,13 @@ impl GateNetwork {
 
         //self.update_list         = Vec::with_capacity(number_of_gates);
         //self.cluster_update_list = Vec::with_capacity(number_of_gates);
+        //
+        
+        self.        update_list.list = vec![0; number_of_gates].into_boxed_slice();
+        self.cluster_update_list.list = vec![0; number_of_gates].into_boxed_slice();
+        self.        update_list.len = 0;
+        self.cluster_update_list.len = 0;
+
 
         for gate_id in 0..number_of_gates {
             let gate = &mut self.gates[gate_id];
@@ -323,7 +338,7 @@ impl GateNetwork {
     fn update_kind(
         id: IndexType,
         kind: RunTimeGateType,
-        update_list: &mut Vec<IndexType>,
+        update_list: &mut RawList,
         packed_outputs: &[IndexType],
         packed_output_indexes: &[IndexType],
         acc: &mut Vec<AccType>,
