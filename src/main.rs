@@ -3,7 +3,6 @@ extern crate base64;
 extern crate zstd;
 extern crate colored;
 
-use std::process::Command;
 use logic_simulator::blueprint::Parser;
 
 fn main() {
@@ -16,6 +15,7 @@ fn main() {
 
         let mut board = Parser::parse(string);
         loop {
+            //use std::process::Command;
             //print!("\x1B[0;0H");
             //board.print();
             board.update();

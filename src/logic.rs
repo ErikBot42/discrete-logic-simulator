@@ -18,7 +18,6 @@ pub(crate) enum GateType {
     Xnor,
     Cluster, // equivalent to OR
 }
-
 impl GateType {
     /// guaranteed to activate immediately
     fn is_inverted(self) -> bool {
@@ -118,14 +117,13 @@ impl Gate {
         let buffer_gate = GateType::Or;
         let nor_gate = GateType::Nor;
 
-        if input_count < 2 {kind = match kind {
-            GateType::And => buffer_gate,
-                GateType::Or => buffer_gate,
-                GateType::Nor => nor_gate,
-                GateType::Nand => nor_gate,
-                GateType::Xor => buffer_gate,
-                GateType::Xnor => nor_gate,
-                GateType::Cluster => buffer_gate}
+        if input_count < 2 {
+            kind = match kind {
+                GateType::Or | GateType::Xor | GateType::Cluster | GateType::And 
+                    => buffer_gate,
+                GateType::Nand | GateType::Nor | GateType::Xnor  
+                    => nor_gate
+            }
         }
 
         (kind, inputs)
@@ -148,11 +146,11 @@ impl RawList {
         self.len += 1;
     }
     // (hopefully) branchless push
-    #[inline(always)]
-    fn push_if(&mut self, el: IndexType, push: bool) {
-        unsafe{*self.list.get_unchecked_mut(self.len) = el;}
-        self.len += if push {1} else {0};
-    }
+    //#[inline(always)]
+    //fn push_if(&mut self, el: IndexType, push: bool) {
+    //    unsafe{*self.list.get_unchecked_mut(self.len) = el;}
+    //    self.len += if push {1} else {0};
+    //}
     #[inline(always)]
     fn get_slice(&self) -> &[IndexType] {
         &self.list[0..self.len]
@@ -233,10 +231,10 @@ impl GateNetwork {
         self.state[gate_id]
             //self.gate_flags[gate_id].state()
     }
-    #[inline(never)]
     /// # Panics
     /// Not initialized
     /// pre: on first update, the list only contains gates that will change.
+    #[inline(always)]
     pub(crate) fn update(&mut self) {
         assert!(self.initialized); // assert because cheap
                                    // TODO: allow gate to add to "wrong" update list
@@ -287,7 +285,16 @@ impl GateNetwork {
         //self.update_list         = Vec::with_capacity(number_of_gates);
         //self.cluster_update_list = Vec::with_capacity(number_of_gates);
         //
-        
+        //let mut num_clusters = 0;
+        //let mut num_gates = 0;
+        //for gate_id in 0..number_of_gates {
+        //    let gate = &mut self.gates[gate_id];
+        //    if gate.kind == GateType::Cluster {num_clusters += 1} else {
+        //        assert!(gate.outputs.len() == 1, "{:?}", gate.kind);
+        //        num_gates += 1
+        //    }
+
+        //}
         self.        update_list.list = vec![0; number_of_gates].into_boxed_slice();
         self.cluster_update_list.list = vec![0; number_of_gates].into_boxed_slice();
         self.        update_list.len = 0;
@@ -320,8 +327,8 @@ impl GateNetwork {
             let gate = &self.gates[gate_id];
             let key = gate.generate_gate_key();
             match gate_set.get(&key) {
-                Some(other_id) => /*println!("{gate_id} is {other_id}")*/{},
-                None => {gate_set.insert(key, gate_id as IndexType); ()},
+                Some(_other_id) => /*println!("{gate_id} is {other_id}")*/{},
+                None => {gate_set.insert(key, gate_id as IndexType);},
             }
             //let mut gate_set: HashMap<(GateType, Vec<IndexType>), IndexType> = HashMap::new();
             //for gate_id in 0..self.gates.len() {
@@ -354,6 +361,7 @@ impl GateNetwork {
         acc: &mut Vec<AccType>,
         state: &mut Vec<bool>,
         in_update_list: &mut Vec<bool>,
+        //assume_single_output: bool,
         //kinds: &[RunTimeGateType],
         //other_kind: Option<RunTimeGateType>,
         ) {
@@ -390,27 +398,29 @@ impl GateNetwork {
         //
         //
         //
+        //
+        // TODO: assume gates have single output?
 
         unsafe {
-            let next = Gate::evaluate_from_runtime_static(*acc.get_unchecked(id as usize), kind);
-            if *state.get_unchecked(id as usize) != next {
-                let delta = if next {1} else {(0 as AccType).wrapping_sub(1)};
+            let next_state = Gate::evaluate_from_runtime_static(*acc.get_unchecked(id as usize), kind);
+            if *state.get_unchecked(id as usize) != next_state {
+                let delta = if next_state {1} else {(0 as AccType).wrapping_sub(1)};
                 let from_index = *packed_output_indexes.get_unchecked(id as usize  );
-                let   to_index = *packed_output_indexes.get_unchecked(id as usize+1);
+                let to_index   = *packed_output_indexes.get_unchecked(id as usize+1);
                 for i in from_index..to_index {
                     let output_id = packed_outputs.get_unchecked(i as usize);
-                    let other_acc = acc.get_unchecked_mut(*output_id as usize);
-                    *other_acc = other_acc.wrapping_add(delta);
                     //*other_acc += delta;
                     let in_update_list = in_update_list.get_unchecked_mut(*output_id as usize);
                     if !*in_update_list {
                         *in_update_list = true;
                         update_list.push(*output_id);
                     }
+                    let other_acc = acc.get_unchecked_mut(*output_id as usize);
+                    *other_acc = other_acc.wrapping_add(delta);
                 }
-                *state.get_unchecked_mut(id as usize) = next;
+                *state.get_unchecked_mut(id as usize) = next_state;
             }
-            // this gate should be ready to be readded to the update list.
+            // this gate should be ready to be re-added to the update list.
             *in_update_list.get_unchecked_mut(id as usize) = false; 
         }
     }

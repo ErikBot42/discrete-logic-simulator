@@ -1,3 +1,5 @@
+//#![warn(clippy::cargo)]
+//#![warn(clippy::all)]
 
 macro_rules! unwrap_or_else {
   ($expression:expr, $block:expr) => {
