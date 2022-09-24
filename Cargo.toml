@@ -14,9 +14,9 @@ opt-level = 3
 
 #rustflags = "-C llvm-args=\"-unroll-threshold=1000\""
 #rustflags = "-C target-cpu=native"
-#debug = 1
-#[rust]
-#debuginfo-level = 1
+debug = 1
+[rust]
+debuginfo-level = 1
 
 #[lib]
 #test = true

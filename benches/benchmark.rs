@@ -7,9 +7,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Test parsing speed and execution speed for this list of blueprints.
     let tests = vec![
         ("intro",       include_str!("../test_files/intro.blueprint")),
-        //("big_decoder", include_str!("../test_files/big_decoder.blueprint")),
-        //("bcd_count",   include_str!("../test_files/bcd_count.blueprint")),
-        //("gates",       include_str!("../test_files/gates.blueprint")),
+        ("big_decoder", include_str!("../test_files/big_decoder.blueprint")),
+        ("bcd_count",   include_str!("../test_files/bcd_count.blueprint")),
+        ("gates",       include_str!("../test_files/gates.blueprint")),
     ];
     let pre_parsed: Vec<(&str,VcbBoard)> = tests.clone().into_iter().map(|x| (x.0,Parser::parse(x.1))).collect();
     

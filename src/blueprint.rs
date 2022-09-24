@@ -3,11 +3,6 @@
 use colored::Colorize;
 use std::collections::BTreeSet;
 use crate::logic::{GateNetwork, GateType};
-//use std::time::Instant;
-
-//use std::hash::{Hash, Hasher};
-//use std::collections::HashSet;
-//use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Eq)]
 enum Layer {
@@ -131,7 +126,6 @@ impl Trace {
     }
 
     fn to_gate(self) -> GateType {
-        // TODO: single input gate simplification.
         if self.is_wire() {
             GateType::Cluster
         }
@@ -233,8 +227,6 @@ impl VcbBoard {
         let num_elements = width*height;
         let mut elements = Vec::with_capacity(num_elements);
 
-        // TODO: iterate through chunks to trick compiler into
-        // unrolling the loop
         for i in 0..width*height {
             elements.push(BoardElement::new(&data[i*4..i*4+4])); 
         }
