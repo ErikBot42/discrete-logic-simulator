@@ -53,6 +53,8 @@ type AccType = Wrapping<AccTypeNw>;
 // u32 < u16
 type IndexType = u32;
 
+type GateKey = (GateType, Vec<IndexType>);
+
 /// data needed after processing network
 #[derive(Debug)]
 pub(crate) struct Gate {
@@ -89,11 +91,15 @@ impl Gate {
     fn add_inputs(&mut self, inputs: i32) {
         let diff: AccType = Wrapping(inputs as AccTypeNw);
         match self.kind {
-            GateType::And | GateType::Nand 
-                => self.acc = self.acc-diff,
-                GateType::Or | GateType::Nor | GateType::Xor | GateType::Xnor | GateType::Cluster
-                    => (),
+            GateType::And | GateType::Nand  => self.acc = self.acc-diff,
+            GateType::Or | GateType::Nor | GateType::Xor | GateType::Xnor | GateType::Cluster => (),
         }
+    }
+    
+    /// add inputs and handle internal logic for them
+    fn add_inputs_vec(&mut self, inputs: &mut Vec<IndexType>) {
+        self.add_inputs(inputs.len() as i32);
+        self.inputs.append(inputs);
     }
 
     #[inline(always)]
@@ -103,6 +109,12 @@ impl Gate {
             RunTimeGateType::AndNor  => acc == Wrapping(0),
             RunTimeGateType::XorXnor => acc & Wrapping(1) == Wrapping(1),
         } 
+    }
+    /// calculate a key that is used to determine if the gate 
+    /// can be merged with other gates.
+    fn calc_key(&self) -> GateKey {
+        // TODO: more optimistic matches. can include inverted.
+        (self.kind, self.inputs.clone())
     }
 }
 
@@ -124,11 +136,89 @@ impl RawList {
     fn get_slice(&self) -> &[IndexType] {&self.list[0..self.len]}
 }
 
+/// Contains gate graph in order to do network optimization
+/// without mutation.
+#[derive(Debug, Default)]
+struct Network {
+    gates: Vec<Gate>,
+    translation_table: Vec<IndexType>,
+    //TODO: translation table for original network
+}
+impl Network {
+    /// Single network optimization pass.
+    fn optimized(&self) -> Self {
+        // iterate through all old gates, 
+        // add gate if type & original input set is unique
+        // this does not handle the case when an id becomes another id
+        // and in turn another merge becomes valid, therefore,
+        // this function should be run several times.
+        //
+        // TODO: update the old translation table
+        use std::collections::HashMap;
+
+        let old_gates = &self.gates;
+        
+        // new gates
+        let mut new_gates: Vec<Gate> = Vec::new();
+
+        // gate key -> new id
+        let mut merge_table: HashMap<GateKey, usize> = HashMap::new();
+
+        // old id -> new id
+        let mut index_translation: Vec<IndexType> = Vec::new();
+        
+        // create nodes
+        for (old_gate_id, old_gate) in old_gates.iter().enumerate() {
+            let key = old_gate.calc_key();
+            //dbg!(old_gate_id, &key);
+
+            let new_id = new_gates.len();
+            //dbg!(new_id);
+            match merge_table.get(&key) {
+                Some(existing_new_id) => {
+                    // this gate is same as other, so use other's id.
+                    assert!(index_translation.len() == old_gate_id);
+                    index_translation.push(*existing_new_id as IndexType);
+                    //dbg!(existing_new_id, new_gates.len());
+                    assert!(existing_new_id<&new_gates.len(), "existing_new_id: {existing_new_id}");
+                }
+                None => {
+                    // this gate is new, so a fresh id is created.
+                    assert!(index_translation.len() == old_gate_id);
+                    index_translation.push(new_id as IndexType);
+                    new_gates.push(Gate::from_gate_type(old_gate.kind));
+                    merge_table.insert(key, new_id);
+                    //dbg!(new_id,new_gates.len());
+                    assert!(new_id<new_gates.len(), "new_id: {new_id}");
+                }
+            }
+            //println!();
+        }
+        assert!(old_gates.len() == index_translation.len());
+        // create input connections
+        for (old_gate_id, old_gate) in old_gates.iter().enumerate() {
+            let new_id = index_translation[old_gate_id];
+            let new_gate: &mut Gate = &mut new_gates[new_id as usize];
+            new_gate.add_inputs_vec(&mut old_gate.inputs.clone().into_iter().map(|x| index_translation[x as usize] as IndexType).collect())
+        }
+
+        // create output connections
+        for gate_id in 0..new_gates.len() {
+            let gate = &new_gates[gate_id];
+            for i in 0..gate.inputs.len() {
+                let gate = &new_gates[gate_id];
+                let input_gate_id = gate.inputs[i];
+                new_gates[input_gate_id as usize].outputs.push(gate_id as IndexType);
+            }
+        }
+        Network{gates: new_gates, translation_table: index_translation}
+    }
+}
+
+
 #[derive(Debug, Default)]
 pub(crate) struct GateNetwork {
-    //TODO: bitvec
-    gates: Vec<Gate>,
-    //clusters: Vec<Gate>,
+    network: Network,
 
     packed_outputs: Vec<IndexType>,
     packed_output_indexes: Vec<IndexType>,
@@ -136,8 +226,8 @@ pub(crate) struct GateNetwork {
     acc: Vec<AccType>,
     in_update_list: Vec<bool>,
     runtime_gate_kind: Vec<RunTimeGateType>,
-    initialized: bool,
 
+    initialized: bool,
     update_list: RawList,
     cluster_update_list: RawList,
 }
@@ -150,9 +240,9 @@ impl GateNetwork {
     /// If more than `IndexType::MAX` are added, or after initialized 
     pub(crate) fn add_vertex(&mut self, kind: GateType) -> usize {
         assert!(!self.initialized);
-        let next_id = self.gates.len();
-        self.gates.push(Gate::from_gate_type(kind));
-        assert!(self.gates.len() < IndexType::MAX as usize);
+        let next_id = self.network.gates.len();
+        self.network.gates.push(Gate::from_gate_type(kind));
+        assert!(self.network.gates.len() < IndexType::MAX as usize);
         next_id
     }
 
@@ -163,7 +253,7 @@ impl GateNetwork {
     /// if precondition is not held.
     pub(crate) fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
         assert!(!self.initialized);
-        let gate = &mut self.gates[gate_id];
+        let gate = &mut self.network.gates[gate_id];
         gate.add_inputs(inputs.len().try_into().unwrap());
         let mut in2 = Vec::new();
         for input in &inputs {
@@ -173,12 +263,12 @@ impl GateNetwork {
         gate.inputs.sort_unstable();
         gate.inputs.dedup();
         for input_id in inputs {
-            assert!(input_id<self.gates.len(), "Invalid input index {input_id}");
-            assert_ne!((kind == GateType::Cluster),(self.gates[input_id].kind == GateType::Cluster), "Connection was made between cluster and non cluster for gate {gate_id}");
+            assert!(input_id<self.network.gates.len(), "Invalid input index {input_id}");
+            assert_ne!((kind == GateType::Cluster),(self.network.gates[input_id].kind == GateType::Cluster), "Connection was made between cluster and non cluster for gate {gate_id}");
             // panics if it cannot fit in IndexType
-            self.gates[input_id].outputs.push(gate_id.try_into().unwrap());
-            self.gates[input_id].outputs.sort_unstable();
-            self.gates[input_id].outputs.dedup();
+            self.network.gates[input_id].outputs.push(gate_id.try_into().unwrap());
+            self.network.gates[input_id].outputs.sort_unstable();
+            self.network.gates[input_id].outputs.dedup();
         }
     }
 
@@ -187,7 +277,8 @@ impl GateNetwork {
     /// Not initialized, if `gate_id` is out of range
     pub(crate) fn get_state(&self, gate_id: usize) -> bool {
         assert!(self.initialized);
-        self.state[gate_id]
+        let gate_id = self.network.translation_table[gate_id];
+        self.state[gate_id as usize]
     }
     /// Adds all gates to update list and performs initialization
     /// and TODO: network optimizaton.
@@ -196,8 +287,10 @@ impl GateNetwork {
     /// Not initialized
     pub(crate) fn init_network(&mut self) {
         assert!(!self.initialized);
+        self.network.translation_table = (0..self.network.gates.len()).into_iter().map(|x| x as IndexType).collect();
+        self.network = self.network.optimized();
 
-        let number_of_gates = self.gates.len();
+        let number_of_gates = self.network.gates.len();
 
         self.        update_list.list = vec![0; number_of_gates].into_boxed_slice();
         self.cluster_update_list.list = vec![0; number_of_gates].into_boxed_slice();
@@ -205,7 +298,7 @@ impl GateNetwork {
         self.cluster_update_list.len = 0;
 
         for gate_id in 0..number_of_gates {
-            let gate = &mut self.gates[gate_id];
+            let gate = &mut self.network.gates[gate_id];
             let kind = gate.kind;
 
             // add gates that will immediately update to the
