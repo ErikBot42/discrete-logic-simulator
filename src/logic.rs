@@ -17,6 +17,16 @@ impl GateType {
     fn will_update_at_start(self) -> bool {
         matches!(self, GateType::Nor | GateType::Nand | GateType::Xnor)
     }
+
+    /// can a pair of identical connections be removed without changing behaviour
+    fn can_delete_double_identical_inputs(&self) -> bool {
+        matches!(self, GateType::Xor | GateType::Xnor)
+    }
+
+    /// can one connection in pair of identical connections be removed without changing behaviour
+    fn can_delete_single_identical_inputs(&self) -> bool {
+        !matches!(self, GateType::Xor | GateType::Xnor)
+    }
 }
 
 
@@ -110,11 +120,27 @@ impl Gate {
             RunTimeGateType::XorXnor => acc & Wrapping(1) == Wrapping(1),
         } 
     }
+
     /// calculate a key that is used to determine if the gate 
     /// can be merged with other gates.
     fn calc_key(&self) -> GateKey {
-        // TODO: more optimistic matches. can include inverted.
-        (self.kind, self.inputs.clone())
+        // TODO: can potentially include inverted.
+        
+        let kind = match self.kind {
+            GateType::Cluster => GateType::Or,
+            _ => self.kind,
+        };
+        
+        let inputs_len = self.inputs.len();
+
+        let kind = match inputs_len {
+            0 | 1 => match kind {
+                GateType::Nand | GateType::Xnor | GateType::Nor => GateType::Nor,
+                GateType::And | GateType::Or | GateType::Xor | GateType::Cluster => GateType::Or,
+            }
+            _ => kind,
+        };
+        (kind, self.inputs.clone())
     }
 }
 
@@ -199,8 +225,41 @@ impl Network {
         for (old_gate_id, old_gate) in old_gates.iter().enumerate() {
             let new_id = index_translation[old_gate_id];
             let new_gate: &mut Gate = &mut new_gates[new_id as usize];
-            new_gate.add_inputs_vec(&mut old_gate.inputs.clone().into_iter().map(|x| index_translation[x as usize] as IndexType).collect())
+            let new_inputs: &mut Vec<IndexType> = &mut old_gate.inputs.clone().into_iter().map(|x| index_translation[x as usize] as IndexType).collect();
+
+            //new_inputs.sort();
+
+
+
+            //assert_eq!(*new_inputs,deduped_inputs);
+            //new_gate.inputs.dedup(); //TODO: this needs to be handled with care.
+            new_gate.inputs.append(new_inputs);
         }
+        
+        // remove redundant input connections
+        for (new_gate_id, new_gate) in new_gates.iter_mut().enumerate() {
+            new_gate.inputs.sort(); 
+            let new_inputs = &new_gate.inputs;
+            //let deduped_inputs: &mut Vec<IndexType> = &mut new_gate.inputs.clone();//Vec::new();
+            let deduped_inputs: &mut Vec<IndexType> = &mut Vec::new();
+            for i in 0..new_inputs.len() {
+                if let Some(previous) = deduped_inputs.last() { 
+                    if *previous == new_inputs[i] {
+                        if new_gate.kind.can_delete_single_identical_inputs() {
+                            continue
+                        }
+                        else if new_gate.kind.can_delete_double_identical_inputs() {
+                            deduped_inputs.pop();
+                            continue
+                        }
+                    } 
+                } 
+                deduped_inputs.push(new_inputs[i]);
+            }
+            new_gate.inputs.clear();
+            new_gate.add_inputs_vec(&mut deduped_inputs.clone());
+        }
+
 
         // create output connections
         for gate_id in 0..new_gates.len() {
@@ -211,7 +270,10 @@ impl Network {
                 new_gates[input_gate_id as usize].outputs.push(gate_id as IndexType);
             }
         }
-        Network{gates: new_gates, translation_table: index_translation}
+
+        // update translation table
+        let new_translation_table = self.translation_table.clone().into_iter().map(|x| index_translation[x as usize]).collect();
+        Network{gates: new_gates, translation_table: new_translation_table}
     }
 }
 
@@ -281,13 +343,18 @@ impl GateNetwork {
         self.state[gate_id as usize]
     }
     /// Adds all gates to update list and performs initialization
-    /// and TODO: network optimizaton.
     /// Currently cannot be modified after initialization.
     /// # Panics
     /// Not initialized
     pub(crate) fn init_network(&mut self) {
         assert!(!self.initialized);
         self.network.translation_table = (0..self.network.gates.len()).into_iter().map(|x| x as IndexType).collect();
+        
+        // TODO: make robust
+        self.network = self.network.optimized();
+        self.network = self.network.optimized();
+        self.network = self.network.optimized();
+        self.network = self.network.optimized();
         self.network = self.network.optimized();
 
         let number_of_gates = self.network.gates.len();
