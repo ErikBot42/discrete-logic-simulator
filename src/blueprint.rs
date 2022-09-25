@@ -91,7 +91,7 @@ impl Trace {
             [135, 86,  161, 255] => Trace::Magenta,
             [161, 85,  151, 255] => Trace::Pink,
             [77,  56,  62,  255] => Trace::Write,
-            [0,   0,   0,   0]   => Trace::Empty,
+            [0,   0,   0,   0  ] => Trace::Empty,
             [102, 120, 142, 255] => Trace::Cross,
             [46,  71,  93,  255] => Trace::Read,
             [146, 255, 99,  255] => Trace::Buffer,
