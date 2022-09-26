@@ -1,9 +1,8 @@
 // logic.rs: contains the simulaion engine itself.
 #![allow(clippy::inline_always)]
 use itertools::Itertools;
-use std::collections::HashMap;
-use std::num::Wrapping;
 use no_panic::no_panic;
+use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 /// A = active inputs
@@ -78,11 +77,11 @@ impl RunTimeGateType {
 // Xor, Xnor: no limitation
 // u16 and u32 have similar speeds for this
 type AccTypeInner = u32;
-type AccType = Wrapping<AccTypeInner>;
+type AccType = AccTypeInner;
 
 // tests don't need that many indexes, but this is obviously a big limitation.
 // u16 enough for typical applications (65536), u32
-// u32 > u16
+// u32 > u16, u32
 type IndexType = u32;
 
 type GateKey = (GateType, Vec<IndexType>);
@@ -103,10 +102,10 @@ pub(crate) struct Gate {
 }
 impl Gate {
     fn new(kind: GateType, outputs: Vec<IndexType>) -> Self {
-        let start_acc = Wrapping(match kind {
+        let start_acc = match kind {
             GateType::Xnor => 1,
             _ => 0,
-        });
+        };
         Gate {
             inputs: Vec::new(),
             outputs,
@@ -122,9 +121,9 @@ impl Gate {
     /// Change number of inputs to handle logic correctly
     /// Can be called multiple times for *different* inputs
     fn add_inputs(&mut self, inputs: i32) {
-        let diff: AccType = Wrapping(inputs as AccTypeInner);
+        let diff: AccType = inputs as AccTypeInner;
         match self.kind {
-            GateType::And | GateType::Nand => self.acc = self.acc - diff,
+            GateType::And | GateType::Nand => self.acc = self.acc.wrapping_sub(diff),
             GateType::Or | GateType::Nor | GateType::Xor | GateType::Xnor | GateType::Cluster => (),
         }
     }
@@ -138,29 +137,22 @@ impl Gate {
     #[inline(always)]
     fn evaluate(acc: AccType, kind: RunTimeGateType) -> bool {
         match kind {
-            RunTimeGateType::OrNand => acc != Wrapping(0),
-            RunTimeGateType::AndNor => acc == Wrapping(0),
-            RunTimeGateType::XorXnor => acc & Wrapping(1) == Wrapping(1),
+            RunTimeGateType::OrNand => acc != (0),
+            RunTimeGateType::AndNor => acc == (0),
+            RunTimeGateType::XorXnor => acc & (1) == (1),
         }
     }
     fn evaluate_from_flags(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
         // inverted from perspective of or gate
         // hopefully this generates branchless code.
-        //match (is_inverted, is_xor) {
-        //    (false, false) => acc != Wrapping(0),
-        //    (true, false) => acc == Wrapping(0),
-        //    (false, true) => acc & Wrapping(1) == Wrapping(1),
-        //    _ => panic!()
-        //}
         if !is_xor {
-            (acc != Wrapping(0)) != is_inverted
+            (acc != (0)) != is_inverted
         } else {
-            acc % Wrapping(2) == Wrapping(1)
+            acc % (2) == (1)
         }
     }
     fn evaluate_branchless(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
-        !is_xor && ((acc != Wrapping(0)) != is_inverted)
-            || is_xor && (acc % Wrapping(2) == Wrapping(1))
+        !is_xor && ((acc != (0)) != is_inverted) || is_xor && (acc % (2) == (1))
     }
     const fn calc_flags(kind: RunTimeGateType) -> (bool, bool) {
         match kind {
@@ -195,8 +187,6 @@ impl Gate {
         (kind, self.inputs.clone())
     }
 }
-
-
 
 /// A list that is just a raw array that is manipulated directly.
 /// Very unsafe but slightly faster than a normal vector
@@ -397,6 +387,7 @@ pub(crate) struct GateNetwork {
 
     packed_outputs: Vec<IndexType>,
     packed_output_indexes: Vec<IndexType>,
+
     state: Vec<bool>,
     acc: Vec<AccType>,
     in_update_list: Vec<bool>,
@@ -511,14 +502,12 @@ impl GateNetwork {
             .push(self.packed_outputs.len().try_into().unwrap());
         self.initialized = true;
     }
-    
 
     /// Updates state of all gates.
     /// # Panics
-    /// Not initialized
-    /// pre: on first update, the list only contains gates that will change.
+    /// Not initialized (debug)
     #[inline(always)]
-    #[no_panic]
+    //#[no_panic]
     pub(crate) fn update(&mut self) {
         // Somehow impacts release performance. This should be replaced by type state
         // Will keep anyways
@@ -556,7 +545,6 @@ impl GateNetwork {
 
     /// Update all gates in update list. Clears current update list and produces a new update list
     #[inline(always)]
-    #[no_panic]
     fn update_gates_in_list<const ASSUME_CLUSTER: bool>(
         update_list: &mut RawList,
         next_update_list: &mut RawList,
@@ -587,31 +575,33 @@ impl GateNetwork {
             //debug_assert!(in_update_list[*id as usize], "{id:?}");
             let next_state = Gate::evaluate(*unsafe { acc.get_unchecked(id) }, kind);
             //let next_state =
-            //    Gate::evaluate_from_flags(*unsafe { acc.get_unchecked(*id as usize) }, flags);
-            //let next_state = Gate::evaluate_branchless(*acc.get_unchecked(*id as usize), flags);
+            //    Gate::evaluate_from_flags(*unsafe { acc.get_unchecked(id) }, flags);
+            //let next_state = Gate::evaluate_branchless(*unsafe { acc.get_unchecked(id) }, flags);
             if *unsafe { state.get_unchecked(id) } != next_state {
                 let delta: AccType = if next_state {
-                    Wrapping(1 as AccTypeInner)
+                    1 as AccTypeInner
                 } else {
-                    Wrapping(0 as AccTypeInner) - Wrapping(1 as AccTypeInner)
+                    (0 as AccTypeInner).wrapping_sub(1 as AccTypeInner)
                 };
                 let from_index = *unsafe { packed_output_indexes.get_unchecked(id) };
                 let to_index = *unsafe { packed_output_indexes.get_unchecked(id + 1) };
+                // all, any, find, find map, position
+                // map, zip, for_each, enumerate
 
-                //for i in from_index..to_index {
-                for output_id in (from_index..to_index)
-                    .into_iter()
-                    .map(|i| *unsafe { packed_outputs.get_unchecked(i as usize) })
+                for output_id in
+                    unsafe { packed_outputs.get_unchecked(from_index as usize..to_index as usize) }
+                        .iter()
                 {
                     let in_update_list =
-                        unsafe { in_update_list.get_unchecked_mut(output_id as usize) };
-                    let other_acc = unsafe { acc.get_unchecked_mut(output_id as usize) };
+                        unsafe { in_update_list.get_unchecked_mut(*output_id as usize) };
+                    let other_acc = unsafe { acc.get_unchecked_mut(*output_id as usize) };
                     *other_acc += delta;
                     if !*in_update_list {
                         *in_update_list = true;
-                        next_update_list.push(output_id);
+                        next_update_list.push(*output_id);
                     }
                 }
+
                 *unsafe { state.get_unchecked_mut(id) } = next_state;
             }
             // this gate should be ready to be re-added to the update list.

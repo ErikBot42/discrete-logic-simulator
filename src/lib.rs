@@ -1,5 +1,6 @@
 //#![warn(clippy::cargo)]
 //#![warn(clippy::all)]
+#![feature(portable_simd)]
 
 macro_rules! unwrap_or_else {
     ($expression:expr, $block:expr) => {
