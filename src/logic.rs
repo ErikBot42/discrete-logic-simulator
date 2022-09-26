@@ -3,6 +3,7 @@
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::num::Wrapping;
+use no_panic::no_panic;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 /// A = active inputs
@@ -194,6 +195,8 @@ impl Gate {
         (kind, self.inputs.clone())
     }
 }
+
+
 
 /// A list that is just a raw array that is manipulated directly.
 /// Very unsafe but slightly faster than a normal vector
@@ -480,6 +483,7 @@ impl GateNetwork {
         self.update_list.len = 0;
         self.cluster_update_list.len = 0;
 
+        // TODO: iterator
         for gate_id in 0..number_of_gates {
             let gate = &mut self.network.gates[gate_id];
             let kind = gate.kind;
@@ -507,12 +511,14 @@ impl GateNetwork {
             .push(self.packed_outputs.len().try_into().unwrap());
         self.initialized = true;
     }
+    
 
     /// Updates state of all gates.
     /// # Panics
     /// Not initialized
     /// pre: on first update, the list only contains gates that will change.
     #[inline(always)]
+    #[no_panic]
     pub(crate) fn update(&mut self) {
         // Somehow impacts release performance. This should be replaced by type state
         // Will keep anyways
@@ -520,10 +526,9 @@ impl GateNetwork {
 
         // This somehow improves performance, even when update list is non-zero.
         // It should also be very obvious to the compiler...
-        //if self.update_list.len() == 0 {
-        //    return;
-        //}
-
+        if self.update_list.len == 0 {
+            return;
+        }
 
         Self::update_gates_in_list::<false>(
             &mut self.update_list,
@@ -551,6 +556,7 @@ impl GateNetwork {
 
     /// Update all gates in update list. Clears current update list and produces a new update list
     #[inline(always)]
+    #[no_panic]
     fn update_gates_in_list<const ASSUME_CLUSTER: bool>(
         update_list: &mut RawList,
         next_update_list: &mut RawList,
@@ -592,15 +598,18 @@ impl GateNetwork {
                 let from_index = *unsafe { packed_output_indexes.get_unchecked(id) };
                 let to_index = *unsafe { packed_output_indexes.get_unchecked(id + 1) };
 
-                for i in from_index..to_index {
-                    let output_id = unsafe { packed_outputs.get_unchecked(i as usize) };
+                //for i in from_index..to_index {
+                for output_id in (from_index..to_index)
+                    .into_iter()
+                    .map(|i| *unsafe { packed_outputs.get_unchecked(i as usize) })
+                {
                     let in_update_list =
-                        unsafe { in_update_list.get_unchecked_mut(*output_id as usize) };
-                    let other_acc = unsafe { acc.get_unchecked_mut(*output_id as usize) };
+                        unsafe { in_update_list.get_unchecked_mut(output_id as usize) };
+                    let other_acc = unsafe { acc.get_unchecked_mut(output_id as usize) };
                     *other_acc += delta;
                     if !*in_update_list {
                         *in_update_list = true;
-                        next_update_list.push(*output_id);
+                        next_update_list.push(output_id);
                     }
                 }
                 *unsafe { state.get_unchecked_mut(id) } = next_state;
