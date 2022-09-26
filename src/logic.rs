@@ -195,7 +195,8 @@ impl Gate {
     }
 }
 
-/// a list that is just a raw array that is manipulated directly.
+/// A list that is just a raw array that is manipulated directly.
+/// Very unsafe but slightly faster than a normal vector
 #[derive(Debug, Default)]
 struct RawList {
     list: Box<[IndexType]>,
@@ -523,34 +524,6 @@ impl GateNetwork {
         //    return;
         //}
 
-        /*for gate_id in self.update_list.get_slice() {
-            GateNetwork::update_kind(
-                *gate_id,
-                unsafe { *self.runtime_gate_kind.get_unchecked(*gate_id as usize) },
-                unsafe { *self.gate_flags.get_unchecked(*gate_id as usize) },
-                &mut self.cluster_update_list,
-                &self.packed_outputs,
-                &self.packed_output_indexes,
-                &mut self.acc,
-                &mut self.state,
-                &mut self.in_update_list,
-            );
-        }
-        self.update_list.clear();
-        for cluster_id in self.cluster_update_list.get_slice() {
-            GateNetwork::update_kind(
-                *cluster_id,
-                RunTimeGateType::OrNand,
-                (false, false),
-                &mut self.update_list,
-                &self.packed_outputs,
-                &self.packed_output_indexes,
-                &mut self.acc,
-                &mut self.state,
-                &mut self.in_update_list,
-            );
-        }
-        self.cluster_update_list.clear();*/
 
         Self::update_gates_in_list::<false>(
             &mut self.update_list,
@@ -593,8 +566,8 @@ impl GateNetwork {
         if update_list.len == 0 {
             return;
         }
-        for id in update_list.get_slice() {
-            let id = *id as usize;
+        //for id in update_list.get_slice() {
+        for id in update_list.get_slice().iter().map(|id| *id as usize) {
             let kind;
             let flags;
             if ASSUME_CLUSTER {
@@ -636,51 +609,5 @@ impl GateNetwork {
             *unsafe { in_update_list.get_unchecked_mut(id) } = false;
         }
         update_list.clear();
-    }
-
-    #[inline(always)]
-    fn update_kind(
-        id: IndexType,
-        kind: RunTimeGateType,
-        flags: (bool, bool),
-        update_list: &mut RawList,
-        packed_outputs: &[IndexType],
-        packed_output_indexes: &[IndexType],
-        acc: &mut Vec<AccType>,
-        state: &mut Vec<bool>,
-        in_update_list: &mut Vec<bool>,
-    ) {
-        // TODO: update all states and then processing outputs?
-        // TODO: short-circuit
-        //debug_assert!(in_update_list[id as usize], "{id:?}");
-        unsafe {
-            //let next_state = Gate::evaluate(*acc.get_unchecked(id as usize), kind);
-            let next_state = Gate::evaluate_from_flags(*acc.get_unchecked(id as usize), flags);
-            //let next_state = Gate::evaluate_branchless(*acc.get_unchecked(id as usize), flags);
-            let current_state = *state.get_unchecked(id as usize);
-            if current_state != next_state {
-                let delta: AccType = if next_state {
-                    Wrapping(1 as AccTypeInner)
-                } else {
-                    Wrapping(0 as AccTypeInner) - Wrapping(1 as AccTypeInner)
-                };
-                let from_index = *packed_output_indexes.get_unchecked(id as usize);
-                let to_index = *packed_output_indexes.get_unchecked(id as usize + 1);
-
-                for i in from_index..to_index {
-                    let output_id = packed_outputs.get_unchecked(i as usize);
-                    let in_update_list = in_update_list.get_unchecked_mut(*output_id as usize);
-                    let other_acc = acc.get_unchecked_mut(*output_id as usize);
-                    *other_acc += delta;
-                    if !*in_update_list {
-                        *in_update_list = true;
-                        update_list.push(*output_id);
-                    }
-                }
-                *state.get_unchecked_mut(id as usize) = next_state;
-            }
-            // this gate should be ready to be re-added to the update list.
-            *in_update_list.get_unchecked_mut(id as usize) = false;
-        }
     }
 }
