@@ -8,19 +8,19 @@ use std::num::Wrapping;
 /// A = active inputs
 /// T = total inputs
 pub(crate) enum GateType {
-    ///A == T    
+    ///A == T
     And,
-    ///A > 0     
+    ///A > 0
     Or,
-    ///A == 0    
+    ///A == 0
     Nor,
-    ///A != T    
+    ///A != T
     Nand,
     ///A % 2 == 1
     Xor,
     ///A % 2 == 0
     Xnor,
-    ///A > 0     
+    ///A > 0
     Cluster, // equivalent to OR
 }
 impl GateType {
@@ -142,19 +142,40 @@ impl Gate {
             RunTimeGateType::XorXnor => acc & Wrapping(1) == Wrapping(1),
         }
     }
-    //fn evaluate_from_flags(acc: AccType, is_inverted: bool, is_xor: bool) -> bool {
-    //    // inverted from perspective of or
-    //    if is_xor {
-    //        (acc != Wrapping(0)) != is_inverted
-    //    } else {
-    //        acc % Wrapping(2) == Wrapping(1)
-    //    }
-    //}
+    fn evaluate_from_flags(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
+        // inverted from perspective of or gate
+        // hopefully this generates branchless code.
+        //match (is_inverted, is_xor) {
+        //    (false, false) => acc != Wrapping(0),
+        //    (true, false) => acc == Wrapping(0),
+        //    (false, true) => acc & Wrapping(1) == Wrapping(1),
+        //    _ => panic!()
+        //}
+        if !is_xor {
+            (acc != Wrapping(0)) != is_inverted
+        } else {
+            acc % Wrapping(2) == Wrapping(1)
+        }
+    }
+    fn evaluate_branchless(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
+        !is_xor && ((acc != Wrapping(0)) != is_inverted)
+            || is_xor && (acc % Wrapping(2) == Wrapping(1))
+    }
+    const fn calc_flags(kind: RunTimeGateType) -> (bool, bool) {
+        match kind {
+            // (is_inverted, is_xor)
+            RunTimeGateType::OrNand => (false, false),
+            RunTimeGateType::AndNor => (true, false),
+            RunTimeGateType::XorXnor => (false, true),
+        }
+    }
 
     /// calculate a key that is used to determine if the gate
     /// can be merged with other gates.
     fn calc_key(&self) -> GateKey {
         // TODO: can potentially include inverted.
+        // but then every connection would have to include
+        // connection information
 
         let kind = match self.kind {
             GateType::Cluster => GateType::Or,
@@ -174,7 +195,7 @@ impl Gate {
     }
 }
 
-// a list that is just a raw array that is manipulated directly.
+/// a list that is just a raw array that is manipulated directly.
 #[derive(Debug, Default)]
 struct RawList {
     list: Box<[IndexType]>,
@@ -187,15 +208,18 @@ impl RawList {
     }
     #[inline(always)]
     fn push(&mut self, el: IndexType) {
-        unsafe {
-            *self.list.get_unchecked_mut(self.len) = el;
-        }
+        *unsafe { self.list.get_unchecked_mut(self.len) } = el;
         self.len += 1;
     }
     #[inline(always)]
     fn get_slice(&self) -> &[IndexType] {
-        &self.list[0..self.len]
+        // &self.list[0..self.len]
+        unsafe { self.list.get_unchecked(..self.len) }
     }
+    //#[inline(always)]
+    //fn len(&self) -> usize {
+    //    self.len
+    //}
 }
 
 /// Contains gate graph in order to do network optimization
@@ -374,8 +398,7 @@ pub(crate) struct GateNetwork {
     in_update_list: Vec<bool>,
     runtime_gate_kind: Vec<RunTimeGateType>,
 
-    is_inverted: Vec<bool>,
-    is_xor: Vec<bool>,
+    gate_flags: Vec<(bool, bool)>,
 
     initialized: bool, //TODO: typestate pattern
     update_list: RawList,
@@ -448,30 +471,7 @@ impl GateNetwork {
             .into_iter()
             .map(|x| x as IndexType)
             .collect();
-
         self.network = self.network.optimized();
-        //self.network = self.network.optimization_pass();
-        //self.network.print_info();
-        //self.network = self.network.optimization_pass();
-        //self.network.print_info();
-        //self.network = self.network.optimization_pass();
-        //self.network.print_info();
-        //self.network = self.network.optimization_pass();
-        //self.network.print_info();
-        //self.network = self.network.optimization_pass();
-        //self.network.print_info();
-
-        //let counts_iter = self.network.gates.iter().map(|x| x.outputs.len()).counts().into_iter();
-        //let mut counts_vec: Vec<(usize, usize)> = counts_iter.collect();
-        //counts_vec.sort();
-        //let total_output_connections = counts_vec.iter().map(|(_, count)| count).sum::<usize>();
-        //println!("output counts after optimized (total: {total_output_connections}):");
-        //println!("number of outputs: gates with this number of outputs");
-        //for (value, count) in counts_vec {
-        //    println!("{value}: {count}");
-        //}
-        //panic!();
-
         let number_of_gates = self.network.gates.len();
 
         self.update_list.list = vec![0; number_of_gates].into_boxed_slice();
@@ -490,8 +490,11 @@ impl GateNetwork {
                 gate.in_update_list = true;
             }
 
-            // pack gatetype, acc, state, outputs
-            self.runtime_gate_kind.push(RunTimeGateType::new(gate.kind));
+            // pack gate type, acc, state, outputs, flags
+            let runtime_kind = RunTimeGateType::new(gate.kind);
+            self.runtime_gate_kind.push(runtime_kind);
+            self.gate_flags.push(Gate::calc_flags(runtime_kind));
+
             self.acc.push(gate.acc);
             self.state.push(gate.state);
             self.in_update_list.push(gate.in_update_list);
@@ -504,16 +507,27 @@ impl GateNetwork {
         self.initialized = true;
     }
 
+    /// Updates state of all gates.
     /// # Panics
     /// Not initialized
     /// pre: on first update, the list only contains gates that will change.
     #[inline(always)]
     pub(crate) fn update(&mut self) {
-        assert!(self.initialized);
-        for gate_id in self.update_list.get_slice() {
+        // Somehow impacts release performance. This should be replaced by type state
+        // Will keep anyways
+        debug_assert!(self.initialized);
+
+        // This somehow improves performance, even when update list is non-zero.
+        // It should also be very obvious to the compiler...
+        //if self.update_list.len() == 0 {
+        //    return;
+        //}
+
+        /*for gate_id in self.update_list.get_slice() {
             GateNetwork::update_kind(
                 *gate_id,
                 unsafe { *self.runtime_gate_kind.get_unchecked(*gate_id as usize) },
+                unsafe { *self.gate_flags.get_unchecked(*gate_id as usize) },
                 &mut self.cluster_update_list,
                 &self.packed_outputs,
                 &self.packed_output_indexes,
@@ -527,6 +541,7 @@ impl GateNetwork {
             GateNetwork::update_kind(
                 *cluster_id,
                 RunTimeGateType::OrNand,
+                (false, false),
                 &mut self.update_list,
                 &self.packed_outputs,
                 &self.packed_output_indexes,
@@ -535,12 +550,99 @@ impl GateNetwork {
                 &mut self.in_update_list,
             );
         }
-        self.cluster_update_list.clear();
+        self.cluster_update_list.clear();*/
+
+        Self::update_gates_in_list::<false>(
+            &mut self.update_list,
+            &mut self.cluster_update_list,
+            &mut self.acc,
+            &mut self.state,
+            &mut self.in_update_list,
+            &self.runtime_gate_kind,
+            &self.gate_flags,
+            &self.packed_output_indexes,
+            &self.packed_outputs,
+        );
+        Self::update_gates_in_list::<true>(
+            &mut self.cluster_update_list,
+            &mut self.update_list,
+            &mut self.acc,
+            &mut self.state,
+            &mut self.in_update_list,
+            &self.runtime_gate_kind,
+            &self.gate_flags,
+            &self.packed_output_indexes,
+            &self.packed_outputs,
+        );
     }
+
+    /// Update all gates in update list. Clears current update list and produces a new update list
+    #[inline(always)]
+    fn update_gates_in_list<const ASSUME_CLUSTER: bool>(
+        update_list: &mut RawList,
+        next_update_list: &mut RawList,
+        acc: &mut [AccType],
+        state: &mut [bool],
+        in_update_list: &mut [bool],
+
+        gate_kinds: &[RunTimeGateType],
+        gate_flags: &[(bool, bool)],
+        packed_output_indexes: &[IndexType],
+        packed_outputs: &[IndexType],
+    ) {
+        if update_list.len == 0 {
+            return;
+        }
+        for id in update_list.get_slice() {
+            let id = *id as usize;
+            let kind;
+            let flags;
+            if ASSUME_CLUSTER {
+                kind = RunTimeGateType::OrNand;
+                flags = (false, false);
+            } else {
+                kind = *unsafe { gate_kinds.get_unchecked(id) };
+                flags = *unsafe { gate_flags.get_unchecked(id) };
+            };
+
+            //debug_assert!(in_update_list[*id as usize], "{id:?}");
+            let next_state = Gate::evaluate(*unsafe { acc.get_unchecked(id) }, kind);
+            //let next_state =
+            //    Gate::evaluate_from_flags(*unsafe { acc.get_unchecked(*id as usize) }, flags);
+            //let next_state = Gate::evaluate_branchless(*acc.get_unchecked(*id as usize), flags);
+            if *unsafe { state.get_unchecked(id) } != next_state {
+                let delta: AccType = if next_state {
+                    Wrapping(1 as AccTypeInner)
+                } else {
+                    Wrapping(0 as AccTypeInner) - Wrapping(1 as AccTypeInner)
+                };
+                let from_index = *unsafe { packed_output_indexes.get_unchecked(id) };
+                let to_index = *unsafe { packed_output_indexes.get_unchecked(id + 1) };
+
+                for i in from_index..to_index {
+                    let output_id = unsafe { packed_outputs.get_unchecked(i as usize) };
+                    let in_update_list =
+                        unsafe { in_update_list.get_unchecked_mut(*output_id as usize) };
+                    let other_acc = unsafe { acc.get_unchecked_mut(*output_id as usize) };
+                    *other_acc += delta;
+                    if !*in_update_list {
+                        *in_update_list = true;
+                        next_update_list.push(*output_id);
+                    }
+                }
+                *unsafe { state.get_unchecked_mut(id) } = next_state;
+            }
+            // this gate should be ready to be re-added to the update list.
+            *unsafe { in_update_list.get_unchecked_mut(id) } = false;
+        }
+        update_list.clear();
+    }
+
     #[inline(always)]
     fn update_kind(
         id: IndexType,
         kind: RunTimeGateType,
+        flags: (bool, bool),
         update_list: &mut RawList,
         packed_outputs: &[IndexType],
         packed_output_indexes: &[IndexType],
@@ -548,14 +650,13 @@ impl GateNetwork {
         state: &mut Vec<bool>,
         in_update_list: &mut Vec<bool>,
     ) {
-        // if this assert fails, the system will recover anyways
-        // but that would probably have been caused by a bug.
-        debug_assert!(in_update_list[id as usize], "{id:?}");
-
         // TODO: update all states and then processing outputs?
         // TODO: short-circuit
+        //debug_assert!(in_update_list[id as usize], "{id:?}");
         unsafe {
-            let next_state = Gate::evaluate(*acc.get_unchecked(id as usize), kind);
+            //let next_state = Gate::evaluate(*acc.get_unchecked(id as usize), kind);
+            let next_state = Gate::evaluate_from_flags(*acc.get_unchecked(id as usize), flags);
+            //let next_state = Gate::evaluate_branchless(*acc.get_unchecked(id as usize), flags);
             let current_state = *state.get_unchecked(id as usize);
             if current_state != next_state {
                 let delta: AccType = if next_state {
