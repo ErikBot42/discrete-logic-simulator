@@ -2,6 +2,8 @@
 #![allow(clippy::inline_always)]
 use itertools::Itertools;
 use std::collections::HashMap;
+
+use std::simd::*;
 //use no_panic::no_panic;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
@@ -152,7 +154,31 @@ impl Gate {
         }
     }
     fn evaluate_branchless(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
-        !is_xor && ((acc != (0)) != is_inverted) || is_xor && (acc % (2) == (1))
+        !is_xor && ((acc != 0) != is_inverted) || is_xor && (acc % 2 == 1)
+    }
+
+    #[inline(never)] // inline always required to keep SIMD in registers.
+    fn evaluate_simd<const LANES: usize>(
+        acc: Simd<AccType, LANES>,
+        is_inverted: Simd<AccType, LANES>,
+        is_xor: Simd<AccType, LANES>,
+        old_state: Simd<AccType, LANES>,
+    ) -> (Simd<AccType, LANES>, Simd<AccType, LANES>)
+    where
+        LaneCount<LANES>: SupportedLaneCount,
+    {
+        let acc_not_zero = acc
+            .simd_ne(Simd::splat(0))
+            .select(Simd::splat(1), Simd::splat(0));
+        let xor_term = is_xor & acc & Simd::splat(1);
+
+        let not_xor = !xor_term & Simd::splat(1);
+
+        let acc_term = not_xor & (is_inverted ^ acc_not_zero);
+
+        let new_state = acc_term | xor_term;
+
+        (new_state, old_state ^ new_state)
     }
     const fn calc_flags(kind: RunTimeGateType) -> (bool, bool) {
         match kind {
@@ -394,6 +420,8 @@ pub(crate) struct GateNetwork {
     runtime_gate_kind: Vec<RunTimeGateType>,
 
     gate_flags: Vec<(bool, bool)>,
+    gate_flag_is_xor: Vec<u8>,
+    gate_flag_is_inverted: Vec<u8>,
 
     initialized: bool, //TODO: typestate pattern
     update_list: RawList,
@@ -489,7 +517,10 @@ impl GateNetwork {
             // pack gate type, acc, state, outputs, flags
             let runtime_kind = RunTimeGateType::new(gate.kind);
             self.runtime_gate_kind.push(runtime_kind);
-            self.gate_flags.push(Gate::calc_flags(runtime_kind));
+            let (is_inverted, is_xor) = Gate::calc_flags(runtime_kind);
+            self.gate_flags.push((is_inverted, is_xor));
+            self.gate_flag_is_xor.push(is_xor as u8);
+            self.gate_flag_is_inverted.push(is_inverted as u8);
 
             self.acc.push(gate.acc);
             self.state.push(gate.state);
@@ -527,6 +558,8 @@ impl GateNetwork {
             &mut self.in_update_list,
             &self.runtime_gate_kind,
             &self.gate_flags,
+            &self.gate_flag_is_xor,
+            &self.gate_flag_is_inverted,
             &self.packed_output_indexes,
             &self.packed_outputs,
         );
@@ -538,6 +571,8 @@ impl GateNetwork {
             &mut self.in_update_list,
             &self.runtime_gate_kind,
             &self.gate_flags,
+            &self.gate_flag_is_xor,
+            &self.gate_flag_is_inverted,
             &self.packed_output_indexes,
             &self.packed_outputs,
         );
@@ -554,12 +589,26 @@ impl GateNetwork {
 
         gate_kinds: &[RunTimeGateType],
         gate_flags: &[(bool, bool)],
+        gate_flag_xor: &[u8],
+        gate_flag_inverted: &[u8],
         packed_output_indexes: &[IndexType],
         packed_outputs: &[IndexType],
     ) {
         if update_list.len == 0 {
             return;
         }
+
+        //const LANES: usize = 8;
+        //Gate::evaluate_simd::<LANES>(
+        //    Simd::splat(1),
+        //    Simd::splat(1),
+        //    Simd::splat(1),
+        //    Simd::splat(1),
+        //    );
+
+
+
+
         //for id in update_list.get_slice() {
         for id in update_list.get_slice().iter().map(|id| *id as usize) {
             let kind;
