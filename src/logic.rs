@@ -3,8 +3,8 @@
 use itertools::Itertools;
 use std::collections::HashMap;
 
+use no_panic::no_panic;
 use std::simd::*;
-//use no_panic::no_panic;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 /// A = active inputs
@@ -158,6 +158,7 @@ impl Gate {
     }
 
     #[inline(never)] // inline always required to keep SIMD in registers.
+    #[must_use]
     fn evaluate_simd<const LANES: usize>(
         acc: Simd<AccType, LANES>,
         is_inverted: Simd<AccType, LANES>,
@@ -414,7 +415,7 @@ pub(crate) struct GateNetwork {
     packed_outputs: Vec<IndexType>,
     packed_output_indexes: Vec<IndexType>,
 
-    state: Vec<bool>,
+    state: Vec<u8>,
     acc: Vec<AccType>,
     in_update_list: Vec<bool>,
     runtime_gate_kind: Vec<RunTimeGateType>,
@@ -482,7 +483,7 @@ impl GateNetwork {
     pub(crate) fn get_state(&self, gate_id: usize) -> bool {
         assert!(self.initialized);
         let gate_id = self.network.translation_table[gate_id];
-        self.state[gate_id as usize]
+        self.state[gate_id as usize] != 0
     }
     /// Adds all gates to update list and performs initialization
     /// Currently cannot be modified after initialization.
@@ -523,7 +524,7 @@ impl GateNetwork {
             self.gate_flag_is_inverted.push(is_inverted as u8);
 
             self.acc.push(gate.acc);
-            self.state.push(gate.state);
+            self.state.push(gate.state as u8);
             self.in_update_list.push(gate.in_update_list);
             self.packed_output_indexes
                 .push(self.packed_outputs.len().try_into().unwrap());
@@ -551,7 +552,7 @@ impl GateNetwork {
         }
 
         Self::update_gates_in_list::<false>(
-            &mut self.update_list,
+            self.update_list.get_slice(),
             &mut self.cluster_update_list,
             &mut self.acc,
             &mut self.state,
@@ -563,8 +564,9 @@ impl GateNetwork {
             &self.packed_output_indexes,
             &self.packed_outputs,
         );
+        self.update_list.clear();
         Self::update_gates_in_list::<true>(
-            &mut self.cluster_update_list,
+            self.cluster_update_list.get_slice(),
             &mut self.update_list,
             &mut self.acc,
             &mut self.state,
@@ -576,15 +578,18 @@ impl GateNetwork {
             &self.packed_output_indexes,
             &self.packed_outputs,
         );
+        self.cluster_update_list.clear();
     }
 
-    /// Update all gates in update list. Clears current update list and produces a new update list
+    /// Update all gates in update list. 
+    /// Appends next update list.
     #[inline(always)]
+    //#[no_panic]
     fn update_gates_in_list<const ASSUME_CLUSTER: bool>(
-        update_list: &mut RawList,
+        update_list: &[IndexType],
         next_update_list: &mut RawList,
         acc: &mut [AccType],
-        state: &mut [bool],
+        state: &mut [u8],
         in_update_list: &mut [bool],
 
         gate_kinds: &[RunTimeGateType],
@@ -594,23 +599,10 @@ impl GateNetwork {
         packed_output_indexes: &[IndexType],
         packed_outputs: &[IndexType],
     ) {
-        if update_list.len == 0 {
+        if update_list.len() == 0 {
             return;
         }
-
-        //const LANES: usize = 8;
-        //Gate::evaluate_simd::<LANES>(
-        //    Simd::splat(1),
-        //    Simd::splat(1),
-        //    Simd::splat(1),
-        //    Simd::splat(1),
-        //    );
-
-
-
-
-        //for id in update_list.get_slice() {
-        for id in update_list.get_slice().iter().map(|id| *id as usize) {
+        for id in update_list.iter().map(|id| *id as usize) {
             let kind;
             let flags;
             if ASSUME_CLUSTER {
@@ -626,7 +618,7 @@ impl GateNetwork {
             //let next_state =
             //    Gate::evaluate_from_flags(*unsafe { acc.get_unchecked(id) }, flags);
             //let next_state = Gate::evaluate_branchless(*unsafe { acc.get_unchecked(id) }, flags);
-            if *unsafe { state.get_unchecked(id) } != next_state {
+            if (*unsafe { state.get_unchecked(id) } != 0) != next_state {
                 let delta: AccType = if next_state {
                     1 as AccTypeInner
                 } else {
@@ -651,69 +643,110 @@ impl GateNetwork {
                     }
                 }
 
-                //const LANES: usize = 8;
-
-                //let active_slice =
-                //    unsafe { packed_outputs.get_unchecked(from_index as usize..to_index as usize) };
-                //let (packed_pre, packed_simd, packed_suf) = active_slice.as_simd::<LANES>();
-
-                //use std::simd::*;
-                //let deltas = Simd::splat(delta);
-                //for output_ids in packed_simd {
-                //    let mut accs = unsafe {
-                //        Simd::gather_select_unchecked(
-                //            acc,
-                //            Mask::splat(true),
-                //            output_ids.cast(),
-                //            Simd::splat(0),
-                //        )
-                //    };
-                //    accs += deltas;
-                //    unsafe {
-                //        accs.scatter_select_unchecked(acc, Mask::splat(true), output_ids.cast());
-                //    }
-                //    for output_id in output_ids.as_array() {
-                //        let in_update_list =
-                //            unsafe { in_update_list.get_unchecked_mut(*output_id as usize) };
-                //        if *in_update_list == 0 {
-                //            //*in_update_list = 1;
-                //            next_update_list.push(*output_id);
-                //        }
-                //    }
-                //    unsafe {
-                //        Simd::splat(1_u8).scatter_select_unchecked(
-                //            in_update_list as &mut [u8],
-                //            Mask::splat(true),
-                //            output_ids.cast(),
-                //        );
-                //    }
-                //}
-                //for output_id in packed_pre {
-                //    let in_update_list =
-                //        unsafe { in_update_list.get_unchecked_mut(*output_id as usize) };
-                //    let other_acc = unsafe { acc.get_unchecked_mut(*output_id as usize) };
-                //    *other_acc = other_acc.wrapping_add(delta);
-                //    if *in_update_list == 0 {
-                //        *in_update_list = 1;
-                //        next_update_list.push(*output_id);
-                //    }
-                //}
-                //for output_id in packed_suf {
-                //    let in_update_list =
-                //        unsafe { in_update_list.get_unchecked_mut(*output_id as usize) };
-                //    let other_acc = unsafe { acc.get_unchecked_mut(*output_id as usize) };
-                //    *other_acc = other_acc.wrapping_add(delta);
-                //    if *in_update_list == 0 {
-                //        *in_update_list = 1;
-                //        next_update_list.push(*output_id);
-                //    }
-                //}
-
-                *unsafe { state.get_unchecked_mut(id) } = next_state;
+                *unsafe { state.get_unchecked_mut(id) } = next_state as u8;
             }
             // this gate should be ready to be re-added to the update list.
             *unsafe { in_update_list.get_unchecked_mut(id) } = false;
         }
-        update_list.clear();
+    }
+
+    #[inline(always)]
+    fn update_gates_in_list_simd<const ASSUME_CLUSTER: bool>(
+        update_list: &mut RawList,
+        next_update_list: &mut RawList,
+        acc: &mut [AccType],
+        state: &mut [u8],
+        in_update_list: &mut [bool],
+
+        gate_kinds: &[RunTimeGateType],
+        gate_flags: &[(bool, bool)],
+        gate_flag_xor: &[u8],
+        gate_flag_inverted: &[u8],
+        packed_output_indexes: &[IndexType],
+        packed_outputs: &[IndexType],
+    ) {
+        //TODO: SIMD: make assumptions when cluster.
+
+        const LANES: usize = 2; //TODO: only this low to test stuff.
+        let (packed_pre, packed_simd, packed_suf) = update_list.get_slice().as_simd::<LANES>();
+        for gate_ids in packed_simd {
+            let gate_ids_cast = gate_ids.cast();
+
+            let (new_state_simd, state_changed_simd) = unsafe {
+                Gate::evaluate_simd::<LANES>(
+                    Simd::gather_select_unchecked(
+                        acc,
+                        Mask::splat(true),
+                        gate_ids_cast,
+                        Simd::splat(0),
+                    ),
+                    Simd::gather_select_unchecked(
+                        gate_flag_inverted,
+                        Mask::splat(true),
+                        gate_ids_cast,
+                        Simd::splat(0),
+                    )
+                    .cast(),
+                    Simd::gather_select_unchecked(
+                        gate_flag_xor,
+                        Mask::splat(true),
+                        gate_ids_cast,
+                        Simd::splat(0),
+                    )
+                    .cast(),
+                    Simd::gather_select_unchecked(
+                        state,
+                        Mask::splat(true),
+                        gate_ids_cast,
+                        Simd::splat(0),
+                    )
+                    .cast(),
+                )
+            };
+
+            // 0 -> -1, 1 -> 1
+            let delta_simd = (new_state_simd + new_state_simd) - Simd::splat(1);
+
+            // new state can be written immediately with simd
+            // this will write unconditionally, but maybe it would be better
+            // to only write if state actually changed.
+            unsafe {
+                new_state_simd.cast().scatter_select_unchecked(
+                    state,
+                    Mask::splat(true),
+                    gate_ids_cast,
+                );
+            }
+
+            // handle outputs (SIMD does not work well here)
+            for ((id, delta), state_changed) in gate_ids
+                .to_array()
+                .into_iter()
+                .map(|id| id as usize)
+                .zip(delta_simd.to_array().into_iter())
+                .zip(state_changed_simd.to_array().into_iter())
+            {
+                if state_changed != 0 {
+                    let from_index = *unsafe { packed_output_indexes.get_unchecked(id) };
+                    let to_index = *unsafe { packed_output_indexes.get_unchecked(id + 1) };
+
+                    for output_id in unsafe {
+                        packed_outputs.get_unchecked(from_index as usize..to_index as usize)
+                    }
+                    .iter()
+                    {
+                        let in_update_list =
+                            unsafe { in_update_list.get_unchecked_mut(*output_id as usize) };
+                        let other_acc = unsafe { acc.get_unchecked_mut(*output_id as usize) };
+                        *other_acc = other_acc.wrapping_add(delta);
+                        if !*in_update_list {
+                            *in_update_list = true;
+                            next_update_list.push(*output_id);
+                        }
+                    }
+                }
+                *unsafe { in_update_list.get_unchecked_mut(id) } = false; //TODO SIMD
+            }
+        }
     }
 }
