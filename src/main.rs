@@ -1,6 +1,6 @@
-extern crate base64;
-extern crate colored;
-extern crate zstd;
+//extern crate base64;
+//extern crate zstd;
+//extern crate colored;
 
 use logic_simulator::blueprint::Parser;
 

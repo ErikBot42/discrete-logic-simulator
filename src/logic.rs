@@ -3,7 +3,6 @@
 use itertools::Itertools;
 use std::collections::HashMap;
 
-use no_panic::no_panic;
 use std::simd::*;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
@@ -84,7 +83,7 @@ type AccType = AccTypeInner;
 // tests don't need that many indexes, but this is obviously a big limitation.
 // u16 enough for typical applications (65536), u32
 // u32 > u16, u32
-type IndexType = u32;
+type IndexType = AccTypeInner;
 
 type GateKey = (GateType, Vec<IndexType>);
 
@@ -172,13 +171,15 @@ impl Gate {
     {
         let acc_not_zero = acc
             .simd_ne(Simd::splat(0))
-            .select(Simd::splat(1), Simd::splat(0));
+            .select(Simd::splat(1), Simd::splat(0)); // 0|1
 
-        let xor_term = is_xor & acc & Simd::splat(1);
-        let not_xor = !is_xor & Simd::splat(1);
+        let xor_term = is_xor & acc; // 0|1
+        let not_xor = !is_xor; // 0|1111...
+        //let xor_term = is_xor & acc & Simd::splat(1);
+        //let not_xor = !is_xor & Simd::splat(1);
 
-        let acc_term = not_xor & (is_inverted ^ acc_not_zero);
-        let new_state = acc_term | xor_term;
+        let acc_term = not_xor & (is_inverted ^ acc_not_zero); //0|1
+        let new_state = acc_term | xor_term; //0|1
 
         (new_state, old_state ^ new_state)
     }
@@ -540,7 +541,6 @@ impl GateNetwork {
     /// # Panics
     /// Not initialized (debug)
     #[inline(always)]
-    //#[no_panic]
     pub(crate) fn update(&mut self) {
         // Somehow impacts release performance. This should be replaced by type state
         // Will keep anyways
@@ -585,7 +585,6 @@ impl GateNetwork {
     /// Update all gates in update list.
     /// Appends next update list.
     #[inline(always)]
-    //#[no_panic]
     fn update_gates_in_list<const ASSUME_CLUSTER: bool>(
         update_list: &[IndexType],
         next_update_list: &mut RawList,
@@ -670,7 +669,7 @@ impl GateNetwork {
         if update_list.len() == 0 {
             return;
         }
-        const LANES: usize = 8; //TODO: only this low to test stuff.
+        const LANES: usize = 16; //TODO: optimize
         let (packed_pre, packed_simd, packed_suf) = update_list.as_simd::<LANES>();
         Self::update_gates_in_list::<ASSUME_CLUSTER>(
             packed_pre,
@@ -720,7 +719,7 @@ impl GateNetwork {
 
         for gate_ids in packed_simd {
             let gate_ids_cast = gate_ids.cast();
-            let (gate_inverted_simd, gate_xor_simd) = if false {
+            let (gate_inverted_simd, gate_xor_simd) = if ASSUME_CLUSTER {
                 (Simd::splat(0), Simd::splat(0))
             } else {
                 unsafe {
