@@ -682,7 +682,7 @@ impl GateNetwork {
         if update_list.len() == 0 {
             return;
         }
-        const LANES: usize = 4;//16; //TODO: optimize
+        const LANES: usize = 16;//16; //TODO: optimize
         let (packed_pre, packed_simd, packed_suf) = update_list.as_simd::<LANES>();
         Self::update_gates_in_list::<ASSUME_CLUSTER>(
             packed_pre,
