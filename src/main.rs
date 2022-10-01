@@ -16,8 +16,8 @@ fn main() {
 
     let args: Vec<String> = std::env::args().collect();
 
-    match &args[1][..] {
-        "bench" | "-bench" => {
+    //match &args[1][..] {
+    //    "bench" | "-bench" => {
             const ITERATIONS: usize = 10_000_000;
             const ITERATIONS_F32: f32 = ITERATIONS as f32;
             println!("Running {ITERATIONS} iterations");
@@ -32,15 +32,15 @@ fn main() {
             println!("ms/iteration: {millisecond_per_iteration}");
             println!("iteration/s: {} million",iterations_per_second/1_000_000.0);
 
-        },
+    //    },
 
-        _ => loop {
-            //use std::process::Command;
-            //print!("\x1B[0;0H");
-            board.update();
-            //board.print();
-            //let mut child = Command::new("sleep").arg("0.5").spawn().unwrap();
-            //child.wait().unwrap();
-        },
-    }
+    //    _ => loop {
+    //        //use std::process::Command;
+    //        //print!("\x1B[0;0H");
+    //        board.update();
+    //        //board.print();
+    //        //let mut child = Command::new("sleep").arg("0.5").spawn().unwrap();
+    //        //child.wait().unwrap();
+    //    },
+    //}
 }

@@ -80,6 +80,8 @@ impl RunTimeGateType {
 type AccTypeInner = u32;
 type AccType = AccTypeInner;
 
+type SimdLogicType = u8;
+
 // tests don't need that many indexes, but this is obviously a big limitation.
 // u16 enough for typical applications (65536), u32
 // u32 > u16, u32
@@ -101,6 +103,7 @@ pub(crate) struct Gate {
     in_update_list: bool,
     //TODO: "do not merge" flag
 }
+use std::ops::{BitAnd, Not, BitXor, BitOr};
 impl Gate {
     fn new(kind: GateType, outputs: Vec<IndexType>) -> Self {
         let start_acc = match kind {
@@ -155,26 +158,31 @@ impl Gate {
     fn evaluate_branchless(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
         !is_xor && ((acc != 0) != is_inverted) || is_xor && (acc % 2 == 1)
     }
-
+    
     #[inline(always)] // inline always required to keep SIMD in registers.
     #[must_use]
-    fn evaluate_simd<const LANES: usize>(
+    fn evaluate_simd<const LANES: usize, T>(
         //TODO: keep in u8 registers?
         // only acc is not u8...
         acc: Simd<AccType, LANES>,
-        is_inverted: Simd<AccType, LANES>,
-        is_xor: Simd<AccType, LANES>,
-        old_state: Simd<AccType, LANES>,
-    ) -> (Simd<AccType, LANES>, Simd<AccType, LANES>)
+        is_inverted: Simd<SimdLogicType, LANES>,
+        is_xor: Simd<SimdLogicType, LANES>,
+        old_state: Simd<SimdLogicType, LANES>,
+    ) -> (Simd<SimdLogicType, LANES>, Simd<SimdLogicType, LANES>)
     where
         LaneCount<LANES>: SupportedLaneCount,
+        T: SimdElement,
+        Simd<T, LANES>: BitAnd+BitXor+BitOr+Not+std::ops::Add,
     {
-        let acc_not_zero = acc
+        let acc_logic = acc.cast::<SimdLogicType>();
+        let acc_not_zero = acc_logic
             .simd_ne(Simd::splat(0))
             .select(Simd::splat(1), Simd::splat(0)); // 0|1
+        
+        let xor_term = is_xor & acc_logic; // 0|1
+        // TODO is this just subtracting 1?
+        let not_xor = !is_xor; // 0|1111... 
 
-        let xor_term = is_xor & acc; // 0|1
-        let not_xor = !is_xor; // 0|1111...
         //let xor_term = is_xor & acc & Simd::splat(1);
         //let not_xor = !is_xor & Simd::splat(1);
 
@@ -183,6 +191,9 @@ impl Gate {
 
         (new_state, old_state ^ new_state)
     }
+
+
+
     const fn calc_flags(kind: RunTimeGateType) -> (bool, bool) {
         match kind {
             // (is_inverted, is_xor)
@@ -497,7 +508,9 @@ impl GateNetwork {
             .into_iter()
             .map(|x| x as IndexType)
             .collect();
+        assert_ne!(self.network.gates.len(), 0, "no gates where added.");
         self.network = self.network.optimized();
+        assert_ne!(self.network.gates.len(), 0, "optimization removed all gates");// just check I didn't just remove everything here
         let number_of_gates = self.network.gates.len();
 
         self.update_list.list = vec![0; number_of_gates].into_boxed_slice();
@@ -669,7 +682,7 @@ impl GateNetwork {
         if update_list.len() == 0 {
             return;
         }
-        const LANES: usize = 16; //TODO: optimize
+        const LANES: usize = 4;//16; //TODO: optimize
         let (packed_pre, packed_simd, packed_suf) = update_list.as_simd::<LANES>();
         Self::update_gates_in_list::<ASSUME_CLUSTER>(
             packed_pre,
@@ -742,7 +755,7 @@ impl GateNetwork {
                 }
             };
             let (new_state_simd, state_changed_simd) = unsafe {
-                Gate::evaluate_simd::<LANES>(
+                Gate::evaluate_simd::<LANES, AccTypeInner>(
                     Simd::gather_select_unchecked(
                         acc,
                         Mask::splat(true),
@@ -809,7 +822,7 @@ impl GateNetwork {
                         let in_update_list =
                             unsafe { in_update_list.get_unchecked_mut(*output_id as usize) };
                         let other_acc = unsafe { acc.get_unchecked_mut(*output_id as usize) };
-                        *other_acc = other_acc.wrapping_add(delta);
+                        *other_acc = other_acc.wrapping_add(delta as AccType);
                         if !*in_update_list {
                             *in_update_list = true;
                             next_update_list.push(*output_id);

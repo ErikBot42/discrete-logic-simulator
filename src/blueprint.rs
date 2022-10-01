@@ -220,6 +220,7 @@ impl VcbBoard {
         };
         a
     }
+    //#[inline(always)] //<- makes stuff act weird.
     pub fn update(&mut self) {
         self.network.update();
     }
