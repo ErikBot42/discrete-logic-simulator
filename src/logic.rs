@@ -103,7 +103,7 @@ pub(crate) struct Gate {
     in_update_list: bool,
     //TODO: "do not merge" flag
 }
-use std::ops::{BitAnd, Not, BitXor, BitOr};
+use std::ops::{BitAnd, BitOr, BitXor, Not};
 impl Gate {
     fn new(kind: GateType, outputs: Vec<IndexType>) -> Self {
         let start_acc = match kind {
@@ -158,11 +158,10 @@ impl Gate {
     fn evaluate_branchless(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
         !is_xor && ((acc != 0) != is_inverted) || is_xor && (acc % 2 == 1)
     }
-    
+
     #[inline(always)] // inline always required to keep SIMD in registers.
     #[must_use]
-    fn evaluate_simd<const LANES: usize, T>(
-        //TODO: keep in u8 registers?
+    fn evaluate_simd<const LANES: usize>(
         // only acc is not u8...
         acc: Simd<AccType, LANES>,
         is_inverted: Simd<SimdLogicType, LANES>,
@@ -171,17 +170,15 @@ impl Gate {
     ) -> (Simd<SimdLogicType, LANES>, Simd<SimdLogicType, LANES>)
     where
         LaneCount<LANES>: SupportedLaneCount,
-        T: SimdElement,
-        Simd<T, LANES>: BitAnd+BitXor+BitOr+Not+std::ops::Add,
     {
         let acc_logic = acc.cast::<SimdLogicType>();
         let acc_not_zero = acc_logic
             .simd_ne(Simd::splat(0))
             .select(Simd::splat(1), Simd::splat(0)); // 0|1
-        
+
         let xor_term = is_xor & acc_logic; // 0|1
-        // TODO is this just subtracting 1?
-        let not_xor = !is_xor; // 0|1111... 
+                                           // TODO is this just subtracting 1?
+        let not_xor = !is_xor; // 0|1111...
 
         //let xor_term = is_xor & acc & Simd::splat(1);
         //let not_xor = !is_xor & Simd::splat(1);
@@ -191,8 +188,6 @@ impl Gate {
 
         (new_state, old_state ^ new_state)
     }
-
-
 
     const fn calc_flags(kind: RunTimeGateType) -> (bool, bool) {
         match kind {
@@ -422,7 +417,7 @@ impl Network {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct GateNetwork {
+pub struct GateNetwork {
     network: Network,
 
     packed_outputs: Vec<IndexType>,
@@ -440,6 +435,8 @@ pub(crate) struct GateNetwork {
     initialized: bool, //TODO: typestate pattern
     update_list: RawList,
     cluster_update_list: RawList,
+
+    pub iterations: usize,
 }
 impl GateNetwork {
     /// Internally creates a vertex.
@@ -502,15 +499,21 @@ impl GateNetwork {
     /// Currently cannot be modified after initialization.
     /// # Panics
     /// Not initialized
-    pub(crate) fn init_network(&mut self) {
+    pub(crate) fn init_network(&mut self, optimize: bool) {
         assert!(!self.initialized);
         self.network.translation_table = (0..self.network.gates.len())
             .into_iter()
             .map(|x| x as IndexType)
             .collect();
         assert_ne!(self.network.gates.len(), 0, "no gates where added.");
-        self.network = self.network.optimized();
-        assert_ne!(self.network.gates.len(), 0, "optimization removed all gates");// just check I didn't just remove everything here
+        if optimize {
+            self.network = self.network.optimized();
+            assert_ne!(
+                self.network.gates.len(),
+                0,
+                "optimization removed all gates, ***possibly not a bug***"
+            ); // just check I didn't just remove everything here
+        }
         let number_of_gates = self.network.gates.len();
 
         self.update_list.list = vec![0; number_of_gates].into_boxed_slice();
@@ -550,14 +553,27 @@ impl GateNetwork {
         self.initialized = true;
     }
 
+    #[inline(always)]
+    pub(crate) fn update_simd(&mut self) {
+        self.update_internal::<true>();
+    }
+
     /// Updates state of all gates.
     /// # Panics
     /// Not initialized (debug)
     #[inline(always)]
     pub(crate) fn update(&mut self) {
+        self.update_internal::<false>();
+    }
+
+    fn update_internal<const USE_SIMD: bool>(&mut self) {
         // Somehow impacts release performance. This should be replaced by type state
         // Will keep anyways
         debug_assert!(self.initialized);
+        self.iterations += 1;
+        //debug_assert!(self.update_list.len != 0);
+        //assert!(self.iterations < 3);
+        //println!("{}", self.iterations);
 
         // This somehow improves performance, even when update list is non-zero.
         // It should also be very obvious to the compiler...
@@ -565,7 +581,7 @@ impl GateNetwork {
             return;
         }
 
-        Self::update_gates_in_list_simd::<false>(
+        Self::update_gates::<false, USE_SIMD>(
             self.update_list.get_slice(),
             &mut self.cluster_update_list,
             &mut self.acc,
@@ -579,7 +595,7 @@ impl GateNetwork {
             &self.packed_outputs,
         );
         self.update_list.clear();
-        Self::update_gates_in_list_simd::<true>(
+        Self::update_gates::<true, USE_SIMD>(
             self.cluster_update_list.get_slice(),
             &mut self.update_list,
             &mut self.acc,
@@ -593,6 +609,50 @@ impl GateNetwork {
             &self.packed_outputs,
         );
         self.cluster_update_list.clear();
+    }
+
+    fn update_gates<const ASSUME_CLUSTER: bool, const USE_SIMD: bool>(
+        update_list: &[IndexType],
+        next_update_list: &mut RawList,
+        acc: &mut [AccType],
+        state: &mut [u8],
+        in_update_list: &mut [bool],
+        gate_kinds: &[RunTimeGateType],
+        gate_flags: &[(bool, bool)],
+        gate_flag_xor: &[u8],
+        gate_flag_inverted: &[u8],
+        packed_output_indexes: &[IndexType],
+        packed_outputs: &[IndexType],
+    ) {
+        if USE_SIMD {
+            Self::update_gates_in_list_simd::<ASSUME_CLUSTER>(
+                update_list,
+                next_update_list,
+                acc,
+                state,
+                in_update_list,
+                gate_kinds,
+                gate_flags,
+                gate_flag_xor,
+                gate_flag_inverted,
+                packed_output_indexes,
+                packed_outputs,
+            );
+        } else {
+            Self::update_gates_in_list::<ASSUME_CLUSTER>(
+                update_list,
+                next_update_list,
+                acc,
+                state,
+                in_update_list,
+                gate_kinds,
+                gate_flags,
+                gate_flag_xor,
+                gate_flag_inverted,
+                packed_output_indexes,
+                packed_outputs,
+            );
+        }
     }
 
     /// Update all gates in update list.
@@ -616,6 +676,7 @@ impl GateNetwork {
             return;
         }
         for id in update_list.iter().map(|id| *id as usize) {
+            assert!(in_update_list[id]);
             let kind;
             let flags;
             if ASSUME_CLUSTER {
@@ -664,6 +725,7 @@ impl GateNetwork {
     }
 
     #[inline(always)]
+    //#[inline(never)]
     fn update_gates_in_list_simd<const ASSUME_CLUSTER: bool>(
         update_list: &[IndexType],
         next_update_list: &mut RawList,
@@ -682,8 +744,13 @@ impl GateNetwork {
         if update_list.len() == 0 {
             return;
         }
-        const LANES: usize = 16;//16; //TODO: optimize
-        let (packed_pre, packed_simd, packed_suf) = update_list.as_simd::<LANES>();
+        const LANES: usize = 2; //16; //16; //TODO: optimize
+
+        let (packed_pre, packed_simd, packed_suf): (
+            &[IndexType],
+            &[Simd<IndexType, LANES>],
+            &[IndexType],
+        ) = update_list.as_simd::<LANES>();
         Self::update_gates_in_list::<ASSUME_CLUSTER>(
             packed_pre,
             next_update_list,
@@ -711,108 +778,101 @@ impl GateNetwork {
             packed_outputs,
         );
 
-        //for gate_ids in packed_simd {
-        //    Self::update_gates_in_list::<ASSUME_CLUSTER>(
-        //        &gate_ids.to_array(),
-        //        next_update_list,
-        //        acc,
-        //        state,
-        //        in_update_list,
-        //        gate_kinds,
-        //        gate_flags,
-        //        gate_flag_xor,
-        //        gate_flag_inverted,
-        //        packed_output_indexes,
-        //        packed_outputs,
-        //    );
-        //}
-        //return;
-        //
-        //
-
         for gate_ids in packed_simd {
-            let gate_ids_cast = gate_ids.cast();
+            Self::update_gates_in_list::<ASSUME_CLUSTER>(
+                gate_ids.as_array(),
+                next_update_list,
+                acc,
+                state,
+                in_update_list,
+                gate_kinds,
+                gate_flags,
+                gate_flag_xor,
+                gate_flag_inverted,
+                packed_output_indexes,
+                packed_outputs,
+            );
+        }
+
+        for id_simd in packed_simd {
+            // test that gate_ids are unique
+            for id in id_simd.clone().as_array().iter().skip(1) {
+                assert!(*id != id_simd.as_array()[0]);
+            }
+            for id in id_simd.clone().as_array() {
+                assert!(
+                    in_update_list[*id as usize],
+                    "gate {id} updated without being in update list"
+                );
+            }
+
+            let id_simd_c = id_simd.cast();
             let (gate_inverted_simd, gate_xor_simd) = if ASSUME_CLUSTER {
                 (Simd::splat(0), Simd::splat(0))
             } else {
-                unsafe {
-                    (
-                        Simd::gather_select_unchecked(
-                            gate_flag_inverted,
-                            Mask::splat(true),
-                            gate_ids_cast,
-                            Simd::splat(0),
-                        )
-                        .cast(),
-                        Simd::gather_select_unchecked(
-                            gate_flag_xor,
-                            Mask::splat(true),
-                            gate_ids_cast,
-                            Simd::splat(0),
-                        )
-                        .cast(),
-                    )
-                }
-            };
-            let (new_state_simd, state_changed_simd) = unsafe {
-                Gate::evaluate_simd::<LANES, AccTypeInner>(
-                    Simd::gather_select_unchecked(
-                        acc,
+                (
+                    Simd::gather_select(
+                        gate_flag_inverted,
                         Mask::splat(true),
-                        gate_ids_cast,
-                        Simd::splat(0),
+                        id_simd_c,
+                        Simd::splat(255),
                     ),
-                    gate_inverted_simd,
-                    gate_xor_simd,
-                    Simd::gather_select_unchecked(
-                        state,
+                    Simd::gather_select(
+                        gate_flag_xor,
                         Mask::splat(true),
-                        gate_ids_cast,
-                        Simd::splat(0),
-                    )
-                    .cast(),
+                        id_simd_c,
+                        Simd::splat(255),
+                    ),
                 )
             };
-            //for (i, (id, state)) in gate_ids
-            //    .to_array()
-            //    .into_iter()
-            //    .map(|id| id as usize)
-            //    .zip(new_state_simd.to_array())
-            //    .enumerate()
-            //{
-            //    let other_state = Gate::evaluate(acc[id], gate_kinds[id]);
-            //    assert_eq!(
-            //        state, other_state as u32,
-            //        "id: {id:?}, gate: {:?}, acc {:?}, xor: {:?}, inv: {:?},  i: {i:?}",
-            //        gate_kinds[id], acc[id], gate_flag_xor[id], gate_flag_inverted[id]
-            //    );
-            //}
+
+            for (xor_flag, inverted_flag) in gate_xor_simd
+                .as_array()
+                .iter()
+                .zip(gate_inverted_simd.as_array())
+            {
+                assert!(*xor_flag != 255);
+                assert!(*inverted_flag != 255);
+            }
+            let acc_simd = Simd::gather_select(acc, Mask::splat(true), id_simd_c, Simd::splat(0));
+            let state_simd = Simd::gather_select(state, Mask::splat(true), id_simd_c, Simd::splat(0));
+            let (new_state_simd, state_changed_simd) = {
+                Gate::evaluate_simd::<LANES>(
+                    acc_simd,
+                    gate_inverted_simd,
+                    gate_xor_simd,
+                    state_simd,
+                )
+            };
 
             // 0 -> -1, 1 -> 1
-            let delta_simd = (new_state_simd + new_state_simd) - Simd::splat(1);
+            //let delta_simd = (new_state_simd + new_state_simd) - Simd::splat(1);
 
             // new state can be written immediately with simd
             // this will write unconditionally, but maybe it would be better
             // to only write if state actually changed.
-            unsafe {
-                new_state_simd.cast().scatter_select_unchecked(
-                    state,
-                    Mask::splat(true),
-                    gate_ids_cast,
-                );
-            }
+            new_state_simd
+                .cast()
+                .scatter_select(state, Mask::splat(true), id_simd_c);
 
             // handle outputs (SIMD does not work well here)
-            for ((id, delta), state_changed) in gate_ids
+            for ((id, next_state), state_changed) in id_simd
                 .to_array()
                 .into_iter()
                 .map(|id| id as usize)
-                .zip(delta_simd.to_array().into_iter())
+                .zip(new_state_simd.to_array().into_iter())
+                //.zip(delta_simd.to_array().into_iter())
                 .zip(state_changed_simd.to_array().into_iter())
             {
                 if state_changed != 0 {
                     let from_index = *unsafe { packed_output_indexes.get_unchecked(id) };
                     let to_index = *unsafe { packed_output_indexes.get_unchecked(id + 1) };
+
+                    let delta: AccType = if next_state != 0 {
+                        1 as AccTypeInner
+                    } else {
+                        (0 as AccTypeInner).wrapping_sub(1 as AccTypeInner)
+                    };
 
                     for output_id in unsafe {
                         packed_outputs.get_unchecked(from_index as usize..to_index as usize)

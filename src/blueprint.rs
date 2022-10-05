@@ -1,8 +1,8 @@
 // blueprint.rs: parsing VCB blueprints
 #![allow(clippy::upper_case_acronyms)]
+use crate::logic::{GateNetwork, GateType};
 use colored::Colorize;
 use std::collections::BTreeSet;
-use crate::logic::{GateNetwork, GateType};
 
 #[derive(Debug, PartialEq, Eq)]
 enum Layer {
@@ -23,16 +23,18 @@ impl FooterInfo {
         FooterInfo {
             width: footer.width.try_into().unwrap(),
             height: footer.height.try_into().unwrap(),
-            count: (footer.width*footer.height).try_into().unwrap(),
+            count: (footer.width * footer.height).try_into().unwrap(),
             layer: match footer.layer {
-                 65_536 => Layer::Logic,
+                65_536 => Layer::Logic,
                 131_072 => Layer::On,
                 262_144 => Layer::Off,
-                _       => panic!(),
-            }
+                _ => panic!(),
+            },
         }
     }
 }
+
+#[non_exhaustive]
 #[derive(Debug, PartialEq, Clone, Copy)]
 enum Trace {
     Gray,
@@ -108,14 +110,48 @@ impl Trace {
             [255, 255, 255, 255] => Trace::Led,
             [58,  69,  81,  255] => Trace::Annotation,
             [140, 171, 161, 255] => Trace::Filler,
-            _                    => panic!("Invalid trace color"),
+            _ => panic!("Invalid trace color"),
         }
     }
     fn is_wire(self) -> bool {
-        matches!(self, Trace::Gray | Trace::White | Trace::Red | Trace::Orange1 | Trace::Orange2 | Trace::Orange3 | Trace::Yellow | Trace::Green1 | Trace::Green2 | Trace::Cyan1 | Trace::Cyan2 | Trace::Blue1 | Trace::Blue2 | Trace::Purple | Trace::Magenta | Trace::Pink | Trace::Read | Trace::Write)
+        matches!(
+            self,
+            Trace::Gray
+                | Trace::White
+                | Trace::Red
+                | Trace::Orange1
+                | Trace::Orange2
+                | Trace::Orange3
+                | Trace::Yellow
+                | Trace::Green1
+                | Trace::Green2
+                | Trace::Cyan1
+                | Trace::Cyan2
+                | Trace::Blue1
+                | Trace::Blue2
+                | Trace::Purple
+                | Trace::Magenta
+                | Trace::Pink
+                | Trace::Read
+                | Trace::Write
+        )
     }
     fn is_gate(self) -> bool {
-        matches!(self, Trace::Buffer | Trace::And | Trace::Or | Trace::Xor | Trace::Not | Trace::Nand | Trace::Nor | Trace::Xnor | Trace::LatchOn | Trace::LatchOff | Trace::Clock | Trace::Led)
+        matches!(
+            self,
+            Trace::Buffer
+                | Trace::And
+                | Trace::Or
+                | Trace::Xor
+                | Trace::Not
+                | Trace::Nand
+                | Trace::Nor
+                | Trace::Xnor
+                | Trace::LatchOn
+                | Trace::LatchOff
+                | Trace::Clock
+                | Trace::Led
+        )
     }
     fn is_logic(self) -> bool {
         self.is_wire() || self.is_gate()
@@ -128,17 +164,16 @@ impl Trace {
     fn to_gate(self) -> GateType {
         if self.is_wire() {
             GateType::Cluster
-        }
-        else {
+        } else {
             match self {
                 Trace::Buffer | Trace::Or | Trace::Led => GateType::Or,
-                Trace::Not | Trace::Nor                => GateType::Nor,
-                Trace::And                             => GateType::And,
-                Trace::Nand                            => GateType::Nand,
-                Trace::Xor | Trace::LatchOff           => GateType::Xor,
-                Trace::Xnor | Trace::LatchOn           => GateType::Xnor,
-                _                                      => panic!("unsupported logic trace: {self:?}"),
-            } 
+                Trace::Not | Trace::Nor => GateType::Nor,
+                Trace::And => GateType::And,
+                Trace::Nand => GateType::Nand,
+                Trace::Xor | Trace::LatchOff => GateType::Xor,
+                Trace::Xnor | Trace::LatchOn => GateType::Xnor,
+                _ => panic!("unsupported logic trace: {self:?}"),
+            }
         }
     }
 }
@@ -150,11 +185,15 @@ impl Trace {
 struct BoardElement {
     color: [u8; 4],
     kind: Trace,
-    id: Option<usize>, 
+    id: Option<usize>,
 }
 impl BoardElement {
     fn new(color: &[u8]) -> Self {
-        BoardElement {color: color.try_into().unwrap(), kind: Trace::from_color(color), id: None}
+        BoardElement {
+            color: color.try_into().unwrap(),
+            kind: Trace::from_color(color),
+            id: None,
+        }
     }
     fn print(&self, board: &VcbBoard, _i: usize) {
         let mut brfac: u32 = 100;
@@ -162,7 +201,7 @@ impl BoardElement {
             if let Some(id) = board.nodes[t].network_id {
                 if board.network.get_state(id) {
                     brfac = 255;
-                }; 
+                };
                 //match board.nodes[t].kind {
                 //    GateType::AND => format!(" A"),
                 //    GateType::NAND => format!("NA"),
@@ -173,13 +212,27 @@ impl BoardElement {
                 //    GateType::CLUSTER => format!(" C"),
                 //}
                 //format!("{:>2}",t%100)
-                format!("{:>2}",t%100)
-            } else {format!("{:>2}",t%100)}
-        } else {"  ".to_string()};
-        print!("{}", tmpstr.on_truecolor(
-            ((u32::from(self.color[0]) * brfac) / 255).try_into().unwrap(),
-            ((u32::from(self.color[1]) * brfac) / 255).try_into().unwrap(),
-            ((u32::from(self.color[2]) * brfac) / 255).try_into().unwrap()));
+                format!("{:>2}", t % 100)
+            } else {
+                format!("{:>2}", t % 100)
+            }
+        } else {
+            "  ".to_string()
+        };
+        print!(
+            "{}",
+            tmpstr.on_truecolor(
+                ((u32::from(self.color[0]) * brfac) / 255)
+                    .try_into()
+                    .unwrap(),
+                ((u32::from(self.color[1]) * brfac) / 255)
+                    .try_into()
+                    .unwrap(),
+                ((u32::from(self.color[2]) * brfac) / 255)
+                    .try_into()
+                    .unwrap()
+            )
+        );
     }
 }
 /// Represents one gate or trace
@@ -192,7 +245,12 @@ struct BoardNode {
 }
 impl BoardNode {
     fn new(trace: Trace) -> Self {
-        BoardNode {inputs: BTreeSet::new(), outputs: BTreeSet::new(), kind: trace.to_gate(), network_id: None}
+        BoardNode {
+            inputs: BTreeSet::new(),
+            outputs: BTreeSet::new(),
+            kind: trace.to_gate(),
+            network_id: None,
+        }
     }
 }
 
@@ -200,7 +258,7 @@ impl BoardNode {
 pub struct VcbBoard {
     elements: Vec<BoardElement>,
     nodes: Vec<BoardNode>,
-    network: GateNetwork, //TODO
+    pub network: GateNetwork, //TODO
     width: usize,
     height: usize,
 }
@@ -215,28 +273,28 @@ impl VcbBoard {
                 Some(node_id) => match self.nodes[node_id].network_id {
                     None => false,
                     Some(id) => self.network.get_state(id),
-                }
+                },
             });
-        };
+        }
         a
     }
-    //#[inline(always)] //<- makes stuff act weird.
+    #[inline(always)] //<- makes stuff act weird.
     pub fn update(&mut self) {
         self.network.update();
     }
-    fn new(data: &[u8], width: usize, height: usize) -> Self {
-        let num_elements = width*height;
+    fn new(data: &[u8], width: usize, height: usize, optimize: bool) -> Self {
+        let num_elements = width * height;
         let mut elements = Vec::with_capacity(num_elements);
 
-        for i in 0..width*height {
-            elements.push(BoardElement::new(&data[i*4..i*4+4])); 
+        for i in 0..width * height {
+            elements.push(BoardElement::new(&data[i * 4..i * 4 + 4]));
         }
-        let mut board = VcbBoard{
+        let mut board = VcbBoard {
             elements,
             nodes: Vec::new(),
             width,
             height,
-            network: GateNetwork::default()
+            network: GateNetwork::default(),
         };
         let mut counter = 0;
         for x in 0..num_elements {
@@ -249,31 +307,40 @@ impl VcbBoard {
         // add edges to network
         for i in 0..board.nodes.len() {
             let node = &board.nodes[i];
-            for input in &node.inputs{
+            for input in &node.inputs {
                 assert!(board.nodes[*input].outputs.contains(&i));
             }
-            let mut inputs: Vec<usize> = node.inputs.clone().into_iter().map(|x| board.nodes[x].network_id.unwrap()).collect();
+            let mut inputs: Vec<usize> = node
+                .inputs
+                .clone()
+                .into_iter()
+                .map(|x| board.nodes[x].network_id.unwrap())
+                .collect();
             inputs.sort_unstable();
             inputs.dedup();
-            board.network.add_inputs(
-                node.kind,
-                node.network_id.unwrap(),
-                inputs,
-                );
+            board
+                .network
+                .add_inputs(node.kind, node.network_id.unwrap(), inputs);
         }
-        board.network.init_network();
-        
+        board.network.init_network(optimize);
+
         // TODO: terminal buffer
         board
     }
-    fn add_connection(&mut self, connection: (usize,usize), swp_dir: bool) {
-        let (start, end) = if swp_dir {(connection.1,connection.0)} else {connection};
+    fn add_connection(&mut self, connection: (usize, usize), swp_dir: bool) {
+        let (start, end) = if swp_dir {
+            (connection.1, connection.0)
+        } else {
+            connection
+        };
         assert!(start != end);
         let a = self.nodes[start].inputs.insert(end);
         let b = self.nodes[end].outputs.insert(start);
         assert!(a == b);
-        assert_ne!((self.nodes[start].kind == GateType::Cluster),
-                   (self.nodes[end].  kind == GateType::Cluster));
+        assert_ne!(
+            (self.nodes[start].kind == GateType::Cluster),
+            (self.nodes[end].kind == GateType::Cluster)
+        );
         //if a {println!("connect: {start}, {end}");}
     }
 
@@ -286,21 +353,28 @@ impl VcbBoard {
         assert!(this_kind.is_logic());
         match this.id {
             None => this.id = Some(id),
-            Some(this_id) => {assert_eq!(this_id, id); return},
+            Some(this_id) => {
+                assert_eq!(this_id, id);
+                return;
+            },
         }
         let width: i32 = self.width.try_into().unwrap();
-        'side: for dx in [1,-1,width, -width] {
-            'forward: for ddx in [1,2] {
+        'side: for dx in [1, -1, width, -width] {
+            'forward: for ddx in [1, 2] {
                 //TODO: handle wrapping
-                let other_x = this_x + dx*ddx;
-                let other_kind = unwrap_or_else!(self.elements.get(other_x as usize), continue 'side).kind;
-                if other_kind == Trace::Cross {continue 'forward}
-                if !other_kind.is_same_as(this_kind) {continue 'side}
+                let other_x = this_x + dx * ddx;
+                let other_kind =
+                    unwrap_or_else!(self.elements.get(other_x as usize), continue 'side).kind;
+                if other_kind == Trace::Cross {
+                    continue 'forward;
+                }
+                if !other_kind.is_same_as(this_kind) {
+                    continue 'side;
+                }
                 self.fill_id(other_x, id);
                 continue 'side;
             }
         }
-        
     }
     // Connect gate with immediate neighbor
     // pre: this is gate, this_x valid, this has id.
@@ -311,7 +385,7 @@ impl VcbBoard {
         assert!(this.id.is_some());
 
         let width: i32 = self.width.try_into().unwrap();
-        'side: for dx in [1,-1,width, -width] {
+        'side: for dx in [1, -1, width, -width] {
             //TODO: handle wrapping
             let other_x = this_x + dx;
             let other = unwrap_or_else!(self.elements.get(other_x as usize), continue 'side);
@@ -321,10 +395,8 @@ impl VcbBoard {
                 Trace::Write => true,
                 _ => continue,
             };
-            let other_id = unwrap_or_else!(other.id, {
-                self.add_new_id(other_x, id_counter)
-            });
-            self.add_connection((this_id, other_id), dir); 
+            let other_id = unwrap_or_else!(other.id, { self.add_new_id(other_x, id_counter) });
+            self.add_connection((this_id, other_id), dir);
         }
     }
 
@@ -339,35 +411,37 @@ impl VcbBoard {
 
         // fill with this_id
         self.fill_id(this_x, this_id);
-        this_id  
+        this_id
     }
 
     // this HAS to be recursive since gates have arbitrary shapes.
     fn explore(&mut self, this_x: i32, id_counter: &mut usize) {
         // if prev_id is Some, merge should be done.
         // don't merge if id already exists, since that wouldn't make sense
-        
+
         // all here is correct
         let this = &self.elements[TryInto::<usize>::try_into(this_x).unwrap()];
         let this_kind = this.kind;
 
-        if !this.kind.is_logic() {return}
+        if !this.kind.is_logic() {
+            return;
+        }
 
-        let this_id = unwrap_or_else!(this.id, {
-            self.add_new_id(this_x, id_counter)
-        });
+        let this_id = unwrap_or_else!(this.id, { self.add_new_id(this_x, id_counter) });
 
         assert!(this_kind.is_logic());
-        if !this_kind.is_gate() {return}
+        if !this_kind.is_gate() {
+            return;
+        }
 
         self.connect_id(this_x, this_id, id_counter);
     }
 
     pub fn print(&self) {
         println!("\nBoard:");
-        for y in 0..self.height{
+        for y in 0..self.height {
             for x in 0..self.width {
-                let i = x+y*self.width;
+                let i = x + y * self.width;
                 self.elements[i].print(self, i);
             }
             println!();
@@ -397,16 +471,19 @@ impl Parser {
     /// # Panics
     /// invalid base64 string, invalid zstd, invalid colors
     #[must_use]
-    pub fn parse(data: &str) -> VcbBoard {
+    pub fn parse(data: &str, optimize: bool) -> VcbBoard {
         let bytes = base64::decode_config(data.trim(), base64::STANDARD).unwrap();
-        let data_bytes = &bytes[..bytes.len()-Footer::SIZE];
-        let footer_bytes: [u8; Footer::SIZE] = bytes[bytes.len()-Footer::SIZE..bytes.len()].try_into().unwrap();
-        let footer = FooterInfo::new(&unsafe { std::mem::transmute::<[u8; Footer::SIZE], Footer>(footer_bytes) });
+        let data_bytes = &bytes[..bytes.len() - Footer::SIZE];
+        let footer_bytes: [u8; Footer::SIZE] = bytes[bytes.len() - Footer::SIZE..bytes.len()]
+            .try_into()
+            .unwrap();
+        let footer = FooterInfo::new(&unsafe {
+            std::mem::transmute::<[u8; Footer::SIZE], Footer>(footer_bytes)
+        });
         assert!(footer.layer == Layer::Logic);
         let data = zstd::bulk::decompress(data_bytes, 1 << 32).unwrap();
         assert!(!data.is_empty());
-        assert!(data.len() == footer.count*4);
-        VcbBoard::new(&data, footer.width, footer.height)
+        assert!(data.len() == footer.count * 4);
+        VcbBoard::new(&data, footer.width, footer.height, optimize)
     }
 }
-

@@ -1,9 +1,16 @@
+
+#![feature(bench_black_box)]
 use criterion::{criterion_group, criterion_main, Criterion};
 
 use logic_simulator::blueprint::*;
 
 fn criterion_benchmark(c: &mut Criterion) {
     // Test parsing speed and execution speed for this list of blueprints.
+    
+    // hopefully this works at all times.
+    fn black_box<T>(data: T) -> T {
+        criterion::black_box(std::hint::black_box(data))
+    }
     let tests = vec![
         ("intro", include_str!("../test_files/intro.blueprint")),
         (
@@ -19,21 +26,26 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut pre_parsed: Vec<(&str, VcbBoard)> = tests
         .clone()
         .into_iter()
-        .map(|x| (x.0, Parser::parse(x.1)))
+        .map(|x| (x.0, black_box(Parser::parse(x.1, true))))
         .collect();
+    pre_parsed = black_box(pre_parsed);
 
     let mut c_run = c.benchmark_group("run");
     for pre in pre_parsed.iter() {
         pre.1.print(); // make sure optimizer does not remove everything
     }
     for pre in pre_parsed.iter_mut() {
-        c_run.bench_function(pre.0, |b| b.iter(|| pre.1.update()));
+        c_run.bench_function(pre.0, |b| {
+            b.iter(|| {
+                pre.1.update()
+            })
+        });
     }
     for pre in pre_parsed.iter() {
+        println!("{}", pre.1.network.iterations);
         pre.1.print(); // make sure optimizer does not remove everything
     }
     c_run.finish();
-    //use criterion::black_box;
     //let mut c_parse = c.benchmark_group("parse");
     //for test in tests {
     //c_parse.bench_function(
