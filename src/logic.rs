@@ -277,6 +277,7 @@ impl Network {
     }
 
     /// Create input connections for the new gates, given the old gates.
+    /// O(n)
     fn create_input_connections(
         new_gates: &mut Vec<Gate>,
         old_gates: &Vec<Gate>,
@@ -321,6 +322,7 @@ impl Network {
     }
 
     /// Create output connections from current input connections
+    /// O(n)
     fn create_output_connections(new_gates: &mut Vec<Gate>) {
         for gate_id in 0..new_gates.len() {
             let gate = &new_gates[gate_id];
@@ -336,6 +338,7 @@ impl Network {
 
     /// Create a new merged set of nodes based on the old nodes
     /// and a translation back to the old ids.
+    /// O(n)
     fn create_nodes_optimized_from(old_gates: &Vec<Gate>) -> (Vec<Gate>, Vec<IndexType>) {
         let mut new_gates: Vec<Gate> = Vec::new();
         let mut old_to_new_id: Vec<IndexType> = Vec::new();
@@ -366,6 +369,7 @@ impl Network {
 
     /// Create translation that combines the old and new translation
     /// from outside facing ids to nodes
+    /// O(n)
     fn create_translation_table(
         old_translation_table: &Vec<IndexType>,
         old_to_new_id: &Vec<IndexType>,
@@ -420,6 +424,7 @@ impl Network {
 pub struct GateNetwork {
     network: Network,
 
+    //TODO: overlapping outputs/indexes
     packed_outputs: Vec<IndexType>,
     packed_output_indexes: Vec<IndexType>,
 
@@ -744,7 +749,7 @@ impl GateNetwork {
         if update_list.len() == 0 {
             return;
         }
-        const LANES: usize = 2; //16; //16; //TODO: optimize
+        const LANES: usize = 16; //16; //16; //TODO: optimize
 
         let (packed_pre, packed_simd, packed_suf): (
             &[IndexType],
@@ -778,23 +783,26 @@ impl GateNetwork {
             packed_outputs,
         );
 
-        for gate_ids in packed_simd {
-            Self::update_gates_in_list::<ASSUME_CLUSTER>(
-                gate_ids.as_array(),
-                next_update_list,
-                acc,
-                state,
-                in_update_list,
-                gate_kinds,
-                gate_flags,
-                gate_flag_xor,
-                gate_flag_inverted,
-                packed_output_indexes,
-                packed_outputs,
-            );
-        }
+        //for gate_ids in packed_simd {
+        //    Self::update_gates_in_list::<ASSUME_CLUSTER>(
+        //        gate_ids.as_array(),
+        //        next_update_list,
+        //        acc,
+        //        state,
+        //        in_update_list,
+        //        gate_kinds,
+        //        gate_flags,
+        //        gate_flag_xor,
+        //        gate_flag_inverted,
+        //        packed_output_indexes,
+        //        packed_outputs,
+        //    );
+        //}
+        //return;
 
         for id_simd in packed_simd {
+
+            
             // test that gate_ids are unique
             for id in id_simd.clone().as_array().iter().skip(1) {
                 assert!(*id != id_simd.as_array()[0]);
