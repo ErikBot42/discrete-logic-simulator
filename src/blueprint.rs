@@ -278,7 +278,11 @@ impl VcbBoard {
         }
         a
     }
-    #[inline(always)] //<- makes stuff act weird.
+    #[inline(always)] 
+    pub fn update_simd(&mut self) {
+        self.network.update_simd();
+    }
+    #[inline(always)]
     pub fn update(&mut self) {
         self.network.update();
     }

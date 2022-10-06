@@ -783,37 +783,7 @@ impl GateNetwork {
             packed_outputs,
         );
 
-        //for gate_ids in packed_simd {
-        //    Self::update_gates_in_list::<ASSUME_CLUSTER>(
-        //        gate_ids.as_array(),
-        //        next_update_list,
-        //        acc,
-        //        state,
-        //        in_update_list,
-        //        gate_kinds,
-        //        gate_flags,
-        //        gate_flag_xor,
-        //        gate_flag_inverted,
-        //        packed_output_indexes,
-        //        packed_outputs,
-        //    );
-        //}
-        //return;
-
         for id_simd in packed_simd {
-
-            
-            // test that gate_ids are unique
-            for id in id_simd.clone().as_array().iter().skip(1) {
-                assert!(*id != id_simd.as_array()[0]);
-            }
-            for id in id_simd.clone().as_array() {
-                assert!(
-                    in_update_list[*id as usize],
-                    "gate {id} updated without being in update list"
-                );
-            }
-
             let id_simd_c = id_simd.cast();
             let (gate_inverted_simd, gate_xor_simd) = if ASSUME_CLUSTER {
                 (Simd::splat(0), Simd::splat(0))
@@ -834,14 +804,6 @@ impl GateNetwork {
                 )
             };
 
-            for (xor_flag, inverted_flag) in gate_xor_simd
-                .as_array()
-                .iter()
-                .zip(gate_inverted_simd.as_array())
-            {
-                assert!(*xor_flag != 255);
-                assert!(*inverted_flag != 255);
-            }
             let acc_simd = Simd::gather_select(acc, Mask::splat(true), id_simd_c, Simd::splat(0));
             let state_simd = Simd::gather_select(state, Mask::splat(true), id_simd_c, Simd::splat(0));
             let (new_state_simd, state_changed_simd) = {
@@ -854,7 +816,7 @@ impl GateNetwork {
             };
 
             // 0 -> -1, 1 -> 1
-            //let delta_simd = (new_state_simd + new_state_simd) - Simd::splat(1);
+            let delta_simd = (new_state_simd + new_state_simd) - Simd::splat(1);
 
             // new state can be written immediately with simd
             // this will write unconditionally, but maybe it would be better
@@ -864,23 +826,23 @@ impl GateNetwork {
                 .scatter_select(state, Mask::splat(true), id_simd_c);
 
             // handle outputs (SIMD does not work well here)
-            for ((id, next_state), state_changed) in id_simd
+            for (((id, next_state),delta), state_changed) in id_simd
                 .to_array()
                 .into_iter()
                 .map(|id| id as usize)
                 .zip(new_state_simd.to_array().into_iter())
-                //.zip(delta_simd.to_array().into_iter())
+                .zip(delta_simd.to_array().into_iter())
                 .zip(state_changed_simd.to_array().into_iter())
             {
                 if state_changed != 0 {
                     let from_index = *unsafe { packed_output_indexes.get_unchecked(id) };
                     let to_index = *unsafe { packed_output_indexes.get_unchecked(id + 1) };
 
-                    let delta: AccType = if next_state != 0 {
-                        1 as AccTypeInner
-                    } else {
-                        (0 as AccTypeInner).wrapping_sub(1 as AccTypeInner)
-                    };
+                    //let delta: AccType = if next_state != 0 {
+                    //    1 as AccTypeInner
+                    //} else {
+                    //    (0 as AccTypeInner).wrapping_sub(1 as AccTypeInner)
+                    //};
 
                     for output_id in unsafe {
                         packed_outputs.get_unchecked(from_index as usize..to_index as usize)

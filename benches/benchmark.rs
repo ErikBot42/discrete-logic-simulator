@@ -37,7 +37,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     for pre in pre_parsed.iter_mut() {
         c_run.bench_function(pre.0, |b| {
             b.iter(|| {
-                pre.1.update()
+                pre.1.update_simd()
             })
         });
     }
