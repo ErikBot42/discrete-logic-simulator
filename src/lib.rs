@@ -24,21 +24,22 @@ mod tests {
 
     fn prep_cases(optimize: bool) -> Vec<(&'static str, VcbBoard)> {
         let cases: Vec<(&str, &str)> = vec![
-            //("intro", include_str!("../test_files/intro.blueprint")),
-            //(
-            //    "bcd_count",
-            //    include_str!("../test_files/bcd_count.blueprint"),
-            //),
-            //(
-            //    "big_decoder",
-            //    include_str!("../test_files/big_decoder.blueprint"),
-            //),
             ("gates", include_str!("../test_files/gates.blueprint")),
+            (
+                "big_decoder",
+                include_str!("../test_files/big_decoder.blueprint"),
+            ),
+            ("intro", include_str!("../test_files/intro.blueprint")),
+            (
+                "bcd_count",
+                include_str!("../test_files/bcd_count.blueprint"),
+            ),
         ];
-        cases.clone()
-        .into_iter()
-        .map(|x| (x.0, Parser::parse(x.1, optimize)))
-        .collect::<Vec<(&str, VcbBoard)>>()
+        cases
+            .clone()
+            .into_iter()
+            .map(|x| (x.0, Parser::parse(x.1, optimize)))
+            .collect::<Vec<(&str, VcbBoard)>>()
     }
 
     #[test]
@@ -48,7 +49,7 @@ mod tests {
         for ((name, mut unoptimized), (_, mut optimized)) in
             unoptimized.into_iter().zip(optimized.into_iter())
         {
-            for i in 0..100 {
+            for i in 0..1000 {
                 assert_eq!(
                     unoptimized.make_state_vec(),
                     optimized.make_state_vec(),
@@ -60,22 +61,45 @@ mod tests {
         }
     }
 
-    fn simd_test(optimized: bool) {
+    fn simd_test(optimized: bool) -> bool{
         let optimized_board = prep_cases(optimized);
         let optimized_simd = prep_cases(optimized);
+        let mut correct: bool = true;
         for ((name, mut optimized), (_, mut optimized_simd)) in
             optimized_board.into_iter().zip(optimized_simd.into_iter())
         {
-            for i in 0..100 {
+            let width = optimized.width;
+            for i in 0..30 {
                 let optimized_state = optimized.make_state_vec();
                 let optimized_state_simd = optimized_simd.make_state_vec();
-                for (j, (optim_bool, optim_bool_simd)) in optimized_state
-                    .iter()
-                    .zip(optimized_state_simd.iter())
+                let diff_ids: Vec<usize> = optimized_state
+                    .into_iter()
+                    .zip(optimized_state_simd)
                     .enumerate()
-                {
-                    assert_eq!(optim_bool, optim_bool_simd, "simd/non simd mismatch for test {name}, in iteration {i} at position {j}");
-                };
+                    .filter(|(_, (optim_bool, optim_bool_simd))| optim_bool != optim_bool_simd)
+                    //.map(|(j, (_, _))| (j%width, j/width))
+                    .map(|(j, (_, _))| j)
+                    .collect();
+                if diff_ids.len() != 0 {
+                    //println!("Scalar:");
+                    //optimized.print();
+                    //println!("SIMD:");
+                    //optimized_simd.print();
+                    optimized.print_marked(&diff_ids);
+                    println!("simd/non simd mismatch for test {name}, in iteration {i} at positions {diff_ids:?}");
+                    correct = false;
+                    break;
+                }
+                //for (j, (optim_bool, optim_bool_simd)) in optimized_state
+                //    .iter()
+                //    .zip(optimized_state_simd.iter())
+                //    .enumerate()
+                //{
+                //    assert_eq!(
+                //        optim_bool, optim_bool_simd,
+                //        "simd/non simd mismatch for test {name}, in iteration {i} at position {j}"
+                //    );
+                //}
                 //assert_eq!(
                 //    optimized.make_state_vec().into_iter().map(|x| x as u8).collect::<Vec<u8>>(),
                 //    optimized_simd.make_state_vec().into_iter().map(|x| x as u8).collect::<Vec<u8>>(),
@@ -84,16 +108,27 @@ mod tests {
                 optimized.update();
             }
         }
+        correct
     }
 
     #[test]
     fn simd_regression_test_unoptimized() {
-        simd_test(false);
+        assert!(simd_test(false));
     }
 
     #[test]
     fn simd_regression_test_optimized() {
-        simd_test(true);
+        assert!(simd_test(true));
+    }
+
+    #[test]
+    fn simd_repeated() {
+        let mut correct: bool = true;
+        for _ in 0..10 {
+            correct &= simd_test(true);
+            correct &= simd_test(false);
+        }
+        assert!(correct);
     }
 
     #[test]
@@ -146,6 +181,34 @@ mod tests {
                 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0,
                 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0,
+                0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            ]
+            .iter()
+            .map(|x| *x != 0)
+            .collect::<Vec<bool>>()
+        );
+        board.update();
+        assert_eq!(
+            board.make_state_vec(),
+            [
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                1, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+                1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1,
+                0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0,
+                1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1,
+                0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
+                0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0,
+                1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0,
+                0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
+                0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1,
                 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0,
                 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0

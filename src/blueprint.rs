@@ -76,39 +76,39 @@ impl Trace {
     fn from_color(color: &[u8]) -> Self {
         let color: [u8; 4] = color.try_into().unwrap();
         match color {
-            [42,  53,  65,  255] => Trace::Gray,
+            [42, 53, 65, 255] => Trace::Gray,
             [159, 168, 174, 255] => Trace::White,
-            [161, 85,  94,  255] => Trace::Red,
-            [161, 108, 86,  255] => Trace::Orange1,
-            [161, 133, 86,  255] => Trace::Orange2,
-            [161, 152, 86,  255] => Trace::Orange3,
-            [153, 161, 86,  255] => Trace::Yellow,
-            [136, 161, 86,  255] => Trace::Green1,
-            [108, 161, 86,  255] => Trace::Green2,
-            [86,  161, 141, 255] => Trace::Cyan1,
-            [86,  147, 161, 255] => Trace::Cyan2,
-            [86,  123, 161, 255] => Trace::Blue1,
-            [86,  98,  161, 255] => Trace::Blue2,
-            [102, 86,  161, 255] => Trace::Purple,
-            [135, 86,  161, 255] => Trace::Magenta,
-            [161, 85,  151, 255] => Trace::Pink,
-            [77,  56,  62,  255] => Trace::Write,
-            [0,   0,   0,   0  ] => Trace::Empty,
+            [161, 85, 94, 255] => Trace::Red,
+            [161, 108, 86, 255] => Trace::Orange1,
+            [161, 133, 86, 255] => Trace::Orange2,
+            [161, 152, 86, 255] => Trace::Orange3,
+            [153, 161, 86, 255] => Trace::Yellow,
+            [136, 161, 86, 255] => Trace::Green1,
+            [108, 161, 86, 255] => Trace::Green2,
+            [86, 161, 141, 255] => Trace::Cyan1,
+            [86, 147, 161, 255] => Trace::Cyan2,
+            [86, 123, 161, 255] => Trace::Blue1,
+            [86, 98, 161, 255] => Trace::Blue2,
+            [102, 86, 161, 255] => Trace::Purple,
+            [135, 86, 161, 255] => Trace::Magenta,
+            [161, 85, 151, 255] => Trace::Pink,
+            [77, 56, 62, 255] => Trace::Write,
+            [0, 0, 0, 0] => Trace::Empty,
             [102, 120, 142, 255] => Trace::Cross,
-            [46,  71,  93,  255] => Trace::Read,
-            [146, 255, 99,  255] => Trace::Buffer,
-            [255, 198, 99,  255] => Trace::And,
-            [99,  242, 255, 255] => Trace::Or,
+            [46, 71, 93, 255] => Trace::Read,
+            [146, 255, 99, 255] => Trace::Buffer,
+            [255, 198, 99, 255] => Trace::And,
+            [99, 242, 255, 255] => Trace::Or,
             [174, 116, 255, 255] => Trace::Xor,
-            [255, 98,  138, 255] => Trace::Not,
-            [255, 162, 0,   255] => Trace::Nand,
-            [48,  217, 255, 255] => Trace::Nor,
-            [166, 0,   255, 255] => Trace::Xnor,
-            [99,  255, 159, 255] => Trace::LatchOn,
-            [56,  77,  71,  255] => Trace::LatchOff,
-            [255, 0,   65,  255] => Trace::Clock,
+            [255, 98, 138, 255] => Trace::Not,
+            [255, 162, 0, 255] => Trace::Nand,
+            [48, 217, 255, 255] => Trace::Nor,
+            [166, 0, 255, 255] => Trace::Xnor,
+            [99, 255, 159, 255] => Trace::LatchOn,
+            [56, 77, 71, 255] => Trace::LatchOff,
+            [255, 0, 65, 255] => Trace::Clock,
             [255, 255, 255, 255] => Trace::Led,
-            [58,  69,  81,  255] => Trace::Annotation,
+            [58, 69, 81, 255] => Trace::Annotation,
             [140, 171, 161, 255] => Trace::Filler,
             _ => panic!("Invalid trace color"),
         }
@@ -195,7 +195,7 @@ impl BoardElement {
             id: None,
         }
     }
-    fn print(&self, board: &VcbBoard, _i: usize) {
+    fn print(&self, board: &VcbBoard, _i: usize, marked: bool) {
         let mut brfac: u32 = 100;
         let tmpstr = if let Some(t) = self.id {
             if let Some(id) = board.nodes[t].network_id {
@@ -219,20 +219,24 @@ impl BoardElement {
         } else {
             "  ".to_string()
         };
-        print!(
-            "{}",
-            tmpstr.on_truecolor(
-                ((u32::from(self.color[0]) * brfac) / 255)
-                    .try_into()
-                    .unwrap(),
-                ((u32::from(self.color[1]) * brfac) / 255)
-                    .try_into()
-                    .unwrap(),
-                ((u32::from(self.color[2]) * brfac) / 255)
-                    .try_into()
-                    .unwrap()
+        if marked {
+            print!("{}", tmpstr.on_truecolor(255, 0, 0))
+        } else {
+            print!(
+                "{}",
+                tmpstr.on_truecolor(
+                    ((u32::from(self.color[0]) * brfac) / 255)
+                        .try_into()
+                        .unwrap(),
+                    ((u32::from(self.color[1]) * brfac) / 255)
+                        .try_into()
+                        .unwrap(),
+                    ((u32::from(self.color[2]) * brfac) / 255)
+                        .try_into()
+                        .unwrap()
+                )
             )
-        );
+        }
     }
 }
 /// Represents one gate or trace
@@ -259,8 +263,8 @@ pub struct VcbBoard {
     elements: Vec<BoardElement>,
     nodes: Vec<BoardNode>,
     pub network: GateNetwork, //TODO
-    width: usize,
-    height: usize,
+    pub width: usize,
+    pub height: usize,
 }
 impl VcbBoard {
     /// For regression testing
@@ -278,7 +282,7 @@ impl VcbBoard {
         }
         a
     }
-    #[inline(always)] 
+    #[inline(always)]
     pub fn update_simd(&mut self) {
         self.network.update_simd();
     }
@@ -441,12 +445,22 @@ impl VcbBoard {
         self.connect_id(this_x, this_id, id_counter);
     }
 
+    pub fn print_marked(&self, marked: &Vec<usize>) {
+        println!("\nBoard:");
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let i = x + y * self.width;
+                self.elements[i].print(self, i, marked.contains(&i));
+            }
+            println!();
+        }
+    }
     pub fn print(&self) {
         println!("\nBoard:");
         for y in 0..self.height {
             for x in 0..self.width {
                 let i = x + y * self.width;
-                self.elements[i].print(self, i);
+                self.elements[i].print(self, i, false);
             }
             println!();
         }

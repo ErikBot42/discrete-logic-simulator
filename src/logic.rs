@@ -101,9 +101,8 @@ pub(crate) struct Gate {
     acc: AccType,
     state: bool,
     in_update_list: bool,
-    //TODO: "do not merge" flag
+    //TODO: "do not merge" flag for gates that are "volatile", i.e do something with IO
 }
-use std::ops::{BitAnd, BitOr, BitXor, Not};
 impl Gate {
     fn new(kind: GateType, outputs: Vec<IndexType>) -> Self {
         let start_acc = match kind {
@@ -252,7 +251,7 @@ impl RawList {
 }
 
 /// Contains gate graph in order to do network optimization
-/// without mutation.
+/// without the need for mutation.
 #[derive(Debug, Default)]
 struct Network {
     gates: Vec<Gate>,
@@ -629,6 +628,12 @@ impl GateNetwork {
         packed_output_indexes: &[IndexType],
         packed_outputs: &[IndexType],
     ) {
+        //RUSTFLAGS=-Awarnings
+        //
+        //debug_assert!();
+        update_list
+            .iter()
+            .for_each(|x| assert!(in_update_list[*x as usize]));
         if USE_SIMD {
             Self::update_gates_in_list_simd::<ASSUME_CLUSTER>(
                 update_list,
@@ -693,9 +698,9 @@ impl GateNetwork {
             };
 
             //debug_assert!(in_update_list[*id as usize], "{id:?}");
-            let next_state = Gate::evaluate(*unsafe { acc.get_unchecked(id) }, kind);
-            //let next_state =
-            //    Gate::evaluate_from_flags(*unsafe { acc.get_unchecked(id) }, flags);
+            //let next_state = Gate::evaluate(*unsafe { acc.get_unchecked(id) }, kind);
+            let next_state =
+                Gate::evaluate_from_flags(*unsafe { acc.get_unchecked(id) }, flags);
             //let next_state = Gate::evaluate_branchless(*unsafe { acc.get_unchecked(id) }, flags);
             if (*unsafe { state.get_unchecked(id) } != 0) != next_state {
                 let delta: AccType = if next_state {
@@ -749,7 +754,7 @@ impl GateNetwork {
         if update_list.len() == 0 {
             return;
         }
-        const LANES: usize = 16; //16; //16; //TODO: optimize
+        const LANES: usize = 16;//16; //16; //16; //TODO: optimize
 
         let (packed_pre, packed_simd, packed_suf): (
             &[IndexType],
@@ -782,6 +787,22 @@ impl GateNetwork {
             packed_output_indexes,
             packed_outputs,
         );
+        for id_simd in packed_simd {
+            Self::update_gates_in_list::<ASSUME_CLUSTER>(
+                id_simd.as_array(),
+                next_update_list,
+                acc,
+                state,
+                in_update_list,
+                gate_kinds,
+                gate_flags,
+                gate_flag_xor,
+                gate_flag_inverted,
+                packed_output_indexes,
+                packed_outputs,
+            );
+        }
+        return;
 
         for id_simd in packed_simd {
             let id_simd_c = id_simd.cast();
@@ -793,19 +814,20 @@ impl GateNetwork {
                         gate_flag_inverted,
                         Mask::splat(true),
                         id_simd_c,
-                        Simd::splat(255),
+                        Simd::splat(0),
                     ),
                     Simd::gather_select(
                         gate_flag_xor,
                         Mask::splat(true),
                         id_simd_c,
-                        Simd::splat(255),
+                        Simd::splat(0),
                     ),
                 )
             };
 
             let acc_simd = Simd::gather_select(acc, Mask::splat(true), id_simd_c, Simd::splat(0));
-            let state_simd = Simd::gather_select(state, Mask::splat(true), id_simd_c, Simd::splat(0));
+            let state_simd =
+                Simd::gather_select(state, Mask::splat(true), id_simd_c, Simd::splat(0));
             let (new_state_simd, state_changed_simd) = {
                 Gate::evaluate_simd::<LANES>(
                     acc_simd,
@@ -826,7 +848,7 @@ impl GateNetwork {
                 .scatter_select(state, Mask::splat(true), id_simd_c);
 
             // handle outputs (SIMD does not work well here)
-            for (((id, next_state),delta), state_changed) in id_simd
+            for (((id, next_state), delta), state_changed) in id_simd
                 .to_array()
                 .into_iter()
                 .map(|id| id as usize)
@@ -835,8 +857,10 @@ impl GateNetwork {
                 .zip(state_changed_simd.to_array().into_iter())
             {
                 if state_changed != 0 {
-                    let from_index = *unsafe { packed_output_indexes.get_unchecked(id) };
-                    let to_index = *unsafe { packed_output_indexes.get_unchecked(id + 1) };
+                    let from_index = packed_output_indexes[id];
+                    let to_index = packed_output_indexes[id + 1];
+                    //let from_index = *unsafe { packed_output_indexes.get_unchecked(id) };
+                    //let to_index = *unsafe { packed_output_indexes.get_unchecked(id + 1) };
 
                     //let delta: AccType = if next_state != 0 {
                     //    1 as AccTypeInner
@@ -844,14 +868,16 @@ impl GateNetwork {
                     //    (0 as AccTypeInner).wrapping_sub(1 as AccTypeInner)
                     //};
 
-                    for output_id in unsafe {
-                        packed_outputs.get_unchecked(from_index as usize..to_index as usize)
-                    }
+                    for output_id in packed_outputs[from_index as usize..to_index as usize]
+                    //unsafe {
+                    //    packed_outputs.get_unchecked(from_index as usize..to_index as usize)
+                    //}
                     .iter()
                     {
-                        let in_update_list =
-                            unsafe { in_update_list.get_unchecked_mut(*output_id as usize) };
-                        let other_acc = unsafe { acc.get_unchecked_mut(*output_id as usize) };
+                        let in_update_list = in_update_list.get_mut(*output_id as usize).unwrap();
+                        //let in_update_list = unsafe { in_update_list.get_unchecked_mut(*output_id as usize) };
+                        //let other_acc = unsafe { acc.get_unchecked_mut(*output_id as usize) };
+                        let other_acc = acc.get_mut(*output_id as usize).unwrap();
                         *other_acc = other_acc.wrapping_add(delta as AccType);
                         if !*in_update_list {
                             *in_update_list = true;
