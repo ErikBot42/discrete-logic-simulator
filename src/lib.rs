@@ -104,7 +104,7 @@ mod tests {
                 //    optimized.make_state_vec().into_iter().map(|x| x as u8).collect::<Vec<u8>>(),
                 //    optimized_simd.make_state_vec().into_iter().map(|x| x as u8).collect::<Vec<u8>>(),
                 //                    //);
-                optimized_simd.network.update_simd();
+                optimized_simd.compiled_network.update_simd();
                 optimized.update();
             }
         }

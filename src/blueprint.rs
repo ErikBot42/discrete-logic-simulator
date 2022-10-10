@@ -1,6 +1,6 @@
 // blueprint.rs: parsing VCB blueprints
 #![allow(clippy::upper_case_acronyms)]
-use crate::logic::{GateNetwork, GateType};
+use crate::logic::{CompiledNetwork, GateNetwork, GateType};
 use colored::Colorize;
 use std::collections::BTreeSet;
 
@@ -199,7 +199,7 @@ impl BoardElement {
         let mut brfac: u32 = 100;
         let tmpstr = if let Some(t) = self.id {
             if let Some(id) = board.nodes[t].network_id {
-                if board.network.get_state(id) {
+                if board.compiled_network.get_state(id) {
                     brfac = 255;
                 };
                 //match board.nodes[t].kind {
@@ -262,7 +262,8 @@ impl BoardNode {
 pub struct VcbBoard {
     elements: Vec<BoardElement>,
     nodes: Vec<BoardNode>,
-    pub network: GateNetwork, //TODO
+    pub(crate) network: GateNetwork,
+    pub(crate) compiled_network: CompiledNetwork,
     pub width: usize,
     pub height: usize,
 }
@@ -276,7 +277,7 @@ impl VcbBoard {
                 None => false,
                 Some(node_id) => match self.nodes[node_id].network_id {
                     None => false,
-                    Some(id) => self.network.get_state(id),
+                    Some(id) => self.compiled_network.get_state(id),
                 },
             });
         }
@@ -284,11 +285,11 @@ impl VcbBoard {
     }
     #[inline(always)]
     pub fn update_simd(&mut self) {
-        self.network.update_simd();
+        self.compiled_network.update_simd();
     }
     #[inline(always)]
     pub fn update(&mut self) {
-        self.network.update();
+        self.compiled_network.update();
     }
     fn new(data: &[u8], width: usize, height: usize, optimize: bool) -> Self {
         let num_elements = width * height;
@@ -303,6 +304,7 @@ impl VcbBoard {
             width,
             height,
             network: GateNetwork::default(),
+            compiled_network: CompiledNetwork::default(),
         };
         let mut counter = 0;
         for x in 0..num_elements {
@@ -330,7 +332,7 @@ impl VcbBoard {
                 .network
                 .add_inputs(node.kind, node.network_id.unwrap(), inputs);
         }
-        board.network.init_network(optimize);
+        board.compiled_network = board.network.compiled(optimize);
 
         // TODO: terminal buffer
         board

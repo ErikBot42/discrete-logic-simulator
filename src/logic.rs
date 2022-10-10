@@ -90,7 +90,7 @@ type IndexType = AccTypeInner;
 type GateKey = (GateType, Vec<IndexType>);
 
 /// data needed after processing network
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Gate {
     // constant:
     inputs: Vec<IndexType>,  // list of ids
@@ -224,12 +224,18 @@ impl Gate {
 
 /// A list that is just a raw array that is manipulated directly.
 /// Very unsafe but slightly faster than a normal vector
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct RawList {
     list: Box<[IndexType]>,
     len: usize,
 }
 impl RawList {
+    fn new(max_size: usize) -> Self {
+        RawList {
+            list: vec![0 as IndexType; max_size].into_boxed_slice(),
+            len: 0,
+        }
+    }
     #[inline(always)]
     fn clear(&mut self) {
         self.len = 0;
@@ -238,10 +244,22 @@ impl RawList {
     fn push(&mut self, el: IndexType) {
         *unsafe { self.list.get_unchecked_mut(self.len) } = el;
         self.len += 1;
+        debug_assert!(
+            self.list.len() > self.len,
+            "{} <= {}",
+            self.list.len(),
+            self.len
+        );
     }
     #[inline(always)]
     fn get_slice(&self) -> &[IndexType] {
         // &self.list[0..self.len]
+        debug_assert!(
+            self.list.len() > self.len,
+            "{} <= {}",
+            self.list.len(),
+            self.len
+        );
         unsafe { self.list.get_unchecked(..self.len) }
     }
     //#[inline(always)]
@@ -252,7 +270,7 @@ impl RawList {
 
 /// Contains gate graph in order to do network optimization
 /// without the need for mutation.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct Network {
     gates: Vec<Gate>,
     translation_table: Vec<IndexType>,
@@ -419,10 +437,9 @@ impl Network {
     }
 }
 
+/// Contains prepared datastructures to run the network.
 #[derive(Debug, Default)]
-pub struct GateNetwork {
-    network: Network,
-
+pub(crate) struct CompiledNetwork {
     //TODO: overlapping outputs/indexes
     packed_outputs: Vec<IndexType>,
     packed_output_indexes: Vec<IndexType>,
@@ -436,58 +453,91 @@ pub struct GateNetwork {
     gate_flag_is_xor: Vec<u8>,
     gate_flag_is_inverted: Vec<u8>,
 
-    initialized: bool, //TODO: typestate pattern
+    //initialized: bool,
     update_list: RawList,
     cluster_update_list: RawList,
 
+    translation_table: Vec<IndexType>,
+
     pub iterations: usize,
 }
-impl GateNetwork {
-    /// Internally creates a vertex.
-    /// Returns vertex id
-    /// ids of gates are guaranteed to be unique
-    /// # Panics
-    /// If more than `IndexType::MAX` are added, or after initialized
-    pub(crate) fn add_vertex(&mut self, kind: GateType) -> usize {
-        assert!(!self.initialized);
-        let next_id = self.network.gates.len();
-        self.network.gates.push(Gate::from_gate_type(kind));
-        assert!(self.network.gates.len() < IndexType::MAX as usize);
-        next_id
-    }
 
-    /// Add inputs to `gate_id` from `inputs`.
-    /// Connection must be between cluster and a non cluster gate
-    /// and a connection can only be made once for a given pair of gates.
-    /// # Panics
-    /// if precondition is not held.
-    pub(crate) fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
-        assert!(!self.initialized);
-        let gate = &mut self.network.gates[gate_id];
-        gate.add_inputs(inputs.len().try_into().unwrap());
-        let mut in2 = Vec::new();
-        for input in &inputs {
-            in2.push((*input).try_into().unwrap());
+impl CompiledNetwork {
+    fn create(network: &Network, optimize: bool) -> Self {
+        dbg!("start compile");
+        //pub(crate) fn init_network(&mut self, optimize: bool) -> Self {
+        //assert!(!self.initialized);
+        let mut network = network.clone();
+        network.translation_table = (0..network.gates.len())
+            .into_iter()
+            .map(|x| x as IndexType)
+            .collect();
+
+        assert_ne!(network.gates.len(), 0, "no gates where added.");
+        if optimize {
+            network = network.optimized();
         }
-        gate.inputs.append(&mut in2);
-        gate.inputs.sort_unstable();
-        gate.inputs.dedup();
-        for input_id in inputs {
-            assert!(
-                input_id < self.network.gates.len(),
-                "Invalid input index {input_id}"
-            );
-            assert_ne!(
-                (kind == GateType::Cluster),
-                (self.network.gates[input_id].kind == GateType::Cluster),
-                "Connection was made between cluster and non cluster for gate {gate_id}"
-            );
-            // panics if it cannot fit in IndexType
-            self.network.gates[input_id]
-                .outputs
-                .push(gate_id.try_into().unwrap());
-            self.network.gates[input_id].outputs.sort_unstable();
-            self.network.gates[input_id].outputs.dedup();
+        assert_ne!(
+            network.gates.len(),
+            0,
+            "optimization removed all gates"
+        );
+        let number_of_gates = network.gates.len();
+
+        let mut update_list = RawList::new(number_of_gates);
+        let cluster_update_list = RawList::new(number_of_gates);
+
+        let mut runtime_gate_kind: Vec<RunTimeGateType> = Vec::new();
+        let mut gate_flags: Vec<(bool, bool)> = Vec::new();
+        let mut gate_flag_is_xor: Vec<u8> = Vec::new();
+        let mut gate_flag_is_inverted: Vec<u8> = Vec::new();
+        let mut acc: Vec<AccType> = Vec::new();
+        let mut state: Vec<u8> = Vec::new();
+        let mut in_update_list: Vec<bool> = Vec::new();
+        let mut packed_output_indexes: Vec<IndexType> = Vec::new();
+        let mut packed_outputs: Vec<IndexType> = Vec::new();
+
+        for (gate_id, gate) in network.gates.iter_mut().enumerate() {
+            let kind = gate.kind;
+
+            // add gates that will immediately update to the
+            // update list
+            if kind.will_update_at_start() {
+                update_list.push(gate_id.try_into().unwrap());
+                gate.in_update_list = true;
+            }
+
+            // pack gate type, acc, state, outputs, flags
+            let runtime_kind = RunTimeGateType::new(gate.kind);
+            runtime_gate_kind.push(runtime_kind);
+            let (is_inverted, is_xor) = Gate::calc_flags(runtime_kind);
+            gate_flags.push((is_inverted, is_xor));
+            gate_flag_is_xor.push(is_xor as u8);
+            gate_flag_is_inverted.push(is_inverted as u8);
+
+            acc.push(gate.acc);
+            state.push(gate.state as u8);
+            in_update_list.push(gate.in_update_list);
+            packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
+            packed_outputs.append(&mut gate.outputs.clone());
+        }
+        packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
+
+        dbg!("init ok");
+        Self {
+            packed_outputs,
+            packed_output_indexes,
+            state,
+            acc,
+            in_update_list,
+            runtime_gate_kind,
+            gate_flags,
+            gate_flag_is_xor,
+            gate_flag_is_inverted,
+            update_list,
+            cluster_update_list,
+            iterations: 0,
+            translation_table: network.translation_table,
         }
     }
 
@@ -495,66 +545,8 @@ impl GateNetwork {
     /// # Panics
     /// Not initialized, if `gate_id` is out of range
     pub(crate) fn get_state(&self, gate_id: usize) -> bool {
-        assert!(self.initialized);
-        let gate_id = self.network.translation_table[gate_id];
+        let gate_id = self.translation_table[gate_id];
         self.state[gate_id as usize] != 0
-    }
-    /// Adds all gates to update list and performs initialization
-    /// Currently cannot be modified after initialization.
-    /// # Panics
-    /// Not initialized
-    pub(crate) fn init_network(&mut self, optimize: bool) {
-        assert!(!self.initialized);
-        self.network.translation_table = (0..self.network.gates.len())
-            .into_iter()
-            .map(|x| x as IndexType)
-            .collect();
-        assert_ne!(self.network.gates.len(), 0, "no gates where added.");
-        if optimize {
-            self.network = self.network.optimized();
-            assert_ne!(
-                self.network.gates.len(),
-                0,
-                "optimization removed all gates, ***possibly not a bug***"
-            ); // just check I didn't just remove everything here
-        }
-        let number_of_gates = self.network.gates.len();
-
-        self.update_list.list = vec![0; number_of_gates].into_boxed_slice();
-        self.cluster_update_list.list = vec![0; number_of_gates].into_boxed_slice();
-        self.update_list.len = 0;
-        self.cluster_update_list.len = 0;
-
-        // TODO: iterator
-        for gate_id in 0..number_of_gates {
-            let gate = &mut self.network.gates[gate_id];
-            let kind = gate.kind;
-
-            // add gates that will immediately update to the
-            // update list
-            if kind.will_update_at_start() {
-                self.update_list.push(gate_id.try_into().unwrap());
-                gate.in_update_list = true;
-            }
-
-            // pack gate type, acc, state, outputs, flags
-            let runtime_kind = RunTimeGateType::new(gate.kind);
-            self.runtime_gate_kind.push(runtime_kind);
-            let (is_inverted, is_xor) = Gate::calc_flags(runtime_kind);
-            self.gate_flags.push((is_inverted, is_xor));
-            self.gate_flag_is_xor.push(is_xor as u8);
-            self.gate_flag_is_inverted.push(is_inverted as u8);
-
-            self.acc.push(gate.acc);
-            self.state.push(gate.state as u8);
-            self.in_update_list.push(gate.in_update_list);
-            self.packed_output_indexes
-                .push(self.packed_outputs.len().try_into().unwrap());
-            self.packed_outputs.append(&mut gate.outputs.clone());
-        }
-        self.packed_output_indexes
-            .push(self.packed_outputs.len().try_into().unwrap());
-        self.initialized = true;
     }
 
     #[inline(always)]
@@ -571,9 +563,6 @@ impl GateNetwork {
     }
 
     fn update_internal<const USE_SIMD: bool>(&mut self) {
-        // Somehow impacts release performance. This should be replaced by type state
-        // Will keep anyways
-        debug_assert!(self.initialized);
         self.iterations += 1;
         //debug_assert!(self.update_list.len != 0);
         //assert!(self.iterations < 3);
@@ -699,8 +688,7 @@ impl GateNetwork {
 
             //debug_assert!(in_update_list[*id as usize], "{id:?}");
             //let next_state = Gate::evaluate(*unsafe { acc.get_unchecked(id) }, kind);
-            let next_state =
-                Gate::evaluate_from_flags(*unsafe { acc.get_unchecked(id) }, flags);
+            let next_state = Gate::evaluate_from_flags(*unsafe { acc.get_unchecked(id) }, flags);
             //let next_state = Gate::evaluate_branchless(*unsafe { acc.get_unchecked(id) }, flags);
             if (*unsafe { state.get_unchecked(id) } != 0) != next_state {
                 let delta: AccType = if next_state {
@@ -754,7 +742,7 @@ impl GateNetwork {
         if update_list.len() == 0 {
             return;
         }
-        const LANES: usize = 16;//16; //16; //16; //TODO: optimize
+        const LANES: usize = 16; //16; //16; //16; //TODO: optimize
 
         let (packed_pre, packed_simd, packed_suf): (
             &[IndexType],
@@ -804,89 +792,219 @@ impl GateNetwork {
         }
         return;
 
-        for id_simd in packed_simd {
-            let id_simd_c = id_simd.cast();
-            let (gate_inverted_simd, gate_xor_simd) = if ASSUME_CLUSTER {
-                (Simd::splat(0), Simd::splat(0))
-            } else {
-                (
-                    Simd::gather_select(
-                        gate_flag_inverted,
-                        Mask::splat(true),
-                        id_simd_c,
-                        Simd::splat(0),
-                    ),
-                    Simd::gather_select(
-                        gate_flag_xor,
-                        Mask::splat(true),
-                        id_simd_c,
-                        Simd::splat(0),
-                    ),
-                )
-            };
+        //for id_simd in packed_simd {
+        //    let id_simd_c = id_simd.cast();
+        //    let (gate_inverted_simd, gate_xor_simd) = if ASSUME_CLUSTER {
+        //        (Simd::splat(0), Simd::splat(0))
+        //    } else {
+        //        (
+        //            Simd::gather_select(
+        //                gate_flag_inverted,
+        //                Mask::splat(true),
+        //                id_simd_c,
+        //                Simd::splat(0),
+        //            ),
+        //            Simd::gather_select(
+        //                gate_flag_xor,
+        //                Mask::splat(true),
+        //                id_simd_c,
+        //                Simd::splat(0),
+        //            ),
+        //        )
+        //    };
 
-            let acc_simd = Simd::gather_select(acc, Mask::splat(true), id_simd_c, Simd::splat(0));
-            let state_simd =
-                Simd::gather_select(state, Mask::splat(true), id_simd_c, Simd::splat(0));
-            let (new_state_simd, state_changed_simd) = {
-                Gate::evaluate_simd::<LANES>(
-                    acc_simd,
-                    gate_inverted_simd,
-                    gate_xor_simd,
-                    state_simd,
-                )
-            };
+        //    let acc_simd = Simd::gather_select(acc, Mask::splat(true), id_simd_c, Simd::splat(0));
+        //    let state_simd =
+        //        Simd::gather_select(state, Mask::splat(true), id_simd_c, Simd::splat(0));
+        //    let (new_state_simd, state_changed_simd) = {
+        //        Gate::evaluate_simd::<LANES>(
+        //            acc_simd,
+        //            gate_inverted_simd,
+        //            gate_xor_simd,
+        //            state_simd,
+        //        )
+        //    };
 
-            // 0 -> -1, 1 -> 1
-            let delta_simd = (new_state_simd + new_state_simd) - Simd::splat(1);
+        //    // 0 -> -1, 1 -> 1
+        //    let delta_simd = (new_state_simd + new_state_simd) - Simd::splat(1);
 
-            // new state can be written immediately with simd
-            // this will write unconditionally, but maybe it would be better
-            // to only write if state actually changed.
-            new_state_simd
-                .cast()
-                .scatter_select(state, Mask::splat(true), id_simd_c);
+        //    // new state can be written immediately with simd
+        //    // this will write unconditionally, but maybe it would be better
+        //    // to only write if state actually changed.
+        //    new_state_simd
+        //        .cast()
+        //        .scatter_select(state, Mask::splat(true), id_simd_c);
 
-            // handle outputs (SIMD does not work well here)
-            for (((id, next_state), delta), state_changed) in id_simd
-                .to_array()
-                .into_iter()
-                .map(|id| id as usize)
-                .zip(new_state_simd.to_array().into_iter())
-                .zip(delta_simd.to_array().into_iter())
-                .zip(state_changed_simd.to_array().into_iter())
-            {
-                if state_changed != 0 {
-                    let from_index = packed_output_indexes[id];
-                    let to_index = packed_output_indexes[id + 1];
-                    //let from_index = *unsafe { packed_output_indexes.get_unchecked(id) };
-                    //let to_index = *unsafe { packed_output_indexes.get_unchecked(id + 1) };
+        //    // handle outputs (SIMD does not work well here)
+        //    for (((id, next_state), delta), state_changed) in id_simd
+        //        .to_array()
+        //        .into_iter()
+        //        .map(|id| id as usize)
+        //        .zip(new_state_simd.to_array().into_iter())
+        //        .zip(delta_simd.to_array().into_iter())
+        //        .zip(state_changed_simd.to_array().into_iter())
+        //    {
+        //        if state_changed != 0 {
+        //            let from_index = packed_output_indexes[id];
+        //            let to_index = packed_output_indexes[id + 1];
+        //            //let from_index = *unsafe { packed_output_indexes.get_unchecked(id) };
+        //            //let to_index = *unsafe { packed_output_indexes.get_unchecked(id + 1) };
 
-                    //let delta: AccType = if next_state != 0 {
-                    //    1 as AccTypeInner
-                    //} else {
-                    //    (0 as AccTypeInner).wrapping_sub(1 as AccTypeInner)
-                    //};
+        //            //let delta: AccType = if next_state != 0 {
+        //            //    1 as AccTypeInner
+        //            //} else {
+        //            //    (0 as AccTypeInner).wrapping_sub(1 as AccTypeInner)
+        //            //};
 
-                    for output_id in packed_outputs[from_index as usize..to_index as usize]
-                    //unsafe {
-                    //    packed_outputs.get_unchecked(from_index as usize..to_index as usize)
-                    //}
-                    .iter()
-                    {
-                        let in_update_list = in_update_list.get_mut(*output_id as usize).unwrap();
-                        //let in_update_list = unsafe { in_update_list.get_unchecked_mut(*output_id as usize) };
-                        //let other_acc = unsafe { acc.get_unchecked_mut(*output_id as usize) };
-                        let other_acc = acc.get_mut(*output_id as usize).unwrap();
-                        *other_acc = other_acc.wrapping_add(delta as AccType);
-                        if !*in_update_list {
-                            *in_update_list = true;
-                            next_update_list.push(*output_id);
-                        }
-                    }
-                }
-                *unsafe { in_update_list.get_unchecked_mut(id) } = false; //TODO SIMD
-            }
+        //            for output_id in packed_outputs[from_index as usize..to_index as usize]
+        //            //unsafe {
+        //            //    packed_outputs.get_unchecked(from_index as usize..to_index as usize)
+        //            //}
+        //            .iter()
+        //            {
+        //                let in_update_list = in_update_list.get_mut(*output_id as usize).unwrap();
+        //                //let in_update_list = unsafe { in_update_list.get_unchecked_mut(*output_id as usize) };
+        //                //let other_acc = unsafe { acc.get_unchecked_mut(*output_id as usize) };
+        //                let other_acc = acc.get_mut(*output_id as usize).unwrap();
+        //                *other_acc = other_acc.wrapping_add(delta as AccType);
+        //                if !*in_update_list {
+        //                    *in_update_list = true;
+        //                    next_update_list.push(*output_id);
+        //                }
+        //            }
+        //        }
+        //        *unsafe { in_update_list.get_unchecked_mut(id) } = false; //TODO SIMD
+        //    }
+        //}
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct GateNetwork {
+    network: Network,
+
+    //TODO: overlapping outputs/indexes
+    //packed_outputs: Vec<IndexType>,
+    //packed_output_indexes: Vec<IndexType>,
+
+    //state: Vec<u8>,
+    //acc: Vec<AccType>,
+    //in_update_list: Vec<bool>,
+    //runtime_gate_kind: Vec<RunTimeGateType>,
+
+    //gate_flags: Vec<(bool, bool)>,
+    //gate_flag_is_xor: Vec<u8>,
+    //gate_flag_is_inverted: Vec<u8>,
+    initialized: bool, //TODO: typestate pattern
+                       //update_list: RawList,
+                       //cluster_update_list: RawList,
+
+                       //pub iterations: usize,
+}
+impl GateNetwork {
+    /// Internally creates a vertex.
+    /// Returns vertex id
+    /// ids of gates are guaranteed to be unique
+    /// # Panics
+    /// If more than `IndexType::MAX` are added, or after initialized
+    pub(crate) fn add_vertex(&mut self, kind: GateType) -> usize {
+        assert!(!self.initialized);
+        let next_id = self.network.gates.len();
+        self.network.gates.push(Gate::from_gate_type(kind));
+        assert!(self.network.gates.len() < IndexType::MAX as usize);
+        next_id
+    }
+
+    /// Add inputs to `gate_id` from `inputs`.
+    /// Connection must be between cluster and a non cluster gate
+    /// and a connection can only be made once for a given pair of gates.
+    /// # Panics
+    /// if precondition is not held.
+    pub(crate) fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
+        assert!(!self.initialized);
+        let gate = &mut self.network.gates[gate_id];
+        gate.add_inputs(inputs.len().try_into().unwrap());
+        let mut in2 = Vec::new();
+        for input in &inputs {
+            in2.push((*input).try_into().unwrap());
         }
+        gate.inputs.append(&mut in2);
+        gate.inputs.sort_unstable();
+        gate.inputs.dedup();
+        for input_id in inputs {
+            assert!(
+                input_id < self.network.gates.len(),
+                "Invalid input index {input_id}"
+            );
+            assert_ne!(
+                (kind == GateType::Cluster),
+                (self.network.gates[input_id].kind == GateType::Cluster),
+                "Connection was made between cluster and non cluster for gate {gate_id}"
+            );
+            // panics if it cannot fit in IndexType
+            self.network.gates[input_id]
+                .outputs
+                .push(gate_id.try_into().unwrap());
+            self.network.gates[input_id].outputs.sort_unstable();
+            self.network.gates[input_id].outputs.dedup();
+        }
+    }
+
+    /// Adds all gates to update list and performs initialization
+    /// Currently cannot be modified after initialization.
+    /// # Panics
+    /// Already initialized
+    #[must_use]
+    pub(crate) fn compiled(&mut self, optimize: bool) -> CompiledNetwork {
+        return CompiledNetwork::create(&self.network, optimize);
+        //assert!(!self.initialized);
+        //self.network.translation_table = (0..self.network.gates.len())
+        //    .into_iter()
+        //    .map(|x| x as IndexType)
+        //    .collect();
+        //assert_ne!(self.network.gates.len(), 0, "no gates where added.");
+        //if optimize {
+        //    self.network = self.network.optimized();
+        //    assert_ne!(self.network.gates.len(), 0, "no gates after optimization");
+        //}
+        //let number_of_gates = self.network.gates.len();
+
+        //self.update_list.list = vec![0; number_of_gates].into_boxed_slice();
+        //self.cluster_update_list.list = vec![0; number_of_gates].into_boxed_slice();
+        //self.update_list.len = 0;
+        //self.cluster_update_list.len = 0;
+
+        //// TODO: iterator
+        //for gate_id in 0..number_of_gates {
+        //    let gate = &mut self.network.gates[gate_id];
+        //    let kind = gate.kind;
+
+        //    // add gates that will immediately update to the
+        //    // update list
+        //    if kind.will_update_at_start() {
+        //        self.update_list.push(gate_id.try_into().unwrap());
+        //        gate.in_update_list = true;
+        //    }
+
+        //    // pack gate type, acc, state, outputs, flags
+        //    let runtime_kind = RunTimeGateType::new(gate.kind);
+        //    self.runtime_gate_kind.push(runtime_kind);
+        //    let (is_inverted, is_xor) = Gate::calc_flags(runtime_kind);
+        //    self.gate_flags.push((is_inverted, is_xor));
+        //    self.gate_flag_is_xor.push(is_xor as u8);
+        //    self.gate_flag_is_inverted.push(is_inverted as u8);
+
+        //    self.acc.push(gate.acc);
+        //    self.state.push(gate.state as u8);
+        //    self.in_update_list.push(gate.in_update_list);
+        //    self.packed_output_indexes
+        //        .push(self.packed_outputs.len().try_into().unwrap());
+        //    self.packed_outputs.append(&mut gate.outputs.clone());
+        //}
+        //self.packed_output_indexes
+        //    .push(self.packed_outputs.len().try_into().unwrap());
+        //self.initialized = true;
+
+        //self.clone()
     }
 }
