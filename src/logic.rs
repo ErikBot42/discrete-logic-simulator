@@ -514,76 +514,83 @@ impl CompiledNetwork {
             return;
         }
 
-        Self::update_gates::<false, USE_SIMD>(
-            self.update_list.get_slice(),
-            &mut self.cluster_update_list,
-            &mut self.acc,
-            &mut self.state,
-            &mut self.in_update_list,
-            &self.runtime_gate_kind,
-            &self.gate_flags,
-            &self.gate_flag_is_xor,
-            &self.gate_flag_is_inverted,
-            &self.packed_output_indexes,
-            &self.packed_outputs,
-        );
+        //TODO: move clear into update functions.
+        self.update_gates::<false, USE_SIMD>();
         self.update_list.clear();
-        Self::update_gates::<true, USE_SIMD>(
-            self.cluster_update_list.get_slice(),
-            &mut self.update_list,
-            &mut self.acc,
-            &mut self.state,
-            &mut self.in_update_list,
-            &self.runtime_gate_kind,
-            &self.gate_flags,
-            &self.gate_flag_is_xor,
-            &self.gate_flag_is_inverted,
-            &self.packed_output_indexes,
-            &self.packed_outputs,
-        );
+        self.update_gates::<true, USE_SIMD>();
         self.cluster_update_list.clear();
+
+        //Self::update_gates::<false, USE_SIMD>(
+        //    self.update_list.get_slice(),
+        //    &mut self.cluster_update_list,
+        //    &mut self.acc,
+        //    &mut self.state,
+        //    &mut self.in_update_list,
+        //    &self.runtime_gate_kind,
+        //    &self.gate_flags,
+        //    &self.gate_flag_is_xor,
+        //    &self.gate_flag_is_inverted,
+        //    &self.packed_output_indexes,
+        //    &self.packed_outputs,
+        //);
+        //self.update_list.clear();
+        //Self::update_gates::<true, USE_SIMD>(
+        //    self.cluster_update_list.get_slice(),
+        //    &mut self.update_list,
+        //    &mut self.acc,
+        //    &mut self.state,
+        //    &mut self.in_update_list,
+        //    &self.runtime_gate_kind,
+        //    &self.gate_flags,
+        //    &self.gate_flag_is_xor,
+        //    &self.gate_flag_is_inverted,
+        //    &self.packed_output_indexes,
+        //    &self.packed_outputs,
+        //);
+        //self.cluster_update_list.clear();
     }
 
     fn update_gates<const IS_CLUSTERS: bool, const USE_SIMD: bool>(
-        update_list: &[IndexType],
-        next_update_list: &mut UpdateList,
-        acc: &mut [AccType],
-        state: &mut [u8],
-        in_update_list: &mut [bool],
-        gate_kinds: &[RunTimeGateType],
-        gate_flags: &[(bool, bool)],
-        gate_flag_xor: &[u8],
-        gate_flag_inverted: &[u8],
-        packed_output_indexes: &[IndexType],
-        packed_outputs: &[IndexType],
+        &mut self,
+        //update_list: &[IndexType],
+        //next_update_list: &mut UpdateList,
+        //acc: &mut [AccType],
+        //state: &mut [u8],
+        //in_update_list: &mut [bool],
+        //gate_kinds: &[RunTimeGateType],
+        //gate_flags: &[(bool, bool)],
+        //gate_flag_xor: &[u8],
+        //gate_flag_inverted: &[u8],
+        //packed_output_indexes: &[IndexType],
+        //packed_outputs: &[IndexType],
     ) {
         if USE_SIMD {
-            Self::update_gates_in_list_simd::<IS_CLUSTERS>(
-                update_list,
-                next_update_list,
-                acc,
-                state,
-                in_update_list,
-                gate_kinds,
-                gate_flags,
-                gate_flag_xor,
-                gate_flag_inverted,
-                packed_output_indexes,
-                packed_outputs,
+            self.update_gates_in_list_simd::<IS_CLUSTERS>(
+                //update_list,
+                //next_update_list,
+                //acc,
+                //state,
+                //in_update_list,
+                //gate_kinds,
+                //gate_flags,
+                //gate_flag_xor,
+                //gate_flag_inverted,
+                //packed_output_indexes,
+                //packed_outputs,
             );
         } else {
-            Self::update_gates_in_list::<IS_CLUSTERS>(
-                update_list,
-                next_update_list,
-                acc,
-                state,
-                in_update_list,
-                gate_kinds,
-                gate_flags,
-                gate_flag_xor,
-                gate_flag_inverted,
-                packed_output_indexes,
-                packed_outputs,
+            self.update_gates_in_list::<IS_CLUSTERS>(
+                //update_list,
+                //next_update_list,
+                //acc,
+                //state,
+                //in_update_list,
+                //gate_kinds,
+                //gate_flags,
+                //gate_flag_xor,
+                //gate_flag_inverted,
+                //packed_output_indexes,
+                //packed_outputs,
             );
         }
     }
@@ -592,54 +599,61 @@ impl CompiledNetwork {
     /// Appends next update list.
     #[inline(always)]
     fn update_gates_in_list<const ASSUME_CLUSTER: bool>(
-        update_list: &[IndexType],
-        next_update_list: &mut UpdateList,
-        acc: &mut [AccType],
-        state: &mut [u8],
-        in_update_list: &mut [bool],
+        &mut self,
+        //update_list: &[IndexType],
+        //next_update_list: &mut UpdateList,
+        //acc: &mut [AccType],
+        //state: &mut [u8],
+        //in_update_list: &mut [bool],
 
-        gate_kinds: &[RunTimeGateType],
-        gate_flags: &[(bool, bool)],
-        gate_flag_xor: &[u8],
-        gate_flag_inverted: &[u8],
-        packed_output_indexes: &[IndexType],
-        packed_outputs: &[IndexType],
+        //gate_kinds: &[RunTimeGateType],
+        //gate_flags: &[(bool, bool)],
+        //gate_flag_xor: &[u8],
+        //gate_flag_inverted: &[u8],
+        //packed_output_indexes: &[IndexType],
+        //packed_outputs: &[IndexType],
     ) {
+        let (update_list, next_update_list) =
+            if ASSUME_CLUSTER { 
+                (self.cluster_update_list.get_slice(), &mut self.update_list)
+            } else { 
+                (self.update_list.get_slice(), &mut self.cluster_update_list)
+            };
         if update_list.len() == 0 {
             return;
         }
         for id in update_list.iter().map(|id| *id as usize) {
-            assert!(in_update_list[id]);
+            debug_assert!(self.in_update_list[id], "{id:?}");
+            //assert!(self.in_update_list[id]);
             let kind;
             let flags;
             if ASSUME_CLUSTER {
                 kind = RunTimeGateType::OrNand;
                 flags = (false, false);
             } else {
-                kind = *unsafe { gate_kinds.get_unchecked(id) };
-                flags = *unsafe { gate_flags.get_unchecked(id) };
+                kind = *unsafe { self.runtime_gate_kind.get_unchecked(id) };
+                flags = *unsafe { self.gate_flags.get_unchecked(id) };
             };
 
-            debug_assert!(in_update_list[id], "{id:?}");
             //let next_state = Gate::evaluate(*unsafe { acc.get_unchecked(id) }, kind);
-            let next_state = Gate::evaluate_from_flags(*unsafe { acc.get_unchecked(id) }, flags);
+            let next_state = Gate::evaluate_from_flags(*unsafe { self.acc.get_unchecked(id) }, flags);
             //let next_state = Gate::evaluate_branchless(*unsafe { acc.get_unchecked(id) }, flags);
-            if (*unsafe { state.get_unchecked(id) } != 0) != next_state {
+            if (*unsafe { self.state.get_unchecked(id) } != 0) != next_state {
                 let delta: AccType = if next_state {
                     1 as AccTypeInner
                 } else {
                     (0 as AccTypeInner).wrapping_sub(1 as AccTypeInner)
                 };
-                let from_index = *unsafe { packed_output_indexes.get_unchecked(id) };
-                let to_index = *unsafe { packed_output_indexes.get_unchecked(id + 1) };
+                let from_index = *unsafe { self.packed_output_indexes.get_unchecked(id) };
+                let to_index = *unsafe { self.packed_output_indexes.get_unchecked(id + 1) };
 
                 for output_id in
-                    unsafe { packed_outputs.get_unchecked(from_index as usize..to_index as usize) }
+                    unsafe { self.packed_outputs.get_unchecked(from_index as usize..to_index as usize) }
                         .iter()
                 {
                     let in_update_list =
-                        unsafe { in_update_list.get_unchecked_mut(*output_id as usize) };
-                    let other_acc = unsafe { acc.get_unchecked_mut(*output_id as usize) };
+                        unsafe { self.in_update_list.get_unchecked_mut(*output_id as usize) };
+                    let other_acc = unsafe { self.acc.get_unchecked_mut(*output_id as usize) };
                     *other_acc = other_acc.wrapping_add(delta);
                     if !*in_update_list {
                         *in_update_list = true;
@@ -647,82 +661,85 @@ impl CompiledNetwork {
                     }
                 }
 
-                *unsafe { state.get_unchecked_mut(id) } = next_state as u8;
+                *unsafe { self.state.get_unchecked_mut(id) } = next_state as u8;
             }
             // this gate should be ready to be re-added to the update list.
-            *unsafe { in_update_list.get_unchecked_mut(id) } = false;
+            *unsafe { self.in_update_list.get_unchecked_mut(id) } = false;
         }
     }
 
     #[inline(always)]
     //#[inline(never)]
     fn update_gates_in_list_simd<const ASSUME_CLUSTER: bool>(
-        update_list: &[IndexType],
-        next_update_list: &mut UpdateList,
-        acc: &mut [AccType],
-        state: &mut [u8],
-        in_update_list: &mut [bool],
+        &mut self,
+        //update_list: &[IndexType],
+        //next_update_list: &mut UpdateList,
+        //acc: &mut [AccType],
+        //state: &mut [u8],
+        //in_update_list: &mut [bool],
 
-        gate_kinds: &[RunTimeGateType],
-        gate_flags: &[(bool, bool)],
-        gate_flag_xor: &[u8],
-        gate_flag_inverted: &[u8],
-        packed_output_indexes: &[IndexType],
-        packed_outputs: &[IndexType],
+        //gate_kinds: &[RunTimeGateType],
+        //gate_flags: &[(bool, bool)],
+        //gate_flag_xor: &[u8],
+        //gate_flag_inverted: &[u8],
+        //packed_output_indexes: &[IndexType],
+        //packed_outputs: &[IndexType],
     ) {
-        //TODO: SIMD: make assumptions when cluster.
-        if update_list.len() == 0 {
-            return;
-        }
-        const LANES: usize = 16; //16; //16; //16; //TODO: optimize
+        self.update_gates_in_list::<ASSUME_CLUSTER>();
 
-        let (packed_pre, packed_simd, packed_suf): (
-            &[IndexType],
-            &[Simd<IndexType, LANES>],
-            &[IndexType],
-        ) = update_list.as_simd::<LANES>();
-        Self::update_gates_in_list::<ASSUME_CLUSTER>(
-            packed_pre,
-            next_update_list,
-            acc,
-            state,
-            in_update_list,
-            gate_kinds,
-            gate_flags,
-            gate_flag_xor,
-            gate_flag_inverted,
-            packed_output_indexes,
-            packed_outputs,
-        );
-        Self::update_gates_in_list::<ASSUME_CLUSTER>(
-            packed_suf,
-            next_update_list,
-            acc,
-            state,
-            in_update_list,
-            gate_kinds,
-            gate_flags,
-            gate_flag_xor,
-            gate_flag_inverted,
-            packed_output_indexes,
-            packed_outputs,
-        );
-        for id_simd in packed_simd {
-            Self::update_gates_in_list::<ASSUME_CLUSTER>(
-                id_simd.as_array(),
-                next_update_list,
-                acc,
-                state,
-                in_update_list,
-                gate_kinds,
-                gate_flags,
-                gate_flag_xor,
-                gate_flag_inverted,
-                packed_output_indexes,
-                packed_outputs,
-            );
-        }
-        return;
+        //TODO: SIMD: make assumptions when cluster.
+        //if update_list.len() == 0 {
+        //    return;
+        //}
+        //const LANES: usize = 16; //16; //16; //16; //TODO: optimize
+
+        //let (packed_pre, packed_simd, packed_suf): (
+        //    &[IndexType],
+        //    &[Simd<IndexType, LANES>],
+        //    &[IndexType],
+        //) = update_list.as_simd::<LANES>();
+        //Self::update_gates_in_list::<ASSUME_CLUSTER>(
+        //    packed_pre,
+        //    next_update_list,
+        //    acc,
+        //    state,
+        //    in_update_list,
+        //    gate_kinds,
+        //    gate_flags,
+        //    gate_flag_xor,
+        //    gate_flag_inverted,
+        //    packed_output_indexes,
+        //    packed_outputs,
+        //);
+        //Self::update_gates_in_list::<ASSUME_CLUSTER>(
+        //    packed_suf,
+        //    next_update_list,
+        //    acc,
+        //    state,
+        //    in_update_list,
+        //    gate_kinds,
+        //    gate_flags,
+        //    gate_flag_xor,
+        //    gate_flag_inverted,
+        //    packed_output_indexes,
+        //    packed_outputs,
+        //);
+        //for id_simd in packed_simd {
+        //    Self::update_gates_in_list::<ASSUME_CLUSTER>(
+        //        id_simd.as_array(),
+        //        next_update_list,
+        //        acc,
+        //        state,
+        //        in_update_list,
+        //        gate_kinds,
+        //        gate_flags,
+        //        gate_flag_xor,
+        //        gate_flag_inverted,
+        //        packed_output_indexes,
+        //        packed_outputs,
+        //    );
+        //}
+        //return;
 
         //for id_simd in packed_simd {
         //    let id_simd_c = id_simd.cast();
