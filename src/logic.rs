@@ -464,9 +464,6 @@ pub(crate) struct CompiledNetwork {
 
 impl CompiledNetwork {
     fn create(network: &Network, optimize: bool) -> Self {
-        dbg!("start compile");
-        //pub(crate) fn init_network(&mut self, optimize: bool) -> Self {
-        //assert!(!self.initialized);
         let mut network = network.clone();
         network.translation_table = (0..network.gates.len())
             .into_iter()
@@ -478,18 +475,14 @@ impl CompiledNetwork {
             network = network.optimized();
         }
         assert_ne!(network.gates.len(), 0, "optimization removed all gates");
-        let number_of_gates = network.gates.len();
 
-        let mut runtime_gate_kind: Vec<RunTimeGateType> = Vec::new();
-        let mut gate_flags: Vec<(bool, bool)> = Vec::new();
-        let mut gate_flag_is_xor: Vec<u8> = Vec::new();
-        let mut gate_flag_is_inverted: Vec<u8> = Vec::new();
         let mut acc: Vec<AccType> = Vec::new();
         let mut state: Vec<u8> = Vec::new();
         let mut in_update_list: Vec<bool> = Vec::new();
         let mut packed_output_indexes: Vec<IndexType> = Vec::new();
         let mut packed_outputs: Vec<IndexType> = Vec::new();
 
+        let number_of_gates = network.gates.len();
         let mut update_list = RawList::new(number_of_gates);
         for (gate_id, gate) in network
             .gates
@@ -500,15 +493,24 @@ impl CompiledNetwork {
             update_list.push(gate_id.try_into().unwrap());
             gate.in_update_list = true;
         }
+        let gates = &network.gates;
+
+        let runtime_gate_kind: Vec<RunTimeGateType> = gates
+            .iter()
+            .map(|gate| RunTimeGateType::new(gate.kind))
+            .collect();
+        let gate_flags: Vec<(bool, bool)> = runtime_gate_kind
+            .iter()
+            .map(|kind| Gate::calc_flags(*kind))
+            .collect();
+        let (gate_flag_is_inverted, gate_flag_is_xor): (Vec<_>, Vec<_>) = gate_flags
+            .iter()
+            .cloned()
+            .map(|(is_inverted, is_xor)| (is_inverted as u8, is_xor as u8))
+            .unzip();
 
         // pack gate type, acc, state, flags
         for gate in network.gates.iter() {
-            let runtime_kind = RunTimeGateType::new(gate.kind);
-            runtime_gate_kind.push(runtime_kind);
-            let (is_inverted, is_xor) = Gate::calc_flags(runtime_kind);
-            gate_flags.push((is_inverted, is_xor));
-            gate_flag_is_xor.push(is_xor as u8);
-            gate_flag_is_inverted.push(is_inverted as u8);
             acc.push(gate.acc);
             state.push(gate.state as u8);
             in_update_list.push(gate.in_update_list);
@@ -521,7 +523,6 @@ impl CompiledNetwork {
         }
         packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
 
-        dbg!("init ok");
         Self {
             packed_outputs,
             packed_output_indexes,
