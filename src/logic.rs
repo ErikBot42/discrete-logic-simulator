@@ -86,6 +86,7 @@ type SimdLogicType = u8;
 // u16 enough for typical applications (65536), u32
 // u32 > u16, u32
 type IndexType = AccTypeInner;
+type UpdateList = RawList<IndexType>;
 
 type GateKey = (GateType, Vec<IndexType>);
 
@@ -225,33 +226,39 @@ impl Gate {
 /// A list that is just a raw array that is manipulated directly.
 /// Very unsafe but slightly faster than a normal vector
 #[derive(Debug, Default, Clone)]
-struct RawList {
-    list: Box<[IndexType]>,
+struct RawList<T>
+where
+    T: Default + Clone,
+{
+    list: Box<[T]>,
     len: usize,
 }
-impl RawList {
-    fn from_vec(vec: Vec<IndexType>, max_size: usize) -> Self {
+impl<T> RawList<T>
+where
+    T: Default + Clone,
+{
+    pub(crate) fn from_vec(vec: Vec<T>, max_size: usize) -> Self {
         Self::collect(vec.into_iter(), max_size)
     }
-    fn collect(iter: impl Iterator<Item = IndexType>, max_size: usize) -> Self {
+    pub(crate) fn collect(iter: impl Iterator<Item = T>, max_size: usize) -> Self {
         let mut list = Self::new(max_size);
         for el in iter {
             list.push(el);
         }
         list
     }
-    fn new(max_size: usize) -> Self {
+    pub(crate) fn new(max_size: usize) -> Self {
         RawList {
-            list: vec![0 as IndexType; max_size].into_boxed_slice(),
+            list: vec![T::default(); max_size].into_boxed_slice(),
             len: 0,
         }
     }
     #[inline(always)]
-    fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.len = 0;
     }
     #[inline(always)]
-    fn push(&mut self, el: IndexType) {
+    pub(crate) fn push(&mut self, el: T) {
         *unsafe { self.list.get_unchecked_mut(self.len) } = el;
         self.len += 1;
         debug_assert!(
@@ -262,7 +269,7 @@ impl RawList {
         );
     }
     #[inline(always)]
-    fn get_slice(&self) -> &[IndexType] {
+    pub(crate) fn get_slice(&self) -> &[T] {
         // &self.list[0..self.len]
         debug_assert!(
             self.list.len() > self.len,
@@ -272,10 +279,10 @@ impl RawList {
         );
         unsafe { self.list.get_unchecked(..self.len) }
     }
-    //#[inline(always)]
-    //fn len(&self) -> usize {
-    //    self.len
-    //}
+    #[inline(always)]
+    pub(crate) fn len(&self) -> usize {
+        self.len
+    }
 }
 
 /// Contains gate graph in order to do network optimization
@@ -459,7 +466,6 @@ impl Network {
 /// Contains prepared datastructures to run the network.
 #[derive(Debug, Default)]
 pub(crate) struct CompiledNetwork {
-    //TODO: optimized overlapping outputs/indexes
     packed_outputs: Vec<IndexType>,
     packed_output_indexes: Vec<IndexType>,
 
@@ -472,8 +478,8 @@ pub(crate) struct CompiledNetwork {
     gate_flag_is_xor: Vec<u8>,
     gate_flag_is_inverted: Vec<u8>,
 
-    update_list: RawList,
-    cluster_update_list: RawList,
+    update_list: UpdateList,
+    cluster_update_list: UpdateList,
 
     translation_table: Vec<IndexType>,
 
@@ -500,13 +506,7 @@ impl CompiledNetwork {
 
         let gates = &network.gates;
 
-        let mut packed_output_indexes: Vec<IndexType> = Vec::new();
-        let mut packed_outputs: Vec<IndexType> = Vec::new();
-        for gate in gates.iter() {
-            packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
-            packed_outputs.append(&mut gate.outputs.clone());
-        }
-        packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
+        let (packed_output_indexes, packed_outputs) = Self::pack_outputs(gates);
 
         let runtime_gate_kind: Vec<RunTimeGateType> = gates
             .iter()
@@ -521,7 +521,6 @@ impl CompiledNetwork {
             .cloned()
             .map(|(is_inverted, is_xor)| (is_inverted as u8, is_xor as u8))
             .unzip();
-        // pack outputs
 
         Self {
             packed_outputs,
@@ -538,6 +537,18 @@ impl CompiledNetwork {
             iterations: 0,
             translation_table: network.translation_table,
         }
+    }
+
+    fn pack_outputs(gates: &Vec<Gate>) -> (Vec<IndexType>, Vec<IndexType>) {
+        //TODO: optimized overlapping outputs/indexes
+        let mut packed_output_indexes: Vec<IndexType> = Vec::new();
+        let mut packed_outputs: Vec<IndexType> = Vec::new();
+        for gate in gates.iter() {
+            packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
+            packed_outputs.append(&mut gate.outputs.clone());
+        }
+        packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
+        (packed_output_indexes, packed_outputs)
     }
 
     #[must_use]
@@ -601,7 +612,7 @@ impl CompiledNetwork {
 
     fn update_gates<const ASSUME_CLUSTER: bool, const USE_SIMD: bool>(
         update_list: &[IndexType],
-        next_update_list: &mut RawList,
+        next_update_list: &mut UpdateList,
         acc: &mut [AccType],
         state: &mut [u8],
         in_update_list: &mut [bool],
@@ -651,7 +662,7 @@ impl CompiledNetwork {
     #[inline(always)]
     fn update_gates_in_list<const ASSUME_CLUSTER: bool>(
         update_list: &[IndexType],
-        next_update_list: &mut RawList,
+        next_update_list: &mut UpdateList,
         acc: &mut [AccType],
         state: &mut [u8],
         in_update_list: &mut [bool],
@@ -678,7 +689,7 @@ impl CompiledNetwork {
                 flags = *unsafe { gate_flags.get_unchecked(id) };
             };
 
-            //debug_assert!(in_update_list[*id as usize], "{id:?}");
+            debug_assert!(in_update_list[id], "{id:?}");
             //let next_state = Gate::evaluate(*unsafe { acc.get_unchecked(id) }, kind);
             let next_state = Gate::evaluate_from_flags(*unsafe { acc.get_unchecked(id) }, flags);
             //let next_state = Gate::evaluate_branchless(*unsafe { acc.get_unchecked(id) }, flags);
@@ -690,8 +701,6 @@ impl CompiledNetwork {
                 };
                 let from_index = *unsafe { packed_output_indexes.get_unchecked(id) };
                 let to_index = *unsafe { packed_output_indexes.get_unchecked(id + 1) };
-                // all, any, find, find map, position
-                // map, zip, for_each, enumerate
 
                 for output_id in
                     unsafe { packed_outputs.get_unchecked(from_index as usize..to_index as usize) }
@@ -718,7 +727,7 @@ impl CompiledNetwork {
     //#[inline(never)]
     fn update_gates_in_list_simd<const ASSUME_CLUSTER: bool>(
         update_list: &[IndexType],
-        next_update_list: &mut RawList,
+        next_update_list: &mut UpdateList,
         acc: &mut [AccType],
         state: &mut [u8],
         in_update_list: &mut [bool],
