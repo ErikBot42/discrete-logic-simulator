@@ -279,13 +279,26 @@ impl RawList {
 }
 
 /// Contains gate graph in order to do network optimization
-/// without the need for mutation.
 #[derive(Debug, Default, Clone)]
 struct Network {
     gates: Vec<Gate>,
     translation_table: Vec<IndexType>,
 }
 impl Network {
+    fn initialized(&self, optimize: bool) -> Self{
+        let mut network = self.clone();
+        network.translation_table = (0..network.gates.len())
+            .into_iter()
+            .map(|x| x as IndexType)
+            .collect();
+        assert_ne!(network.gates.len(), 0, "no gates where added.");
+        if optimize {
+            network = network.optimized();
+        }
+        assert_ne!(network.gates.len(), 0, "optimization removed all gates");
+        return network;
+    }
+
     fn print_info(&self) {
         let counts_iter = self
             .gates
@@ -450,7 +463,7 @@ impl Network {
 /// Contains prepared datastructures to run the network.
 #[derive(Debug, Default)]
 pub(crate) struct CompiledNetwork {
-    //TODO: overlapping outputs/indexes
+    //TODO: optimized overlapping outputs/indexes
     packed_outputs: Vec<IndexType>,
     packed_output_indexes: Vec<IndexType>,
 
@@ -474,34 +487,31 @@ pub(crate) struct CompiledNetwork {
 
 impl CompiledNetwork {
     fn create(network: &Network, optimize: bool) -> Self {
-        let mut network = network.clone();
-        network.translation_table = (0..network.gates.len())
-            .into_iter()
-            .map(|x| x as IndexType)
-            .collect();
+        let mut network = network.initialized(optimize);
 
-        assert_ne!(network.gates.len(), 0, "no gates where added.");
-        if optimize {
-            network = network.optimized();
-        }
-        assert_ne!(network.gates.len(), 0, "optimization removed all gates");
+        let number_of_gates = network.gates.len();
+        let update_list = RawList::collect(
+            network
+                .gates
+                .iter_mut()
+                .enumerate()
+                .filter(|(_, gate)| gate.kind.will_update_at_start())
+                .map(|(gate_id, gate)| {
+                    gate.in_update_list = true;
+                    gate_id as IndexType
+                }),
+            number_of_gates,
+        );
+
+        let gates = &network.gates;
 
         let mut packed_output_indexes: Vec<IndexType> = Vec::new();
         let mut packed_outputs: Vec<IndexType> = Vec::new();
-
-        let number_of_gates = network.gates.len();
-        let mut update_list = RawList::new(number_of_gates);
-        network
-            .gates
-            .iter_mut()
-            .enumerate()
-            .filter(|(_, gate)| gate.kind.will_update_at_start())
-            .for_each(|(gate_id, gate)| {
-                update_list.push(gate_id.try_into().unwrap());
-                gate.in_update_list = true;
-            });
-
-        let gates = &network.gates;
+        for gate in gates.iter() {
+            packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
+            packed_outputs.append(&mut gate.outputs.clone());
+        }
+        packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
 
         let runtime_gate_kind: Vec<RunTimeGateType> = gates
             .iter()
@@ -517,11 +527,6 @@ impl CompiledNetwork {
             .map(|(is_inverted, is_xor)| (is_inverted as u8, is_xor as u8))
             .unzip();
         // pack outputs
-        for gate in network.gates.iter() {
-            packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
-            packed_outputs.append(&mut gate.outputs.clone());
-        }
-        packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
 
         Self {
             packed_outputs,
@@ -563,15 +568,11 @@ impl CompiledNetwork {
 
     fn update_internal<const USE_SIMD: bool>(&mut self) {
         self.iterations += 1;
-        //debug_assert!(self.update_list.len != 0);
-        //assert!(self.iterations < 3);
-        //println!("{}", self.iterations);
-
         // This somehow improves performance, even when update list is non-zero.
         // It should also be very obvious to the compiler...
-        if self.update_list.len == 0 {
-            return;
-        }
+        //if self.update_list.len == 0 {
+        //    return;
+        //}
 
         Self::update_gates::<false, USE_SIMD>(
             self.update_list.get_slice(),
@@ -616,9 +617,6 @@ impl CompiledNetwork {
         packed_output_indexes: &[IndexType],
         packed_outputs: &[IndexType],
     ) {
-        //RUSTFLAGS=-Awarnings
-        //
-        //debug_assert!();
         update_list
             .iter()
             .for_each(|x| assert!(in_update_list[*x as usize]));

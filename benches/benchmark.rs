@@ -42,7 +42,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     }
     for pre in pre_parsed.iter() {
-        println!("{}", pre.1.network.iterations);
+        //println!("{}", pre.1.compiled_network.iterations);
         pre.1.print(); // make sure optimizer does not remove everything
     }
     c_run.finish();
