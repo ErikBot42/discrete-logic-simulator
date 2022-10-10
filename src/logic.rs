@@ -501,21 +501,21 @@ impl CompiledNetwork {
             gate.in_update_list = true;
         }
 
+        // pack gate type, acc, state, flags
         for gate in network.gates.iter() {
-            let kind = gate.kind;
-
-
-            // pack gate type, acc, state, outputs, flags
             let runtime_kind = RunTimeGateType::new(gate.kind);
             runtime_gate_kind.push(runtime_kind);
             let (is_inverted, is_xor) = Gate::calc_flags(runtime_kind);
             gate_flags.push((is_inverted, is_xor));
             gate_flag_is_xor.push(is_xor as u8);
             gate_flag_is_inverted.push(is_inverted as u8);
-
             acc.push(gate.acc);
             state.push(gate.state as u8);
             in_update_list.push(gate.in_update_list);
+        }
+
+        // pack outputs
+        for gate in network.gates.iter() {
             packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
             packed_outputs.append(&mut gate.outputs.clone());
         }
