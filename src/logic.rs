@@ -437,11 +437,8 @@ impl CompiledNetwork {
                 }),
             number_of_gates,
         );
-
         let gates = &network.gates;
-
         let (packed_output_indexes, packed_outputs) = Self::pack_outputs(gates);
-
         let runtime_gate_kind: Vec<RunTimeGateType> = gates
             .iter()
             .map(|gate| RunTimeGateType::new(gate.kind))
@@ -472,7 +469,6 @@ impl CompiledNetwork {
             translation_table: network.translation_table,
         }
     }
-
     fn pack_outputs(gates: &Vec<Gate>) -> (Vec<IndexType>, Vec<IndexType>) {
         //TODO: optimized overlapping outputs/indexes
         let mut packed_output_indexes: Vec<IndexType> = Vec::new();
@@ -484,20 +480,17 @@ impl CompiledNetwork {
         packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
         (packed_output_indexes, packed_outputs)
     }
-
-    #[must_use]
     /// # Panics
     /// Not initialized, if `gate_id` is out of range
+    #[must_use]
     pub(crate) fn get_state(&self, gate_id: usize) -> bool {
         let gate_id = self.translation_table[gate_id];
         self.state[gate_id as usize] != 0
     }
-
     #[inline(always)]
     pub(crate) fn update_simd(&mut self) {
         self.update_internal::<true>();
     }
-
     /// Updates state of all gates.
     /// # Panics
     /// Not initialized (debug)
@@ -505,7 +498,6 @@ impl CompiledNetwork {
     pub(crate) fn update(&mut self) {
         self.update_internal::<false>();
     }
-
     fn update_internal<const USE_SIMD: bool>(&mut self) {
         self.iterations += 1;
         // This somehow improves performance, even when update list is non-zero.
@@ -513,7 +505,6 @@ impl CompiledNetwork {
         if self.update_list.len() == 0 {
             return;
         }
-
         //TODO: move clear into update functions.
         //TOOD: move update list into separate struct to borrow them
         //      separately
@@ -522,20 +513,18 @@ impl CompiledNetwork {
         self.update_gates::<true, USE_SIMD>();
         self.cluster_update_list.clear();
     }
-
-    fn update_gates<const IS_CLUSTERS: bool, const USE_SIMD: bool>(&mut self) {
+    fn update_gates<const CLUSTER: bool, const USE_SIMD: bool>(&mut self) {
         if USE_SIMD {
-            self.update_gates_in_list_simd::<IS_CLUSTERS>();
+            self.update_gates_in_list_simd::<CLUSTER>();
         } else {
-            self.update_gates_in_list::<IS_CLUSTERS>();
+            self.update_gates_in_list::<CLUSTER>();
         }
     }
-
     /// Update all gates in update list.
     /// Appends next update list.
     #[inline(always)]
-    fn update_gates_in_list<const ASSUME_CLUSTER: bool>(&mut self) {
-        let (update_list, next_update_list) = if ASSUME_CLUSTER {
+    fn update_gates_in_list<const CLUSTER: bool>(&mut self) {
+        let (update_list, next_update_list) = if CLUSTER {
             (self.cluster_update_list.get_slice(), &mut self.update_list)
         } else {
             (self.update_list.get_slice(), &mut self.cluster_update_list)
@@ -545,17 +534,14 @@ impl CompiledNetwork {
         }
         for id in update_list.iter().map(|id| *id as usize) {
             debug_assert!(self.in_update_list[id], "{id:?}");
-            //assert!(self.in_update_list[id]);
-            let kind;
-            let flags;
-            if ASSUME_CLUSTER {
-                kind = RunTimeGateType::OrNand;
-                flags = (false, false);
+            let (kind, flags) = if CLUSTER {
+                (RunTimeGateType::OrNand, (false, false))
             } else {
-                kind = *unsafe { self.runtime_gate_kind.get_unchecked(id) };
-                flags = *unsafe { self.gate_flags.get_unchecked(id) };
+                (
+                    unsafe { *self.runtime_gate_kind.get_unchecked(id) },
+                    unsafe { *self.gate_flags.get_unchecked(id) },
+                )
             };
-
             //let next_state = Gate::evaluate(*unsafe { acc.get_unchecked(id) }, kind);
             let next_state =
                 Gate::evaluate_from_flags(*unsafe { self.acc.get_unchecked(id) }, flags);
@@ -568,7 +554,6 @@ impl CompiledNetwork {
                 };
                 let from_index = *unsafe { self.packed_output_indexes.get_unchecked(id) };
                 let to_index = *unsafe { self.packed_output_indexes.get_unchecked(id + 1) };
-
                 for output_id in unsafe {
                     self.packed_outputs
                         .get_unchecked(from_index as usize..to_index as usize)
@@ -584,14 +569,12 @@ impl CompiledNetwork {
                         next_update_list.push(*output_id);
                     }
                 }
-
                 *unsafe { self.state.get_unchecked_mut(id) } = next_state as u8;
             }
             // this gate should be ready to be re-added to the update list.
             *unsafe { self.in_update_list.get_unchecked_mut(id) } = false;
         }
     }
-
     #[inline(always)]
     //#[inline(never)]
     fn update_gates_in_list_simd<const ASSUME_CLUSTER: bool>(
