@@ -1,4 +1,3 @@
-//mod raw_list {
 /// A list that is just a raw array that is manipulated directly.
 /// Very unsafe but slightly faster than a normal vector
 #[derive(Debug, Default, Clone)]
@@ -13,9 +12,6 @@ impl<T> RawList<T>
 where
     T: Default + Clone,
 {
-    pub(crate) fn from_vec(vec: Vec<T>, max_size: usize) -> Self {
-        Self::collect(vec.into_iter(), max_size)
-    }
     pub(crate) fn collect(iter: impl Iterator<Item = T>, max_size: usize) -> Self {
         let mut list = Self::new(max_size);
         for el in iter {
@@ -60,4 +56,3 @@ where
         self.len
     }
 }
-//}

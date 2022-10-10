@@ -2,8 +2,7 @@
 #![allow(clippy::inline_always)]
 use itertools::Itertools;
 use std::collections::HashMap;
-
-
+use std::convert::From;
 use std::simd::*;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
@@ -132,13 +131,11 @@ impl Gate {
             GateType::Or | GateType::Nor | GateType::Xor | GateType::Xnor | GateType::Cluster => (),
         }
     }
-
     /// add inputs and handle internal logic for them
     fn add_inputs_vec(&mut self, inputs: &mut Vec<IndexType>) {
         self.add_inputs(inputs.len() as i32);
         self.inputs.append(inputs);
     }
-
     #[inline(always)]
     fn evaluate(acc: AccType, kind: RunTimeGateType) -> bool {
         match kind {
@@ -159,7 +156,6 @@ impl Gate {
     fn evaluate_branchless(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
         !is_xor && ((acc != 0) != is_inverted) || is_xor && (acc % 2 == 1)
     }
-
     #[inline(always)] // inline always required to keep SIMD in registers.
     #[must_use]
     fn evaluate_simd<const LANES: usize>(
@@ -223,7 +219,6 @@ impl Gate {
         (kind, self.inputs.clone())
     }
 }
-
 
 /// Contains gate graph in order to do network optimization
 #[derive(Debug, Default, Clone)]
@@ -425,7 +420,6 @@ pub(crate) struct CompiledNetwork {
 
     pub iterations: usize,
 }
-
 impl CompiledNetwork {
     fn create(network: &Network, optimize: bool) -> Self {
         let mut network = network.initialized(optimize);
@@ -516,9 +510,9 @@ impl CompiledNetwork {
         self.iterations += 1;
         // This somehow improves performance, even when update list is non-zero.
         // It should also be very obvious to the compiler...
-        //if self.update_list.len == 0 {
-        //    return;
-        //}
+        if self.update_list.len() == 0 {
+            return;
+        }
 
         Self::update_gates::<false, USE_SIMD>(
             self.update_list.get_slice(),
@@ -550,7 +544,7 @@ impl CompiledNetwork {
         self.cluster_update_list.clear();
     }
 
-    fn update_gates<const ASSUME_CLUSTER: bool, const USE_SIMD: bool>(
+    fn update_gates<const IS_CLUSTERS: bool, const USE_SIMD: bool>(
         update_list: &[IndexType],
         next_update_list: &mut UpdateList,
         acc: &mut [AccType],
@@ -563,11 +557,8 @@ impl CompiledNetwork {
         packed_output_indexes: &[IndexType],
         packed_outputs: &[IndexType],
     ) {
-        update_list
-            .iter()
-            .for_each(|x| assert!(in_update_list[*x as usize]));
         if USE_SIMD {
-            Self::update_gates_in_list_simd::<ASSUME_CLUSTER>(
+            Self::update_gates_in_list_simd::<IS_CLUSTERS>(
                 update_list,
                 next_update_list,
                 acc,
@@ -581,7 +572,7 @@ impl CompiledNetwork {
                 packed_outputs,
             );
         } else {
-            Self::update_gates_in_list::<ASSUME_CLUSTER>(
+            Self::update_gates_in_list::<IS_CLUSTERS>(
                 update_list,
                 next_update_list,
                 acc,
