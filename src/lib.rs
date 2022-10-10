@@ -14,6 +14,7 @@ macro_rules! unwrap_or_else {
 
 pub mod blueprint;
 pub mod logic;
+pub mod raw_list;
 
 #[cfg(test)]
 mod tests {

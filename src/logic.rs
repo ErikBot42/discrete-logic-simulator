@@ -3,6 +3,7 @@
 use itertools::Itertools;
 use std::collections::HashMap;
 
+
 use std::simd::*;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
@@ -86,7 +87,7 @@ type SimdLogicType = u8;
 // u16 enough for typical applications (65536), u32
 // u32 > u16, u32
 type IndexType = AccTypeInner;
-type UpdateList = RawList<IndexType>;
+type UpdateList = crate::raw_list::RawList<IndexType>;
 
 type GateKey = (GateType, Vec<IndexType>);
 
@@ -223,67 +224,6 @@ impl Gate {
     }
 }
 
-/// A list that is just a raw array that is manipulated directly.
-/// Very unsafe but slightly faster than a normal vector
-#[derive(Debug, Default, Clone)]
-struct RawList<T>
-where
-    T: Default + Clone,
-{
-    list: Box<[T]>,
-    len: usize,
-}
-impl<T> RawList<T>
-where
-    T: Default + Clone,
-{
-    pub(crate) fn from_vec(vec: Vec<T>, max_size: usize) -> Self {
-        Self::collect(vec.into_iter(), max_size)
-    }
-    pub(crate) fn collect(iter: impl Iterator<Item = T>, max_size: usize) -> Self {
-        let mut list = Self::new(max_size);
-        for el in iter {
-            list.push(el);
-        }
-        list
-    }
-    pub(crate) fn new(max_size: usize) -> Self {
-        RawList {
-            list: vec![T::default(); max_size].into_boxed_slice(),
-            len: 0,
-        }
-    }
-    #[inline(always)]
-    pub(crate) fn clear(&mut self) {
-        self.len = 0;
-    }
-    #[inline(always)]
-    pub(crate) fn push(&mut self, el: T) {
-        *unsafe { self.list.get_unchecked_mut(self.len) } = el;
-        self.len += 1;
-        debug_assert!(
-            self.list.len() > self.len,
-            "{} <= {}",
-            self.list.len(),
-            self.len
-        );
-    }
-    #[inline(always)]
-    pub(crate) fn get_slice(&self) -> &[T] {
-        // &self.list[0..self.len]
-        debug_assert!(
-            self.list.len() > self.len,
-            "{} <= {}",
-            self.list.len(),
-            self.len
-        );
-        unsafe { self.list.get_unchecked(..self.len) }
-    }
-    #[inline(always)]
-    pub(crate) fn len(&self) -> usize {
-        self.len
-    }
-}
 
 /// Contains gate graph in order to do network optimization
 #[derive(Debug, Default, Clone)]
@@ -491,7 +431,7 @@ impl CompiledNetwork {
         let mut network = network.initialized(optimize);
 
         let number_of_gates = network.gates.len();
-        let update_list = RawList::collect(
+        let update_list = UpdateList::collect(
             network
                 .gates
                 .iter_mut()
@@ -533,7 +473,7 @@ impl CompiledNetwork {
             gate_flag_is_xor,
             gate_flag_is_inverted,
             update_list,
-            cluster_update_list: RawList::new(number_of_gates),
+            cluster_update_list: UpdateList::new(number_of_gates),
             iterations: 0,
             translation_table: network.translation_table,
         }
