@@ -477,11 +477,7 @@ impl CompiledNetwork {
         if optimize {
             network = network.optimized();
         }
-        assert_ne!(
-            network.gates.len(),
-            0,
-            "optimization removed all gates"
-        );
+        assert_ne!(network.gates.len(), 0, "optimization removed all gates");
         let number_of_gates = network.gates.len();
 
         let mut update_list = RawList::new(number_of_gates);
@@ -497,15 +493,19 @@ impl CompiledNetwork {
         let mut packed_output_indexes: Vec<IndexType> = Vec::new();
         let mut packed_outputs: Vec<IndexType> = Vec::new();
 
-        for (gate_id, gate) in network.gates.iter_mut().enumerate() {
+        for (gate_id, gate) in network
+            .gates
+            .iter_mut()
+            .enumerate()
+            .filter(|(_, gate)| gate.kind.will_update_at_start())
+        {
+            update_list.push(gate_id.try_into().unwrap());
+            gate.in_update_list = true;
+        }
+
+        for gate in network.gates.iter() {
             let kind = gate.kind;
 
-            // add gates that will immediately update to the
-            // update list
-            if kind.will_update_at_start() {
-                update_list.push(gate_id.try_into().unwrap());
-                gate.in_update_list = true;
-            }
 
             // pack gate type, acc, state, outputs, flags
             let runtime_kind = RunTimeGateType::new(gate.kind);
