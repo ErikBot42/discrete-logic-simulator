@@ -230,6 +230,16 @@ struct RawList {
     len: usize,
 }
 impl RawList {
+    fn from_vec(vec: Vec<IndexType>, max_size: usize) -> Self {
+        Self::collect(vec.into_iter(), max_size)
+    }
+    fn collect(iter: impl Iterator<Item = IndexType>, max_size: usize) -> Self {
+        let mut list = Self::new(max_size);
+        for el in iter {
+            list.push(el);
+        }
+        list
+    }
     fn new(max_size: usize) -> Self {
         RawList {
             list: vec![0 as IndexType; max_size].into_boxed_slice(),
@@ -481,15 +491,16 @@ impl CompiledNetwork {
 
         let number_of_gates = network.gates.len();
         let mut update_list = RawList::new(number_of_gates);
-        for (gate_id, gate) in network
+        network
             .gates
             .iter_mut()
             .enumerate()
             .filter(|(_, gate)| gate.kind.will_update_at_start())
-        {
-            update_list.push(gate_id.try_into().unwrap());
-            gate.in_update_list = true;
-        }
+            .for_each(|(gate_id, gate)| {
+                update_list.push(gate_id.try_into().unwrap());
+                gate.in_update_list = true;
+            });
+
         let gates = &network.gates;
 
         let runtime_gate_kind: Vec<RunTimeGateType> = gates
@@ -505,10 +516,6 @@ impl CompiledNetwork {
             .cloned()
             .map(|(is_inverted, is_xor)| (is_inverted as u8, is_xor as u8))
             .unzip();
-        let acc: Vec<AccType> = gates.iter().map(|gate| gate.acc).collect();
-        let state: Vec<u8> = gates.iter().map(|gate| gate.state as u8).collect();
-        let in_update_list: Vec<bool> = gates.iter().map(|gate| gate.in_update_list).collect();
-
         // pack outputs
         for gate in network.gates.iter() {
             packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
@@ -519,9 +526,9 @@ impl CompiledNetwork {
         Self {
             packed_outputs,
             packed_output_indexes,
-            state,
-            acc,
-            in_update_list,
+            state: gates.iter().map(|gate| gate.state as u8).collect(),
+            acc: gates.iter().map(|gate| gate.acc).collect(),
+            in_update_list: gates.iter().map(|gate| gate.in_update_list).collect(),
             runtime_gate_kind,
             gate_flags,
             gate_flag_is_xor,
@@ -875,23 +882,7 @@ impl CompiledNetwork {
 pub struct GateNetwork {
     network: Network,
 
-    //TODO: overlapping outputs/indexes
-    //packed_outputs: Vec<IndexType>,
-    //packed_output_indexes: Vec<IndexType>,
-
-    //state: Vec<u8>,
-    //acc: Vec<AccType>,
-    //in_update_list: Vec<bool>,
-    //runtime_gate_kind: Vec<RunTimeGateType>,
-
-    //gate_flags: Vec<(bool, bool)>,
-    //gate_flag_is_xor: Vec<u8>,
-    //gate_flag_is_inverted: Vec<u8>,
-    initialized: bool, //TODO: typestate pattern
-                       //update_list: RawList,
-                       //cluster_update_list: RawList,
-
-                       //pub iterations: usize,
+    initialized: bool,
 }
 impl GateNetwork {
     /// Internally creates a vertex.
