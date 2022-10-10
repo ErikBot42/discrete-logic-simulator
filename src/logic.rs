@@ -476,9 +476,6 @@ impl CompiledNetwork {
         }
         assert_ne!(network.gates.len(), 0, "optimization removed all gates");
 
-        let mut acc: Vec<AccType> = Vec::new();
-        let mut state: Vec<u8> = Vec::new();
-        let mut in_update_list: Vec<bool> = Vec::new();
         let mut packed_output_indexes: Vec<IndexType> = Vec::new();
         let mut packed_outputs: Vec<IndexType> = Vec::new();
 
@@ -510,11 +507,7 @@ impl CompiledNetwork {
             .unzip();
         let acc: Vec<AccType> = gates.iter().map(|gate| gate.acc).collect();
         let state: Vec<u8> = gates.iter().map(|gate| gate.state as u8).collect();
-
-        // pack gate type, acc, state, flags
-        for gate in network.gates.iter() {
-            in_update_list.push(gate.in_update_list);
-        }
+        let in_update_list: Vec<bool> = gates.iter().map(|gate| gate.in_update_list).collect();
 
         // pack outputs
         for gate in network.gates.iter() {
