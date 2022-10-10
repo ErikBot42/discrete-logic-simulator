@@ -881,8 +881,6 @@ impl CompiledNetwork {
 #[derive(Debug, Default, Clone)]
 pub struct GateNetwork {
     network: Network,
-
-    initialized: bool,
 }
 impl GateNetwork {
     /// Internally creates a vertex.
@@ -891,7 +889,6 @@ impl GateNetwork {
     /// # Panics
     /// If more than `IndexType::MAX` are added, or after initialized
     pub(crate) fn add_vertex(&mut self, kind: GateType) -> usize {
-        assert!(!self.initialized);
         let next_id = self.network.gates.len();
         self.network.gates.push(Gate::from_gate_type(kind));
         assert!(self.network.gates.len() < IndexType::MAX as usize);
@@ -904,7 +901,6 @@ impl GateNetwork {
     /// # Panics
     /// if precondition is not held.
     pub(crate) fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
-        assert!(!self.initialized);
         let gate = &mut self.network.gates[gate_id];
         gate.add_inputs(inputs.len().try_into().unwrap());
         let mut in2 = Vec::new();
@@ -940,54 +936,5 @@ impl GateNetwork {
     #[must_use]
     pub(crate) fn compiled(&mut self, optimize: bool) -> CompiledNetwork {
         return CompiledNetwork::create(&self.network, optimize);
-        //assert!(!self.initialized);
-        //self.network.translation_table = (0..self.network.gates.len())
-        //    .into_iter()
-        //    .map(|x| x as IndexType)
-        //    .collect();
-        //assert_ne!(self.network.gates.len(), 0, "no gates where added.");
-        //if optimize {
-        //    self.network = self.network.optimized();
-        //    assert_ne!(self.network.gates.len(), 0, "no gates after optimization");
-        //}
-        //let number_of_gates = self.network.gates.len();
-
-        //self.update_list.list = vec![0; number_of_gates].into_boxed_slice();
-        //self.cluster_update_list.list = vec![0; number_of_gates].into_boxed_slice();
-        //self.update_list.len = 0;
-        //self.cluster_update_list.len = 0;
-
-        //// TODO: iterator
-        //for gate_id in 0..number_of_gates {
-        //    let gate = &mut self.network.gates[gate_id];
-        //    let kind = gate.kind;
-
-        //    // add gates that will immediately update to the
-        //    // update list
-        //    if kind.will_update_at_start() {
-        //        self.update_list.push(gate_id.try_into().unwrap());
-        //        gate.in_update_list = true;
-        //    }
-
-        //    // pack gate type, acc, state, outputs, flags
-        //    let runtime_kind = RunTimeGateType::new(gate.kind);
-        //    self.runtime_gate_kind.push(runtime_kind);
-        //    let (is_inverted, is_xor) = Gate::calc_flags(runtime_kind);
-        //    self.gate_flags.push((is_inverted, is_xor));
-        //    self.gate_flag_is_xor.push(is_xor as u8);
-        //    self.gate_flag_is_inverted.push(is_inverted as u8);
-
-        //    self.acc.push(gate.acc);
-        //    self.state.push(gate.state as u8);
-        //    self.in_update_list.push(gate.in_update_list);
-        //    self.packed_output_indexes
-        //        .push(self.packed_outputs.len().try_into().unwrap());
-        //    self.packed_outputs.append(&mut gate.outputs.clone());
-        //}
-        //self.packed_output_indexes
-        //    .push(self.packed_outputs.len().try_into().unwrap());
-        //self.initialized = true;
-
-        //self.clone()
     }
 }
