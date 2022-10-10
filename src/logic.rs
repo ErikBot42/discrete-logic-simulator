@@ -515,110 +515,31 @@ impl CompiledNetwork {
         }
 
         //TODO: move clear into update functions.
+        //TOOD: move update list into separate struct to borrow them
+        //      separately
         self.update_gates::<false, USE_SIMD>();
         self.update_list.clear();
         self.update_gates::<true, USE_SIMD>();
         self.cluster_update_list.clear();
-
-        //Self::update_gates::<false, USE_SIMD>(
-        //    self.update_list.get_slice(),
-        //    &mut self.cluster_update_list,
-        //    &mut self.acc,
-        //    &mut self.state,
-        //    &mut self.in_update_list,
-        //    &self.runtime_gate_kind,
-        //    &self.gate_flags,
-        //    &self.gate_flag_is_xor,
-        //    &self.gate_flag_is_inverted,
-        //    &self.packed_output_indexes,
-        //    &self.packed_outputs,
-        //);
-        //self.update_list.clear();
-        //Self::update_gates::<true, USE_SIMD>(
-        //    self.cluster_update_list.get_slice(),
-        //    &mut self.update_list,
-        //    &mut self.acc,
-        //    &mut self.state,
-        //    &mut self.in_update_list,
-        //    &self.runtime_gate_kind,
-        //    &self.gate_flags,
-        //    &self.gate_flag_is_xor,
-        //    &self.gate_flag_is_inverted,
-        //    &self.packed_output_indexes,
-        //    &self.packed_outputs,
-        //);
-        //self.cluster_update_list.clear();
     }
 
-    fn update_gates<const IS_CLUSTERS: bool, const USE_SIMD: bool>(
-        &mut self,
-        //update_list: &[IndexType],
-        //next_update_list: &mut UpdateList,
-        //acc: &mut [AccType],
-        //state: &mut [u8],
-        //in_update_list: &mut [bool],
-        //gate_kinds: &[RunTimeGateType],
-        //gate_flags: &[(bool, bool)],
-        //gate_flag_xor: &[u8],
-        //gate_flag_inverted: &[u8],
-        //packed_output_indexes: &[IndexType],
-        //packed_outputs: &[IndexType],
-    ) {
+    fn update_gates<const IS_CLUSTERS: bool, const USE_SIMD: bool>(&mut self) {
         if USE_SIMD {
-            self.update_gates_in_list_simd::<IS_CLUSTERS>(
-                //update_list,
-                //next_update_list,
-                //acc,
-                //state,
-                //in_update_list,
-                //gate_kinds,
-                //gate_flags,
-                //gate_flag_xor,
-                //gate_flag_inverted,
-                //packed_output_indexes,
-                //packed_outputs,
-            );
+            self.update_gates_in_list_simd::<IS_CLUSTERS>();
         } else {
-            self.update_gates_in_list::<IS_CLUSTERS>(
-                //update_list,
-                //next_update_list,
-                //acc,
-                //state,
-                //in_update_list,
-                //gate_kinds,
-                //gate_flags,
-                //gate_flag_xor,
-                //gate_flag_inverted,
-                //packed_output_indexes,
-                //packed_outputs,
-            );
+            self.update_gates_in_list::<IS_CLUSTERS>();
         }
     }
 
     /// Update all gates in update list.
     /// Appends next update list.
     #[inline(always)]
-    fn update_gates_in_list<const ASSUME_CLUSTER: bool>(
-        &mut self,
-        //update_list: &[IndexType],
-        //next_update_list: &mut UpdateList,
-        //acc: &mut [AccType],
-        //state: &mut [u8],
-        //in_update_list: &mut [bool],
-
-        //gate_kinds: &[RunTimeGateType],
-        //gate_flags: &[(bool, bool)],
-        //gate_flag_xor: &[u8],
-        //gate_flag_inverted: &[u8],
-        //packed_output_indexes: &[IndexType],
-        //packed_outputs: &[IndexType],
-    ) {
-        let (update_list, next_update_list) =
-            if ASSUME_CLUSTER { 
-                (self.cluster_update_list.get_slice(), &mut self.update_list)
-            } else { 
-                (self.update_list.get_slice(), &mut self.cluster_update_list)
-            };
+    fn update_gates_in_list<const ASSUME_CLUSTER: bool>(&mut self) {
+        let (update_list, next_update_list) = if ASSUME_CLUSTER {
+            (self.cluster_update_list.get_slice(), &mut self.update_list)
+        } else {
+            (self.update_list.get_slice(), &mut self.cluster_update_list)
+        };
         if update_list.len() == 0 {
             return;
         }
@@ -636,7 +557,8 @@ impl CompiledNetwork {
             };
 
             //let next_state = Gate::evaluate(*unsafe { acc.get_unchecked(id) }, kind);
-            let next_state = Gate::evaluate_from_flags(*unsafe { self.acc.get_unchecked(id) }, flags);
+            let next_state =
+                Gate::evaluate_from_flags(*unsafe { self.acc.get_unchecked(id) }, flags);
             //let next_state = Gate::evaluate_branchless(*unsafe { acc.get_unchecked(id) }, flags);
             if (*unsafe { self.state.get_unchecked(id) } != 0) != next_state {
                 let delta: AccType = if next_state {
@@ -647,9 +569,11 @@ impl CompiledNetwork {
                 let from_index = *unsafe { self.packed_output_indexes.get_unchecked(id) };
                 let to_index = *unsafe { self.packed_output_indexes.get_unchecked(id + 1) };
 
-                for output_id in
-                    unsafe { self.packed_outputs.get_unchecked(from_index as usize..to_index as usize) }
-                        .iter()
+                for output_id in unsafe {
+                    self.packed_outputs
+                        .get_unchecked(from_index as usize..to_index as usize)
+                }
+                .iter()
                 {
                     let in_update_list =
                         unsafe { self.in_update_list.get_unchecked_mut(*output_id as usize) };
