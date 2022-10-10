@@ -101,7 +101,7 @@ pub(crate) struct Gate {
     acc: AccType,
     state: bool,
     in_update_list: bool,
-    //TODO: "do not merge" flag for gates that are "volatile", i.e do something with IO
+    //TODO: "do not merge" flag for gates that are "volatile", i.e doing something with IO
 }
 impl Gate {
     fn new(kind: GateType, outputs: Vec<IndexType>) -> Self {
@@ -285,7 +285,7 @@ struct Network {
     translation_table: Vec<IndexType>,
 }
 impl Network {
-    fn initialized(&self, optimize: bool) -> Self{
+    fn initialized(&self, optimize: bool) -> Self {
         let mut network = self.clone();
         network.translation_table = (0..network.gates.len())
             .into_iter()
@@ -425,12 +425,8 @@ impl Network {
     /// some passes make it possible for others or the same
     /// pass to be run again.
     fn optimization_pass(&self) -> Self {
-        //TODO: split into separate stages.
-        // iterate through all old gates,
-        // add gate if type & original input set is unique
-        // this does not handle the case when an id becomes another id
-        // and in turn another merge becomes valid, therefore,
-        // this function should be run several times.
+        // Iterate through all old gates.
+        // Add gate if type & original input set is unique.
         let old_gates = &self.gates;
 
         let (mut new_gates, old_to_new_id) = Self::create_nodes_optimized_from(old_gates);
@@ -476,7 +472,6 @@ pub(crate) struct CompiledNetwork {
     gate_flag_is_xor: Vec<u8>,
     gate_flag_is_inverted: Vec<u8>,
 
-    //initialized: bool,
     update_list: RawList,
     cluster_update_list: RawList,
 
