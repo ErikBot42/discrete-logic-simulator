@@ -508,11 +508,11 @@ impl CompiledNetwork {
             .cloned()
             .map(|(is_inverted, is_xor)| (is_inverted as u8, is_xor as u8))
             .unzip();
+        let acc: Vec<AccType> = gates.iter().map(|gate| gate.acc).collect();
+        let state: Vec<u8> = gates.iter().map(|gate| gate.state as u8).collect();
 
         // pack gate type, acc, state, flags
         for gate in network.gates.iter() {
-            acc.push(gate.acc);
-            state.push(gate.state as u8);
             in_update_list.push(gate.in_update_list);
         }
 
