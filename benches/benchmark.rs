@@ -12,7 +12,6 @@ fn criterion_benchmark(c: &mut Criterion) {
         criterion::black_box(std::hint::black_box(data))
     }
     let tests = vec![
-        ("intro", include_str!("../test_files/intro.blueprint")),
         (
             "big_decoder",
             include_str!("../test_files/big_decoder.blueprint"),
@@ -21,6 +20,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             "bcd_count",
             include_str!("../test_files/bcd_count.blueprint"),
         ),
+        ("intro", include_str!("../test_files/intro.blueprint")),
         ("gates", include_str!("../test_files/gates.blueprint")),
     ];
     let mut pre_parsed: Vec<(&str, VcbBoard)> = tests

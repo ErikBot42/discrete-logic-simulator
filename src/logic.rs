@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::convert::From;
 use std::simd::*;
 
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, PartialOrd, Ord)]
 /// A = active inputs
 /// T = total inputs
 pub(crate) enum GateType {
@@ -29,7 +29,6 @@ impl GateType {
     fn will_update_at_start(self) -> bool {
         matches!(self, GateType::Nor | GateType::Nand | GateType::Xnor)
     }
-
     /// can a pair of identical connections be removed without changing behaviour
     fn can_delete_double_identical_inputs(&self) -> bool {
         match self {
@@ -39,7 +38,6 @@ impl GateType {
             },
         }
     }
-
     /// can one connection in pair of identical connections be removed without changing behaviour
     fn can_delete_single_identical_inputs(&self) -> bool {
         match self {
@@ -172,17 +170,13 @@ impl Gate {
         let acc_not_zero = acc_logic
             .simd_ne(Simd::splat(0))
             .select(Simd::splat(1), Simd::splat(0)); // 0|1
-
         let xor_term = is_xor & acc_logic; // 0|1
                                            // TODO is this just subtracting 1?
         let not_xor = !is_xor; // 0|1111...
-
-        //let xor_term = is_xor & acc & Simd::splat(1);
-        //let not_xor = !is_xor & Simd::splat(1);
-
+                               //let xor_term = is_xor & acc & Simd::splat(1);
+                               //let not_xor = !is_xor & Simd::splat(1);
         let acc_term = not_xor & (is_inverted ^ acc_not_zero); //0|1
         let new_state = acc_term | xor_term; //0|1
-
         (new_state, old_state ^ new_state)
     }
 
@@ -201,14 +195,11 @@ impl Gate {
         // TODO: can potentially include inverted.
         // but then every connection would have to include
         // connection information
-
         let kind = match self.kind {
             GateType::Cluster => GateType::Or,
             _ => self.kind,
         };
-
         let inputs_len = self.inputs.len();
-
         let kind = match inputs_len {
             0 | 1 => match kind {
                 GateType::Nand | GateType::Xnor | GateType::Nor => GateType::Nor,
@@ -240,7 +231,6 @@ impl Network {
         assert_ne!(network.gates.len(), 0, "optimization removed all gates");
         return network;
     }
-
     fn print_info(&self) {
         let counts_iter = self
             .gates
@@ -257,7 +247,6 @@ impl Network {
             println!("{value}: {count}");
         }
     }
-
     /// Create input connections for the new gates, given the old gates.
     /// O(n)
     fn create_input_connections(
@@ -302,7 +291,6 @@ impl Network {
             new_gate.add_inputs_vec(&mut deduped_inputs.clone());
         }
     }
-
     /// Create output connections from current input connections
     /// O(n)
     fn create_output_connections(new_gates: &mut Vec<Gate>) {
@@ -317,7 +305,6 @@ impl Network {
             }
         }
     }
-
     /// Create a new merged set of nodes based on the old nodes
     /// and a translation back to the old ids.
     /// O(n)
@@ -348,7 +335,6 @@ impl Network {
         assert!(old_gates.len() == old_to_new_id.len());
         (new_gates, old_to_new_id)
     }
-
     /// Create translation that combines the old and new translation
     /// from outside facing ids to nodes
     /// O(n)
@@ -362,7 +348,6 @@ impl Network {
             .map(|x| old_to_new_id[x as usize])
             .collect()
     }
-
     /// Single network optimization pass. Much like compilers,
     /// some passes make it possible for others or the same
     /// pass to be run again.
@@ -370,22 +355,18 @@ impl Network {
         // Iterate through all old gates.
         // Add gate if type & original input set is unique.
         let old_gates = &self.gates;
-
         let (mut new_gates, old_to_new_id) = Self::create_nodes_optimized_from(old_gates);
         Self::create_input_connections(&mut new_gates, &old_gates, &old_to_new_id);
         Self::remove_redundant_input_connections(&mut new_gates);
         Self::create_output_connections(&mut new_gates);
-
         let old_translation_table = &self.translation_table;
         let new_translation_table =
             Self::create_translation_table(&old_translation_table, &old_to_new_id);
-
         Network {
             gates: new_gates,
             translation_table: new_translation_table,
         }
     }
-
     fn optimized(&self) -> Self {
         let mut prev_network_gate_count = self.gates.len();
         loop {
@@ -396,6 +377,45 @@ impl Network {
             prev_network_gate_count = new_network.gates.len();
         }
     }
+
+    /// Change order of gates, might be better for cache.
+    /// TODO: currently seems to have negative effect
+    fn sorted(&self) -> Self {
+        let mut gates_with_ids: Vec<(usize, &Gate)> = self.gates.iter().enumerate().collect();
+        gates_with_ids.sort_by(|(_, a), (_, b)| a.kind.cmp(&b.kind));
+        //gates_with_ids.sort_by(|(i, _), (j, _)| i.cmp(&j));
+        //gates_with_ids.sort_by(|(i, _), (j, _)| j.cmp(&i));
+        let (inverse_translation_table, gates): (Vec<usize>, Vec<&Gate>) =
+            gates_with_ids.into_iter().unzip();
+        let mut translation_table: Vec<IndexType> = (0..inverse_translation_table.len())
+            .map(|_| 0 as IndexType)
+            .collect();
+        inverse_translation_table
+            .iter()
+            .enumerate()
+            .for_each(|(index, new)| translation_table[*new] = index as IndexType);
+        let gates: Vec<Gate> = gates
+            .into_iter()
+            .cloned()
+            .map(|mut gate| {
+                gate.outputs
+                    .iter_mut()
+                    .for_each(|output| *output = translation_table[*output as usize] as IndexType);
+                gate.inputs
+                    .iter_mut()
+                    .for_each(|input| *input = translation_table[*input as usize] as IndexType);
+                gate
+            })
+            .collect();
+
+        Self {
+            gates,
+            translation_table: Self::create_translation_table(
+                &self.translation_table,
+                &translation_table,
+            ),
+        }
+    }
 }
 
 /// Contains prepared datastructures to run the network.
@@ -403,21 +423,16 @@ impl Network {
 pub(crate) struct CompiledNetwork {
     packed_outputs: Vec<IndexType>,
     packed_output_indexes: Vec<IndexType>,
-
     state: Vec<u8>,
     acc: Vec<AccType>,
     in_update_list: Vec<bool>,
     runtime_gate_kind: Vec<RunTimeGateType>,
-
     gate_flags: Vec<(bool, bool)>,
     gate_flag_is_xor: Vec<u8>,
     gate_flag_is_inverted: Vec<u8>,
-
     update_list: UpdateList,
     cluster_update_list: UpdateList,
-
     translation_table: Vec<IndexType>,
-
     pub iterations: usize,
 }
 impl CompiledNetwork {
