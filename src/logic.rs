@@ -480,9 +480,6 @@ impl CompiledNetwork {
         assert_ne!(network.gates.len(), 0, "optimization removed all gates");
         let number_of_gates = network.gates.len();
 
-        let mut update_list = RawList::new(number_of_gates);
-        let cluster_update_list = RawList::new(number_of_gates);
-
         let mut runtime_gate_kind: Vec<RunTimeGateType> = Vec::new();
         let mut gate_flags: Vec<(bool, bool)> = Vec::new();
         let mut gate_flag_is_xor: Vec<u8> = Vec::new();
@@ -493,6 +490,7 @@ impl CompiledNetwork {
         let mut packed_output_indexes: Vec<IndexType> = Vec::new();
         let mut packed_outputs: Vec<IndexType> = Vec::new();
 
+        let mut update_list = RawList::new(number_of_gates);
         for (gate_id, gate) in network
             .gates
             .iter_mut()
@@ -535,7 +533,7 @@ impl CompiledNetwork {
             gate_flag_is_xor,
             gate_flag_is_inverted,
             update_list,
-            cluster_update_list,
+            cluster_update_list: RawList::new(number_of_gates),
             iterations: 0,
             translation_table: network.translation_table,
         }
