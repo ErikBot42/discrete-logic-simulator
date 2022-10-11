@@ -40,6 +40,7 @@ colored = {version = "2.0.0", default-features = false}
 #rayon = "*"
 #bitvec = "1"
 itertools = "0.10.5"
+rand = "0.8.5"
 
 
 [dev-dependencies]

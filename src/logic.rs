@@ -372,7 +372,9 @@ impl Network {
         loop {
             let new_network = self.optimization_pass();
             if new_network.gates.len() == prev_network_gate_count {
-                return new_network;
+                //return std::hint::black_box(new_network.sorted());
+                return new_network.sorted();
+                //return new_network;
             }
             prev_network_gate_count = new_network.gates.len();
         }
@@ -381,8 +383,11 @@ impl Network {
     /// Change order of gates, might be better for cache.
     /// TODO: currently seems to have negative effect
     fn sorted(&self) -> Self {
+        //use rand::prelude::*;
         let mut gates_with_ids: Vec<(usize, &Gate)> = self.gates.iter().enumerate().collect();
-        gates_with_ids.sort_by(|(_, a), (_, b)| a.kind.cmp(&b.kind));
+        //let mut rng = rand::thread_rng();
+        //gates_with_ids.shuffle(&mut rng);
+        //gates_with_ids.sort_by(|(_, a), (_, b)| a.kind.cmp(&b.kind));
         //gates_with_ids.sort_by(|(i, _), (j, _)| i.cmp(&j));
         //gates_with_ids.sort_by(|(i, _), (j, _)| j.cmp(&i));
         let (inverse_translation_table, gates): (Vec<usize>, Vec<&Gate>) =
@@ -419,7 +424,7 @@ impl Network {
 }
 
 /// Contains prepared datastructures to run the network.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct CompiledNetwork {
     packed_outputs: Vec<IndexType>,
     packed_output_indexes: Vec<IndexType>,
@@ -427,9 +432,9 @@ pub(crate) struct CompiledNetwork {
     acc: Vec<AccType>,
     in_update_list: Vec<bool>,
     runtime_gate_kind: Vec<RunTimeGateType>,
-    gate_flags: Vec<(bool, bool)>,
-    gate_flag_is_xor: Vec<u8>,
-    gate_flag_is_inverted: Vec<u8>,
+    //gate_flags: Vec<(bool, bool)>,
+    //gate_flag_is_xor: Vec<u8>,
+    //gate_flag_is_inverted: Vec<u8>,
     update_list: UpdateList,
     cluster_update_list: UpdateList,
     translation_table: Vec<IndexType>,
@@ -475,14 +480,14 @@ impl CompiledNetwork {
             acc: gates.iter().map(|gate| gate.acc).collect(),
             in_update_list: gates.iter().map(|gate| gate.in_update_list).collect(),
             runtime_gate_kind,
-            gate_flags,
-            gate_flag_is_xor,
-            gate_flag_is_inverted,
+            //gate_flags,
+            //gate_flag_is_xor,
+            //gate_flag_is_inverted,
             update_list,
             cluster_update_list: UpdateList::new(number_of_gates),
             iterations: 0,
             translation_table: network.translation_table,
-        }
+        }//.clone()
     }
     fn pack_outputs(gates: &Vec<Gate>) -> (Vec<IndexType>, Vec<IndexType>) {
         //TODO: optimized overlapping outputs/indexes
@@ -521,7 +526,7 @@ impl CompiledNetwork {
             return;
         }
         //TODO: move clear into update functions.
-        //TOOD: move update list into separate struct to borrow them
+        //TODO: move update list into separate struct to borrow them
         //      separately
         self.update_gates::<false, USE_SIMD>();
         self.update_list.clear();
@@ -549,17 +554,17 @@ impl CompiledNetwork {
         }
         for id in update_list.iter().map(|id| *id as usize) {
             debug_assert!(self.in_update_list[id], "{id:?}");
-            let (kind, flags) = if CLUSTER {
-                (RunTimeGateType::OrNand, (false, false))
+            let (kind, /*flags*/) = if CLUSTER {
+                (RunTimeGateType::OrNand, /*(false, false)*/)
             } else {
                 (
                     unsafe { *self.runtime_gate_kind.get_unchecked(id) },
-                    unsafe { *self.gate_flags.get_unchecked(id) },
+                    //unsafe { *self.gate_flags.get_unchecked(id) },
                 )
             };
-            //let next_state = Gate::evaluate(*unsafe { acc.get_unchecked(id) }, kind);
-            let next_state =
-                Gate::evaluate_from_flags(*unsafe { self.acc.get_unchecked(id) }, flags);
+            let next_state = Gate::evaluate(*unsafe { self.acc.get_unchecked(id) }, kind);
+            //let next_state =
+            //    Gate::evaluate_from_flags(*unsafe { self.acc.get_unchecked(id) }, flags);
             //let next_state = Gate::evaluate_branchless(*unsafe { acc.get_unchecked(id) }, flags);
             if (*unsafe { self.state.get_unchecked(id) } != 0) != next_state {
                 let delta: AccType = if next_state {
