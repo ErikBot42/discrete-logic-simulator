@@ -91,7 +91,7 @@ type UpdateList = crate::raw_list::RawList<IndexType>;
 
 type GateKey = (GateType, Vec<IndexType>);
 
-//TODO: this only uses 4 bits, 2 adjacent gates could share their 
+//TODO: this only uses 4 bits, 2 adjacent gates could share their
 //      in_update_list flag and be updated at the same time.
 #[derive(Debug, Clone, Copy)]
 struct GateStatus {
@@ -111,9 +111,14 @@ impl GateStatus {
         }
     }
 
+    fn flags(&self) -> (bool, bool) {
+        ((self.inner >> 2) & 1 != 0, (self.inner >> 3) & 1 != 0)
+    }
+
     /// Evaluate and update internal state.
     /// # Returns
     /// Delta (+-1) if state changed (0 = no change)
+    /// TODO: assumptions for CLUSTER
     fn eval_mut(&mut self, acc: AccType) -> AccType {
         // <- high, low ->
         //(     3,           2,              1,     0)
@@ -141,7 +146,13 @@ impl GateStatus {
         debug_assert!(!self.in_update_list());
 
         if state_changed != 0 {
-            (new_state_1 << 1) - 1
+            let delta = (new_state_1 << 1).wrapping_sub(1);
+            if new_state_1 == 1 {
+                assert_eq!(delta, 1);
+            } else {
+                assert_eq!(delta, 0_u8.wrapping_sub(1));
+            };
+            delta
         } else {
             0
         }
@@ -590,7 +601,8 @@ impl CompiledNetwork {
     #[must_use]
     pub(crate) fn get_state(&self, gate_id: usize) -> bool {
         let gate_id = self.translation_table[gate_id];
-        self.state[gate_id as usize] != 0
+        //self.state[gate_id as usize] != 0
+        self.gate_status[gate_id as usize].state()
     }
     #[inline(always)]
     pub(crate) fn update_simd(&mut self) {
@@ -638,21 +650,28 @@ impl CompiledNetwork {
             return;
         }
         for id in update_list.iter().map(|id| *id as usize) {
-            debug_assert!(self.in_update_list[id], "{id:?}");
-            let (kind /*flags*/,) = if CLUSTER {
-                (RunTimeGateType::OrNand /*(false, false)*/,)
-            } else {
-                (
-                    unsafe { *self.runtime_gate_kind.get_unchecked(id) },
-                    //unsafe { *self.gate_flags.get_unchecked(id) },
-                )
+            //debug_assert!(self.in_update_list[id], "{id:?}");
+            //let (kind /*flags*/,) = if CLUSTER {
+            //    (RunTimeGateType::OrNand /*(false, false)*/,)
+            //} else {
+            //    (
+            //        unsafe { *self.runtime_gate_kind.get_unchecked(id) },
+            //        //unsafe { *self.gate_flags.get_unchecked(id) },
+            //    )
+            //};
+            //fn eval_mut(&mut self, acc: AccType) -> AccType {
+            let delta = unsafe {
+                self.gate_status
+                    .get_unchecked_mut(id)
+                    .eval_mut(*self.acc.get_unchecked(id))
             };
-            let next_state = Gate::evaluate(*unsafe { self.acc.get_unchecked(id) }, kind);
+            //let next_state = Gate::evaluate(*unsafe { self.acc.get_unchecked(id) }, kind);
             //let next_state =
             //    Gate::evaluate_from_flags(*unsafe { self.acc.get_unchecked(id) }, flags);
             //let next_state = Gate::evaluate_branchless(*unsafe { acc.get_unchecked(id) }, flags);
-            if (*unsafe { self.state.get_unchecked(id) } != 0) != next_state {
-                let delta: AccType = ((next_state as AccType) << 1).wrapping_sub(1) as AccType;
+            //if (*unsafe { self.state.get_unchecked(id) } != 0) != next_state {
+            if delta != 0 {
+                //let delta: AccType = ((next_state as AccType) << 1).wrapping_sub(1) as AccType;
                 //let delta: AccType = if next_state {
                 //    1 as AccTypeInner
                 //} else {
@@ -666,19 +685,21 @@ impl CompiledNetwork {
                 }
                 .iter()
                 {
-                    let in_update_list =
-                        unsafe { self.in_update_list.get_unchecked_mut(*output_id as usize) };
+                    //let in_update_list =
+                    //    unsafe { self.in_update_list.get_unchecked_mut(*output_id as usize) };
                     let other_acc = unsafe { self.acc.get_unchecked_mut(*output_id as usize) };
                     *other_acc = other_acc.wrapping_add(delta);
-                    if !*in_update_list {
-                        *in_update_list = true;
+                    let other_status =
+                        unsafe { self.gate_status.get_unchecked_mut(*output_id as usize) };
+                    if !other_status.in_update_list() {
+                        other_status.mark_in_update_list();
                         next_update_list.push(*output_id);
                     }
                 }
-                *unsafe { self.state.get_unchecked_mut(id) } = next_state as u8;
+                //*unsafe { self.state.get_unchecked_mut(id) } = next_state as u8;
             }
             // this gate should be ready to be re-added to the update list.
-            *unsafe { self.in_update_list.get_unchecked_mut(id) } = false;
+            //*unsafe { self.in_update_list.get_unchecked_mut(id) } = false;
         }
     }
     #[inline(always)]

@@ -134,7 +134,9 @@ mod tests {
 
     #[test]
     fn basic_gate_test() {
-        let mut board = Parser::parse(include_str!("../test_files/gates.blueprint"), true);
+        //let mut board = Parser::parse(include_str!("../test_files/gates.blueprint"), true);
+        let mut board = Parser::parse(include_str!("../test_files/gates.blueprint"), false);
+        board.print();
         assert_eq!(
             board.make_state_vec(),
             [
@@ -162,7 +164,9 @@ mod tests {
             .map(|x| *x != 0)
             .collect::<Vec<bool>>()
         );
+        println!("OK0");
         board.update();
+        board.print();
         assert_eq!(
             board.make_state_vec(),
             [
@@ -190,7 +194,9 @@ mod tests {
             .map(|x| *x != 0)
             .collect::<Vec<bool>>()
         );
+        println!("OK1");
         board.update();
+        board.print();
         assert_eq!(
             board.make_state_vec(),
             [
@@ -218,7 +224,9 @@ mod tests {
             .map(|x| *x != 0)
             .collect::<Vec<bool>>()
         );
+        println!("OK2");
         board.update();
+        board.print();
         assert_eq!(
             board.make_state_vec(),
             [
