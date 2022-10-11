@@ -91,6 +91,9 @@ type UpdateList = crate::raw_list::RawList<IndexType>;
 
 type GateKey = (GateType, Vec<IndexType>);
 
+//TODO: this only uses 4 bits, 2 adjacent gates could share their 
+//      in_update_list flag and be updated at the same time.
+#[derive(Debug, Clone, Copy)]
 struct GateStatus {
     inner: u8,
 }
@@ -108,22 +111,19 @@ impl GateStatus {
         }
     }
 
-    /// eval and update internal state.
+    /// Evaluate and update internal state.
     /// # Returns
-    /// Delta if state changed (0=no change)
+    /// Delta (+-1) if state changed (0 = no change)
     fn eval_mut(&mut self, acc: AccType) -> AccType {
         // <- high, low ->
         //(     3,           2,              1,     0)
         //(is_xor, is_inverted, in_update_list, state)
+        // variables are valid for their *first* bit
         const FLAGS_MASK: u8 = (1 << 3) | (1 << 2);
         debug_assert!(self.in_update_list());
         let acc = acc as u8; // XXXXXXXX
-
-        // variables are valid for their *first* bit
-
         let inner = self.inner; // 0000XX1X
         let is_xor = inner >> 3; // 0|1
-
         let acc_parity = acc; // XXXXXXXX
         let xor_term = is_xor & acc_parity; // 0|1
 
@@ -133,9 +133,7 @@ impl GateStatus {
         let acc_term = not_xor & (is_inverted ^ acc_not_zero); // XXXXXXXX
 
         let new_state = xor_term | acc_term;
-
         let state_changed = new_state ^ inner;
-
         let new_state_1 = new_state & 1;
 
         // automatically sets "in_update_list" bit to zero
@@ -152,7 +150,7 @@ impl GateStatus {
         self.inner |= 1 << 1;
     }
     fn in_update_list(&self) -> bool {
-        ((self.inner >> 1) & 1) != 0
+        self.inner & (1 << 1) != 0
     }
     fn state(&self) -> bool {
         (self.inner & 1) != 0
@@ -505,6 +503,8 @@ pub(crate) struct CompiledNetwork {
     runtime_gate_kind: Vec<RunTimeGateType>,
 
     acc: Vec<AccType>,
+
+    gate_status: Vec<GateStatus>,
     //gate_flags: Vec<(bool, bool)>,
     //gate_flag_is_xor: Vec<u8>,
     //gate_flag_is_inverted: Vec<u8>,
@@ -536,23 +536,35 @@ impl CompiledNetwork {
             .iter()
             .map(|gate| RunTimeGateType::new(gate.kind))
             .collect();
-        let gate_flags: Vec<(bool, bool)> = runtime_gate_kind
+        //let gate_flags: Vec<(bool, bool)> = runtime_gate_kind
+        //    .iter()
+        //    .map(|kind| Gate::calc_flags(*kind))
+        //    .collect();
+        let in_update_list: Vec<bool> = gates.iter().map(|gate| gate.in_update_list).collect();
+        let state: Vec<u8> = gates.iter().map(|gate| gate.state as u8).collect();
+        let gate_status: Vec<GateStatus> = in_update_list
             .iter()
-            .map(|kind| Gate::calc_flags(*kind))
-            .collect();
-        let (gate_flag_is_inverted, gate_flag_is_xor): (Vec<_>, Vec<_>) = gate_flags
-            .iter()
-            .cloned()
-            .map(|(is_inverted, is_xor)| (is_inverted as u8, is_xor as u8))
-            .unzip();
+            .zip(state.iter())
+            .zip(runtime_gate_kind.iter())
+            .map(|((i, s), r)| GateStatus::new(*i, *s != 0, *r))
+            .collect::<Vec<GateStatus>>();
+
+        //GateStatus::new(in_update_list: bool, state: bool, kind: RunTimeGateType)
+
+        //let (gate_flag_is_inverted, gate_flag_is_xor): (Vec<_>, Vec<_>) = gate_flags
+        //    .iter()
+        //    .cloned()
+        //    .map(|(is_inverted, is_xor)| (is_inverted as u8, is_xor as u8))
+        //    .unzip();
 
         Self {
             packed_outputs,
             packed_output_indexes,
-            state: gates.iter().map(|gate| gate.state as u8).collect(),
+            state,
             acc: gates.iter().map(|gate| gate.acc).collect(),
-            in_update_list: gates.iter().map(|gate| gate.in_update_list).collect(),
+            in_update_list,
             runtime_gate_kind,
+            gate_status,
             //gate_flags,
             //gate_flag_is_xor,
             //gate_flag_is_inverted,
