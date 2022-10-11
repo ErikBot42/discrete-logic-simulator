@@ -57,6 +57,9 @@ pub(crate) enum RunTimeGateType {
     OrNand,
     AndNor,
     XorXnor,
+    //OrNand = 0,
+    //AndNor = 1,
+    //XorXnor = 2,
 }
 impl RunTimeGateType {
     fn new(kind: GateType) -> Self {
@@ -75,7 +78,7 @@ impl RunTimeGateType {
 // Nor, And: max inactive: n
 // Xor, Xnor: no limitation
 // u16 and u32 have similar speeds for this
-type AccTypeInner = u32;
+type AccTypeInner = u8;
 type AccType = AccTypeInner;
 
 type SimdLogicType = u8;
@@ -83,10 +86,78 @@ type SimdLogicType = u8;
 // tests don't need that many indexes, but this is obviously a big limitation.
 // u16 enough for typical applications (65536), u32
 // u32 > u16, u32
-type IndexType = AccTypeInner;
+type IndexType = u32; //AccTypeInner;
 type UpdateList = crate::raw_list::RawList<IndexType>;
 
 type GateKey = (GateType, Vec<IndexType>);
+
+struct GateStatus {
+    inner: u8,
+}
+impl GateStatus {
+    fn new(in_update_list: bool, state: bool, kind: RunTimeGateType) -> Self {
+        //let in_update_list = in_update_list as u8;
+        //let state = state as u8;
+        let (is_inverted, is_xor) = Gate::calc_flags(kind);
+
+        Self {
+            inner: state as u8
+                | ((in_update_list as u8) << 1)
+                | ((is_inverted as u8) << 2)
+                | ((is_xor as u8) << 3),
+        }
+    }
+
+    /// eval and update internal state.
+    /// # Returns
+    /// Delta if state changed (0=no change)
+    fn eval_mut(&mut self, acc: AccType) -> AccType {
+        // <- high, low ->
+        //(     3,           2,              1,     0)
+        //(is_xor, is_inverted, in_update_list, state)
+        const FLAGS_MASK: u8 = (1 << 3) | (1 << 2);
+        debug_assert!(self.in_update_list());
+        let acc = acc as u8; // XXXXXXXX
+
+        // variables are valid for their *first* bit
+
+        let inner = self.inner; // 0000XX1X
+        let is_xor = inner >> 3; // 0|1
+
+        let acc_parity = acc; // XXXXXXXX
+        let xor_term = is_xor & acc_parity; // 0|1
+
+        let acc_not_zero = (acc != 0) as u8; // 0|1
+        let is_inverted = inner >> 2; // XX
+        let not_xor = !is_xor; // 0|11111111
+        let acc_term = not_xor & (is_inverted ^ acc_not_zero); // XXXXXXXX
+
+        let new_state = xor_term | acc_term;
+
+        let state_changed = new_state ^ inner;
+
+        let new_state_1 = new_state & 1;
+
+        // automatically sets "in_update_list" bit to zero
+        self.inner = new_state_1 | (self.inner & FLAGS_MASK);
+        debug_assert!(!self.in_update_list());
+
+        if state_changed != 0 {
+            (new_state_1 << 1) - 1
+        } else {
+            0
+        }
+    }
+    fn mark_in_update_list(&mut self) {
+        self.inner |= 1 << 1;
+    }
+    fn in_update_list(&self) -> bool {
+        ((self.inner >> 1) & 1) != 0
+    }
+    fn state(&self) -> bool {
+        (self.inner & 1) != 0
+    }
+}
 
 /// data needed after processing network
 #[derive(Debug, Clone)]
@@ -373,8 +444,8 @@ impl Network {
             let new_network = self.optimization_pass();
             if new_network.gates.len() == prev_network_gate_count {
                 //return std::hint::black_box(new_network.sorted());
-                return new_network.sorted();
-                //return new_network;
+                //return new_network.sorted();
+                return new_network;
             }
             prev_network_gate_count = new_network.gates.len();
         }
@@ -387,7 +458,7 @@ impl Network {
         let mut gates_with_ids: Vec<(usize, &Gate)> = self.gates.iter().enumerate().collect();
         //let mut rng = rand::thread_rng();
         //gates_with_ids.shuffle(&mut rng);
-        //gates_with_ids.sort_by(|(_, a), (_, b)| a.kind.cmp(&b.kind));
+        gates_with_ids.sort_by(|(_, a), (_, b)| a.kind.cmp(&b.kind));
         //gates_with_ids.sort_by(|(i, _), (j, _)| i.cmp(&j));
         //gates_with_ids.sort_by(|(i, _), (j, _)| j.cmp(&i));
         let (inverse_translation_table, gates): (Vec<usize>, Vec<&Gate>) =
@@ -428,10 +499,12 @@ impl Network {
 pub(crate) struct CompiledNetwork {
     packed_outputs: Vec<IndexType>,
     packed_output_indexes: Vec<IndexType>,
+
     state: Vec<u8>,
-    acc: Vec<AccType>,
     in_update_list: Vec<bool>,
     runtime_gate_kind: Vec<RunTimeGateType>,
+
+    acc: Vec<AccType>,
     //gate_flags: Vec<(bool, bool)>,
     //gate_flag_is_xor: Vec<u8>,
     //gate_flag_is_inverted: Vec<u8>,
@@ -487,7 +560,7 @@ impl CompiledNetwork {
             cluster_update_list: UpdateList::new(number_of_gates),
             iterations: 0,
             translation_table: network.translation_table,
-        }//.clone()
+        } //.clone()
     }
     fn pack_outputs(gates: &Vec<Gate>) -> (Vec<IndexType>, Vec<IndexType>) {
         //TODO: optimized overlapping outputs/indexes
@@ -554,8 +627,8 @@ impl CompiledNetwork {
         }
         for id in update_list.iter().map(|id| *id as usize) {
             debug_assert!(self.in_update_list[id], "{id:?}");
-            let (kind, /*flags*/) = if CLUSTER {
-                (RunTimeGateType::OrNand, /*(false, false)*/)
+            let (kind /*flags*/,) = if CLUSTER {
+                (RunTimeGateType::OrNand /*(false, false)*/,)
             } else {
                 (
                     unsafe { *self.runtime_gate_kind.get_unchecked(id) },
@@ -567,11 +640,12 @@ impl CompiledNetwork {
             //    Gate::evaluate_from_flags(*unsafe { self.acc.get_unchecked(id) }, flags);
             //let next_state = Gate::evaluate_branchless(*unsafe { acc.get_unchecked(id) }, flags);
             if (*unsafe { self.state.get_unchecked(id) } != 0) != next_state {
-                let delta: AccType = if next_state {
-                    1 as AccTypeInner
-                } else {
-                    (0 as AccTypeInner).wrapping_sub(1 as AccTypeInner)
-                };
+                let delta: AccType = ((next_state as AccType) << 1).wrapping_sub(1) as AccType;
+                //let delta: AccType = if next_state {
+                //    1 as AccTypeInner
+                //} else {
+                //    (0 as AccTypeInner).wrapping_sub(1 as AccTypeInner)
+                //};
                 let from_index = *unsafe { self.packed_output_indexes.get_unchecked(id) };
                 let to_index = *unsafe { self.packed_output_indexes.get_unchecked(id + 1) };
                 for output_id in unsafe {

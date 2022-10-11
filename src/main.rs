@@ -5,7 +5,9 @@
 use logic_simulator::blueprint::Parser;
 
 fn main() {
-    let string = include_str!("../test_files/big_decoder.blueprint");
+    //let string = include_str!("../test_files/big_decoder.blueprint");
+    //let string = include_str!("../test_files/intro.blueprint");
+    let string = include_str!("../test_files/gates.blueprint");
     //let string = include_str!("../test_files/small_decoder.blueprint");
     //let string = include_str!("../test_files/circle.blueprint");
     //let string = include_str!("../test_files/gates.blueprint");
@@ -18,7 +20,7 @@ fn main() {
 
     match &args[1][..] {
         "bench" | "-bench" => {
-            const ITERATIONS: usize = 1_000_000;
+            const ITERATIONS: usize = 10_000_000;
             const ITERATIONS_F32: f32 = ITERATIONS as f32;
             println!("Running {ITERATIONS} iterations");
             let now = std::time::Instant::now();
