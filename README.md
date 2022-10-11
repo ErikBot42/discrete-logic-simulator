@@ -1,3 +1,4 @@
+![.](https://github.com/ErikBot42/discrete-logic-simulator/actions/workflows/rust.yml/badge.svg)
 # discrete-logic-simulator
 Logic simulator for tick based games such as VCB
 
