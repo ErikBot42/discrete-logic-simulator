@@ -98,84 +98,89 @@ struct GateStatus {
     inner: u8,
 }
 impl GateStatus {
+    // bit locations
+    const STATE: u8 = 1;
+    const IN_UPDATE_LIST: u8 = 0;
+    const IS_INVERTED: u8 = 2;
+    const IS_XOR: u8 = 3;
+    const FLAGS_MASK: u8 = (1 << Self::IS_XOR) | (1 << Self::IS_INVERTED);
+
     fn new(in_update_list: bool, state: bool, kind: RunTimeGateType) -> Self {
         //let in_update_list = in_update_list as u8;
         //let state = state as u8;
         let (is_inverted, is_xor) = Gate::calc_flags(kind);
 
         Self {
-            inner: state as u8
-                | ((in_update_list as u8) << 1)
-                | ((is_inverted as u8) << 2)
-                | ((is_xor as u8) << 3),
+            inner: ((state as u8) << Self::STATE)
+                | ((in_update_list as u8) << Self::IN_UPDATE_LIST)
+                | ((is_inverted as u8) << Self::IS_INVERTED)
+                | ((is_xor as u8) << Self::IS_XOR),
         }
     }
 
     fn flags(&self) -> (bool, bool) {
-        ((self.inner >> 2) & 1 != 0, (self.inner >> 3) & 1 != 0)
+        (
+            (self.inner >> Self::IS_INVERTED) & 1 != 0,
+            (self.inner >> Self::IS_XOR) & 1 != 0,
+        )
     }
 
     /// Evaluate and update internal state.
     /// # Returns
     /// Delta (+-1) if state changed (0 = no change)
     /// TODO: assumptions for CLUSTER
-    fn eval_mut(&mut self, acc: AccType) -> AccType {
+    #[inline(always)]
+    fn eval_mut<const CLUSTER: bool>(&mut self, acc: AccType) -> AccType {
         // <- high, low ->
         //(     3,           2,              1,     0)
         //(is_xor, is_inverted, in_update_list, state)
         // variables are valid for their *first* bit
-        const FLAGS_MASK: u8 = (1 << 3) | (1 << 2);
         debug_assert!(self.in_update_list());
-        let expected_new_state = Gate::evaluate_from_flags(acc, self.flags());
+        //let expected_new_state = Gate::evaluate_from_flags(acc, self.flags());
 
-        let acc = acc as u8; // XXXXXXXX
-        dbg!(acc);
         let inner = self.inner; // 0000XX1X
-        dbg!(inner);
-        let is_xor = inner >> 3; // 0|1
-        dbg!(is_xor & 1);
-        let acc_parity = acc; // XXXXXXXX
-        let xor_term = is_xor & acc_parity; // 0|1
-        dbg!(xor_term & 1);
+        let state = inner >> Self::STATE;
+        let acc = acc as u8; // XXXXXXXX
+        let new_state = if CLUSTER {
+            (acc != 0) as u8
+        } else {
+            let is_xor = inner >> Self::IS_XOR; // 0|1
+            let acc_parity = acc; // XXXXXXXX
+            let xor_term = is_xor & acc_parity; // 0|1
 
-        let acc_not_zero = (acc != 0) as u8; // 0|1
-        dbg!(acc_not_zero);
-        let is_inverted = inner >> 2; // XX
-        dbg!(is_inverted);
-        let not_xor = !is_xor; // 0|11111111
-        dbg!(not_xor);
-        let acc_term = not_xor & (is_inverted ^ acc_not_zero); // XXXXXXXX
-        dbg!(acc_term);
+            let acc_not_zero = (acc != 0) as u8; // 0|1
+            let is_inverted = inner >> Self::IS_INVERTED; // XX
+            let not_xor = !is_xor; // 0|11111111
+            let acc_term = not_xor & (is_inverted ^ acc_not_zero); // XXXXXXXX
+            xor_term | acc_term
+        };
 
-        let new_state = xor_term | acc_term;
-        let state_changed = new_state ^ inner;
+        let state_changed = new_state ^ state;
         let new_state_1 = new_state & 1;
 
         // automatically sets "in_update_list" bit to zero
-        self.inner = new_state_1 | (self.inner & FLAGS_MASK);
+        self.inner = (new_state_1 << Self::STATE) | (self.inner & Self::FLAGS_MASK);
+
         debug_assert!(!self.in_update_list());
-        assert_eq!(expected_new_state, new_state_1 != 0);
+        //debug_assert_eq!(expected_new_state, new_state_1 != 0);
 
         if state_changed & 1 != 0 {
-            let delta = (new_state_1 << 1).wrapping_sub(1);
-            if new_state_1 == 1 {
-                assert_eq!(delta, 1);
-            } else {
-                assert_eq!(delta, 0_u8.wrapping_sub(1));
-            };
-            delta
+            (new_state_1 << 1).wrapping_sub(1)
         } else {
             0
         }
     }
+    #[inline(always)]
     fn mark_in_update_list(&mut self) {
-        self.inner |= 1 << 1;
+        self.inner |= 1 << Self::IN_UPDATE_LIST;
     }
+    #[inline(always)]
     fn in_update_list(&self) -> bool {
-        self.inner & (1 << 1) != 0
+        self.inner & (1 << Self::IN_UPDATE_LIST) != 0
     }
+    #[inline(always)]
     fn state(&self) -> bool {
-        (self.inner & 1) != 0
+        (self.inner & (1 << Self::STATE)) != 0
     }
 }
 
@@ -520,10 +525,9 @@ pub(crate) struct CompiledNetwork {
     packed_outputs: Vec<IndexType>,
     packed_output_indexes: Vec<IndexType>,
 
-    state: Vec<u8>,
-    in_update_list: Vec<bool>,
-    runtime_gate_kind: Vec<RunTimeGateType>,
-
+    //state: Vec<u8>,
+    //in_update_list: Vec<bool>,
+    //runtime_gate_kind: Vec<RunTimeGateType>,
     acc: Vec<AccType>,
 
     gate_status: Vec<GateStatus>,
@@ -567,10 +571,10 @@ impl CompiledNetwork {
         Self {
             packed_outputs,
             packed_output_indexes,
-            state,
+            //state,
             acc: gates.iter().map(|gate| gate.acc).collect(),
-            in_update_list,
-            runtime_gate_kind,
+            //in_update_list,
+            //runtime_gate_kind,
             gate_status,
             update_list,
             cluster_update_list: UpdateList::new(number_of_gates),
@@ -644,46 +648,45 @@ impl CompiledNetwork {
         }
         for id in update_list.iter().map(|id| *id as usize) {
             //debug_assert!(self.in_update_list[id], "{id:?}");
-            let (kind /*flags*/,) = if CLUSTER {
-                (RunTimeGateType::OrNand /*(false, false)*/,)
-            } else {
-                (
-                    unsafe { *self.runtime_gate_kind.get_unchecked(id) },
-                    //unsafe { *self.gate_flags.get_unchecked(id) },
-                )
-            };
-            println!("{}", self.gate_status[id].inner);
+            //let (kind /*flags*/,) = if CLUSTER {
+            //    (RunTimeGateType::OrNand /*(false, false)*/,)
+            //} else {
+            //    (
+            //        unsafe { *self.runtime_gate_kind.get_unchecked(id) },
+            //        //unsafe { *self.gate_flags.get_unchecked(id) },
+            //    )
+            //};
             let delta = unsafe {
                 self.gate_status
                     .get_unchecked_mut(id)
-                    .eval_mut(*self.acc.get_unchecked(id))
+                    .eval_mut::<CLUSTER>(*self.acc.get_unchecked(id))
             };
-            let next_state_expected = Gate::evaluate(*unsafe { self.acc.get_unchecked(id) }, kind);
-            let state_changed_expected = next_state_expected != (self.state[id] != 0);
+            //let next_state_expected = Gate::evaluate(*unsafe { self.acc.get_unchecked(id) }, kind);
+            //let state_changed_expected = next_state_expected != (self.state[id] != 0);
 
-            *unsafe { self.state.get_unchecked_mut(id) } = next_state_expected as u8;
-            assert_eq!(
-                delta != 0,
-                state_changed_expected,
-                "id: {id} status {} acc {} kind {:?} flags1 {:?} flags2 {:?}",
-                self.gate_status[id].inner,
-                self.acc[id], 
-                kind,
-                Gate::calc_flags(kind),
-                self.gate_status[id].flags(),
-            );
+            //*unsafe { self.state.get_unchecked_mut(id) } = next_state_expected as u8;
+            //debug_assert_eq!(
+            //    delta != 0,
+            //    state_changed_expected,
+            //    "id: {id} status {} acc {} kind {:?} flags1 {:?} flags2 {:?}",
+            //    self.gate_status[id].inner,
+            //    self.acc[id],
+            //    kind,
+            //    Gate::calc_flags(kind),
+            //    self.gate_status[id].flags(),
+            //);
             //let next_state =
             //    Gate::evaluate_from_flags(*unsafe { self.acc.get_unchecked(id) }, flags);
             //let next_state = Gate::evaluate_branchless(*unsafe { acc.get_unchecked(id) }, flags);
             //if (*unsafe { self.state.get_unchecked(id) } != 0) != next_state {
             if delta != 0 {
                 //let delta: AccType = ((next_state as AccType) << 1).wrapping_sub(1) as AccType;
-                let delta_expected: AccType = if next_state_expected {
-                    1 as AccTypeInner
-                } else {
-                    (0 as AccTypeInner).wrapping_sub(1 as AccTypeInner)
-                };
-                assert_eq!(delta, delta_expected, "{}", id);
+                //let delta_expected: AccType = if next_state_expected {
+                //    1 as AccTypeInner
+                //} else {
+                //    (0 as AccTypeInner).wrapping_sub(1 as AccTypeInner)
+                //};
+                //debug_assert_eq!(delta, delta_expected, "{}", id);
                 let from_index = *unsafe { self.packed_output_indexes.get_unchecked(id) };
                 let to_index = *unsafe { self.packed_output_indexes.get_unchecked(id + 1) };
                 for output_id in unsafe {
@@ -692,22 +695,22 @@ impl CompiledNetwork {
                 }
                 .iter()
                 {
-                    let in_update_list =
-                        unsafe { self.in_update_list.get_unchecked_mut(*output_id as usize) };
+                    //let in_update_list =
+                    //    unsafe { self.in_update_list.get_unchecked_mut(*output_id as usize) };
                     let other_acc = unsafe { self.acc.get_unchecked_mut(*output_id as usize) };
                     *other_acc = other_acc.wrapping_add(delta);
                     let other_status =
                         unsafe { self.gate_status.get_unchecked_mut(*output_id as usize) };
-                    assert_eq!(*in_update_list, other_status.in_update_list());
+                    //debug_assert_eq!(*in_update_list, other_status.in_update_list());
                     if !other_status.in_update_list() {
-                        *in_update_list = true;
-                        other_status.mark_in_update_list();
+                        //*in_update_list = true;
                         next_update_list.push(*output_id);
+                        other_status.mark_in_update_list();
                     }
                 }
             }
             // this gate should be ready to be re-added to the update list.
-            *unsafe { self.in_update_list.get_unchecked_mut(id) } = false;
+            //*unsafe { self.in_update_list.get_unchecked_mut(id) } = false;
         }
     }
     #[inline(always)]
@@ -928,5 +931,61 @@ impl GateNetwork {
     #[must_use]
     pub(crate) fn compiled(&mut self, optimize: bool) -> CompiledNetwork {
         return CompiledNetwork::create(&self.network, optimize);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn gate_evaluation_regression() {
+        for kind in [
+            RunTimeGateType::OrNand,
+            RunTimeGateType::AndNor,
+            RunTimeGateType::XorXnor,
+        ] {
+            for acc in [
+                (0 as AccType).wrapping_sub(2),
+                (0 as AccType).wrapping_sub(1),
+                0,
+                1,
+                2,
+            ] {
+                for state in [true, false] {
+                    let flags = Gate::calc_flags(kind);
+                    let in_update_list = true;
+                    let mut status = GateStatus::new(in_update_list, state, kind);
+                    let status_delta = status.eval_mut::<false>(acc);
+                    let res = [
+                        Gate::evaluate_from_flags(acc, flags),
+                        Gate::evaluate_branchless(acc, flags),
+                        Gate::evaluate(acc, kind),
+                        status.state(),
+                    ];
+                    assert!(
+                        res.windows(2).all(|r| r[0] == r[1]),
+                        "Some gate evaluators have diffrent behavior: 
+                        res: {res:?}, 
+                        kind: {kind:?}, 
+                        flags: {flags:?}, 
+                        acc: {acc}, 
+                        prev state: {state}"
+                    );
+                    let expected_status_delta = if res[0] != state {
+                        if res[0] {
+                            1
+                        } else {
+                            (0 as AccType).wrapping_sub(1)
+                        }
+                    } else {
+                        0
+                    };
+                    assert_eq!(status_delta, expected_status_delta);
+
+                }
+            }
+        }
+        //fn eval_mut<const CLUSTER: bool>(&mut self, acc: AccType) -> AccType {
+        //fn evaluate_simd<const LANES: usize>(
     }
 }

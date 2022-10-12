@@ -5,9 +5,9 @@
 use logic_simulator::blueprint::Parser;
 
 fn main() {
-    //let string = include_str!("../test_files/big_decoder.blueprint");
+    let string = include_str!("../test_files/big_decoder.blueprint");
     //let string = include_str!("../test_files/intro.blueprint");
-    let string = include_str!("../test_files/gates.blueprint");
+    //let string = include_str!("../test_files/gates.blueprint");
     //let string = include_str!("../test_files/small_decoder.blueprint");
     //let string = include_str!("../test_files/circle.blueprint");
     //let string = include_str!("../test_files/gates.blueprint");

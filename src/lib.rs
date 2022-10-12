@@ -50,7 +50,7 @@ mod tests {
         for ((name, mut unoptimized), (_, mut optimized)) in
             unoptimized.into_iter().zip(optimized.into_iter())
         {
-            for i in 0..1000 {
+            for i in 0..100 {
                 assert_eq!(
                     unoptimized.make_state_vec(),
                     optimized.make_state_vec(),
@@ -122,15 +122,15 @@ mod tests {
         assert!(simd_test(true));
     }
 
-    #[test]
-    fn simd_repeated() {
-        let mut correct: bool = true;
-        for _ in 0..10 {
-            correct &= simd_test(true);
-            correct &= simd_test(false);
-        }
-        assert!(correct);
-    }
+    //#[test]
+    //fn simd_repeated() {
+    //    let mut correct: bool = true;
+    //    for _ in 0..10 {
+    //        correct &= simd_test(true);
+    //        correct &= simd_test(false);
+    //    }
+    //    assert!(correct);
+    //}
 
     #[test]
     fn basic_gate_test() {
