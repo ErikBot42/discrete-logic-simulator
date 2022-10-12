@@ -649,7 +649,7 @@ struct CompiledNetworkInner {
     acc: Vec<AccType>,
     kind: Vec<GateType>,
 
-    gate_status: Vec<GateStatus::Inner>,
+    status: Vec<GateStatus::Inner>,
     translation_table: Vec<IndexType>,
     pub iterations: usize,
     number_of_gates: usize,
@@ -666,7 +666,7 @@ pub(crate) struct CompiledNetwork {
 impl CompiledNetwork {
     /// Adds all non-cluster gates to update list
     pub(crate) fn add_all_to_update_list(&mut self) {
-        for (s, k) in self.i.gate_status.iter_mut().zip(self.i.kind.iter()) {
+        for (s, k) in self.i.status.iter_mut().zip(self.i.kind.iter()) {
             if *k != GateType::Cluster {
                 GateStatus::mark_in_update_list(s)
             } else {
@@ -723,7 +723,7 @@ impl CompiledNetwork {
                 acc: gates.iter().map(|gate| gate.acc).collect(),
                 //in_update_list,
                 //runtime_gate_kind,
-                gate_status,
+                status: gate_status,
 
                 iterations: 0,
                 translation_table: network.translation_table,
@@ -751,7 +751,7 @@ impl CompiledNetwork {
     pub(crate) fn get_state(&self, gate_id: usize) -> bool {
         let gate_id = self.i.translation_table[gate_id];
         //self.state[gate_id as usize] != 0
-        GateStatus::state(self.i.gate_status[gate_id as usize])
+        GateStatus::state(self.i.status[gate_id as usize])
     }
     #[inline(always)]
     pub(crate) fn update_simd(&mut self) {
@@ -838,7 +838,7 @@ impl CompiledNetwork {
             //};
             let delta = unsafe {
                 GateStatus::eval_mut::<CLUSTER>(
-                    inner.gate_status.get_unchecked_mut(id),
+                    inner.status.get_unchecked_mut(id),
                     *inner.acc.get_unchecked(id),
                 )
             };
@@ -883,7 +883,7 @@ impl CompiledNetwork {
                     let other_acc = unsafe { inner.acc.get_unchecked_mut(*output_id as usize) };
                     *other_acc = other_acc.wrapping_add(delta);
                     let other_status =
-                        unsafe { inner.gate_status.get_unchecked_mut(*output_id as usize) };
+                        unsafe { inner.status.get_unchecked_mut(*output_id as usize) };
                     //debug_assert_eq!(*in_update_list, other_status.in_update_list());
                     if !GateStatus::in_update_list(*other_status) {
                         //*in_update_list = true;
@@ -896,7 +896,6 @@ impl CompiledNetwork {
             //*unsafe { innern_update_list.get_unchecked_mut(id) } = false;
         }
     }
-
 
     #[inline(always)]
     fn update_gates_in_list_simd_wrapper<const CLUSTER: bool>(
@@ -930,52 +929,59 @@ impl CompiledNetwork {
         Self::update_gates_in_list::<CLUSTER>(inner, packed_pre, next_update_list);
         Self::update_gates_in_list::<CLUSTER>(inner, packed_suf, next_update_list);
         packed_simd.into_iter().for_each(|packed| {
-        Self::update_gates_in_list::<CLUSTER>(inner, packed.as_array(), next_update_list);
-        
+            Self::update_gates_in_list::<CLUSTER>(inner, packed.as_array(), next_update_list);
         });
 
-        //Self::update_gates_in_list::<ASSUME_CLUSTER>(
-        //    packed_pre,
-        //    next_update_list,
-        //    acc,
-        //    state,
-        //    in_update_list,
-        //    gate_kinds,
-        //    gate_flags,
-        //    gate_flag_xor,
-        //    gate_flag_inverted,
-        //    packed_output_indexes,
-        //    packed_outputs,
-        //);
-        //Self::update_gates_in_list::<ASSUME_CLUSTER>(
-        //    packed_suf,
-        //    next_update_list,
-        //    acc,
-        //    state,
-        //    in_update_list,
-        //    gate_kinds,
-        //    gate_flags,
-        //    gate_flag_xor,
-        //    gate_flag_inverted,
-        //    packed_output_indexes,
-        //    packed_outputs,
-        //);
-        //for id_simd in packed_simd {
-        //    Self::update_gates_in_list::<ASSUME_CLUSTER>(
-        //        id_simd.as_array(),
-        //        next_update_list,
-        //        acc,
-        //        state,
-        //        in_update_list,
-        //        gate_kinds,
-        //        gate_flags,
-        //        gate_flag_xor,
-        //        gate_flag_inverted,
-        //        packed_output_indexes,
-        //        packed_outputs,
-        //    );
-        //}
-        //return;
+        for id_simd in packed_simd {
+            let id_simd_c = id_simd.cast();
+            let acc_simd =
+                Simd::gather_select(&inner.acc, Mask::splat(true), id_simd_c, Simd::splat(0));
+            let mut status_simd =
+                Simd::gather_select(&inner.status, Mask::splat(true), id_simd_c, Simd::splat(0));
+            let delta_simd =
+                GateStatus::eval_mut_simd::<CLUSTER, LANES>(&mut status_simd, acc_simd);
+            status_simd.scatter_select(&mut inner.status, Mask::splat(true), id_simd_c);
+
+            for (id, delta) in id_simd 
+                .as_array()
+                .into_iter()
+                .map(|id| *id as usize)
+                .zip(delta_simd.as_array().into_iter().cloned())
+            {
+                if delta != 0 {
+                    //let delta: AccType = ((next_state as AccType) << 1).wrapping_sub(1) as AccType;
+                    //let delta_expected: AccType = if next_state_expected {
+                    //    1 as AccTypeInner
+                    //} else {
+                    //    (0 as AccTypeInner).wrapping_sub(1 as AccTypeInner)
+                    //};
+                    //debug_assert_eq!(delta, delta_expected, "{}", id);
+                    let from_index = *unsafe { inner.packed_output_indexes.get_unchecked(id) };
+                    let to_index = *unsafe { inner.packed_output_indexes.get_unchecked(id + 1) };
+                    debug_assert!(from_index <= to_index);
+                    for output_id in unsafe {
+                        inner
+                            .packed_outputs
+                            .get_unchecked(from_index as usize..to_index as usize)
+                    }
+                    .iter()
+                    {
+                        //let in_update_list =
+                        //    unsafe { innern_update_list.get_unchecked_mut(*output_id as usize) };
+                        let other_acc = unsafe { inner.acc.get_unchecked_mut(*output_id as usize) };
+                        *other_acc = other_acc.wrapping_add(delta);
+                        let other_status =
+                            unsafe { inner.status.get_unchecked_mut(*output_id as usize) };
+                        //debug_assert_eq!(*in_update_list, other_status.in_update_list());
+                        if !GateStatus::in_update_list(*other_status) {
+                            //*in_update_list = true;
+                            unsafe { next_update_list.push(*output_id) };
+                            GateStatus::mark_in_update_list(other_status);
+                        }
+                    }
+                }
+            }
+        }
 
         //for id_simd in packed_simd {
         //    let id_simd_c = id_simd.cast();

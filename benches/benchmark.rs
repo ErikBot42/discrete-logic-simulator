@@ -27,7 +27,8 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut pre_parsed: Vec<(&str, VcbBoard)> = tests
         .clone()
         .into_iter()
-        .map(|x| (x.0, black_box(Parser::parse(x.1, true))))
+        //.map(|x| (x.0, black_box(Parser::parse(x.1, true))))
+        .map(|x| (x.0, black_box(Parser::parse(x.1, false))))
         .collect();
     pre_parsed = black_box(pre_parsed);
 
@@ -38,7 +39,8 @@ fn criterion_benchmark(c: &mut Criterion) {
     for pre in pre_parsed.iter_mut() {
         c_run.bench_function(pre.0, |b| {
             b.iter(|| {
-                pre.1.update()
+                //pre.1.update()
+                pre.1.update_simd()
             })
         });
     }
