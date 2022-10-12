@@ -101,6 +101,7 @@ type GateKey = (GateType, Vec<IndexType>);
 mod GateStatus {
     use super::*;
     pub(crate) type Inner = u8;
+    pub(crate) type InnerSigned = i8;
     // bit locations
     const STATE: u8 = 0;
     const IN_UPDATE_LIST: u8 = 1;
@@ -197,14 +198,86 @@ mod GateStatus {
         }
     }
 
-    //#[inline(always)]
-    //fn eval_mut_simd<const LANES: usize>(
-    //    // only acc is not u8...
-    //    acc: Simd<AccType, LANES>,
-    //    is_inverted: Simd<SimdLogicType, LANES>,
-    //    is_xor: Simd<SimdLogicType, LANES>,
-    //    old_state: Simd<SimdLogicType, LANES>,
-    //) -> (Simd<SimdLogicType, LANES>, Simd<SimdLogicType, LANES>)
+    #[inline(always)]
+    pub(crate) fn eval_mut_simd<const CLUSTER: bool, const LANES: usize>(
+        inner_mut: &mut Simd<Inner, LANES>,
+        acc: Simd<AccType, LANES>,
+    ) -> Simd<AccType, LANES>
+    where
+        LaneCount<LANES>: SupportedLaneCount,
+    {
+        let inner = *inner_mut;
+        // cannot assert this in simd
+        //debug_assert!(in_update_list(inner));
+
+        //let inner = self.inner; // 0000XX1X
+
+        let flag_bits = inner & Simd::splat(FLAGS_MASK);
+
+        let state_1 = (inner >> Simd::splat(STATE)) & Simd::splat(1);
+        let acc = acc.cast(); // XXXXXXXX
+        let new_state_1: Simd<SimdLogicType, LANES> = if CLUSTER {
+            //(acc != 0) as u8
+            acc.simd_ne(Simd::splat(0 as SimdLogicType))
+                .select(Simd::splat(1), Simd::splat(0))
+        } else {
+            //match flag_bits {
+            //    0 => (acc != 0) as u8,
+            //    FLAG_IS_INVERTED => (acc == 0) as u8,
+            //    FLAG_IS_XOR => acc & 1,
+            //    //_ => 0,
+            //    _ => unsafe {
+            //        debug_assert!(false);
+            //        std::hint::unreachable_unchecked()
+            //    },
+            //}
+
+            let is_xor = inner >> Simd::splat(IS_XOR); // 0|1
+            debug_assert_eq!(is_xor & Simd::splat(1), is_xor);
+            let acc_parity = acc; // XXXXXXXX
+            let xor_term = is_xor & acc_parity; // 0|1
+            debug_assert_eq!(xor_term & Simd::splat(1), xor_term);
+            let acc_not_zero = acc
+                .simd_ne(Simd::splat(0))
+                .select(Simd::splat(1), Simd::splat(0)); // 0|1
+            let is_inverted = inner >> Simd::splat(IS_INVERTED); // XX
+            let not_xor = !is_xor; // 0|11111111
+            let acc_term = not_xor & (is_inverted ^ acc_not_zero); // XXXXXXXX
+            xor_term | (acc_term & Simd::splat(1))
+        };
+
+        let state_changed_1 = new_state_1 ^ state_1;
+
+        // TODO: optimize
+        let state_changed_1_i8: Simd<i8, LANES> = state_changed_1.cast();
+
+        //TODO: invert
+        let state_changed_mask = Mask::from_int(!(state_changed_1_i8 - Simd::splat(1)));
+
+        // automatically sets "in_update_list" bit to zero
+        *inner_mut = (new_state_1 << Simd::splat(STATE)) | flag_bits;
+
+        // cannot assert this in simd
+        //debug_assert!(!in_update_list(*inner_mut));
+        //debug_assert_eq!(expected_new_state, new_state_1 != 0);
+        //super::debug_assert_assume(true);
+        //debug_assert!(state_changed_1 == 0 || state_changed_1 == 1);
+        //debug_assert!(state_changed_1 < 2);
+        //unsafe {
+        //    std::intrinsics::assume(state_changed_1 == 0 || state_changed_1 == 1);
+        //}
+        state_changed_mask.select(
+            (new_state_1 << Simd::splat(1)) - Simd::splat(1),
+            Simd::splat(0),
+        )
+
+        //if state_changed_1 != 0 {
+        //    (new_state_1 << 1).wrapping_sub(1)
+        //} else {
+        //    0
+        //}
+        //todo!()
+    }
 
     #[inline(always)]
     pub(crate) fn mark_in_update_list(inner: &mut Inner) {
@@ -217,6 +290,14 @@ mod GateStatus {
     #[inline(always)]
     pub(crate) fn state(inner: Inner) -> bool {
         inner & FLAG_STATE != 0
+    }
+
+    #[inline(always)]
+    pub(crate) fn state_simd<const LANES: usize>(inner: Simd<Inner, LANES>) -> Mask<InnerSigned,LANES>
+    where
+        LaneCount<LANES>: SupportedLaneCount,
+    {
+        (inner & Simd::splat(FLAG_STATE)).simd_ne(Simd::splat(0))
     }
 }
 
@@ -726,7 +807,8 @@ impl CompiledNetwork {
             //};
             let delta = unsafe {
                 GateStatus::eval_mut::<CLUSTER>(
-                    self.gate_status.get_unchecked_mut(id), *self.acc.get_unchecked(id),
+                    self.gate_status.get_unchecked_mut(id),
+                    *self.acc.get_unchecked(id),
                 )
             };
             //let next_state_expected = Gate::evaluate(*unsafe { self.acc.get_unchecked(id) }, kind);
@@ -1026,12 +1108,26 @@ mod tests {
                     let in_update_list = true;
                     let mut status = GateStatus::new(in_update_list, state, kind);
                     let status_delta = GateStatus::eval_mut::<false>(&mut status, acc);
-                    let res = [
+
+                    const LANES: usize = 1;
+                    let mut status_simd: Simd<GateStatus::Inner, LANES> =
+                        Simd::splat(GateStatus::new(in_update_list, state, kind));
+                    let status_delta_simd = GateStatus::eval_mut_simd::<false, LANES>(
+                        &mut status_simd,
+                        Simd::splat(acc),
+                    );
+
+                    let mut res = vec![
                         Gate::evaluate_from_flags(acc, flags),
                         Gate::evaluate_branchless(acc, flags),
                         Gate::evaluate(acc, kind),
                         GateStatus::state(status),
                     ];
+
+                    let mut simd_state_vec: Vec<bool> = status_simd.as_array().iter().cloned().map(|s| GateStatus::state(s)).collect();
+
+                    res.append(&mut simd_state_vec);
+
                     assert!(
                         res.windows(2).all(|r| r[0] == r[1]),
                         "Some gate evaluators have diffrent behavior: 
@@ -1051,6 +1147,9 @@ mod tests {
                         0
                     };
                     assert_eq!(status_delta, expected_status_delta);
+                    for delta in status_delta_simd.as_array().iter() {
+                        assert_eq!(*delta, expected_status_delta);
+                    }
                 }
             }
         }
