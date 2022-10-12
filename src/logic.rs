@@ -250,10 +250,11 @@ mod gate_status {
         let state_changed_1 = new_state_1 ^ state_1;
 
         // TODO: optimize
-        let state_changed_1_i8: Simd<InnerSigned, LANES> = state_changed_1.cast();
+        let state_changed_1_signed: Simd<InnerSigned, LANES> = state_changed_1.cast();
 
         //TODO: invert
-        let state_changed_mask = Mask::from_int(!(state_changed_1_i8 - Simd::splat(1)));
+        let state_changed_mask =
+            unsafe { Mask::from_int_unchecked(state_changed_1_signed - Simd::splat(1)) };
 
         // automatically sets "in_update_list" bit to zero
         *inner_mut = (new_state_1 << Simd::splat(STATE)) | flag_bits;
@@ -268,8 +269,8 @@ mod gate_status {
         //    std::intrinsics::assume(state_changed_1 == 0 || state_changed_1 == 1);
         //}
         state_changed_mask.select(
-            (new_state_1 << Simd::splat(1)) - Simd::splat(1),
             Simd::splat(0),
+            (new_state_1 << Simd::splat(1)) - Simd::splat(1),
         )
 
         //if state_changed_1 != 0 {
@@ -959,13 +960,28 @@ impl CompiledNetwork {
                 )
             };
 
-            for (id, delta) in id_simd
-                .as_array()
-                .into_iter()
-                .map(|id| *id as usize)
-                .zip(delta_simd.as_array().into_iter().cloned())
-            {
-                if delta != 0 {
+            let from_index_simd = unsafe {
+                Simd::gather_select_unchecked(
+                    &inner.packed_output_indexes,
+                    Mask::splat(true),
+                    id_simd_c,
+                    Simd::splat(0),
+                )
+            };
+            let to_index_simd = unsafe {
+                Simd::gather_select_unchecked(
+                    &inner.packed_output_indexes,
+                    Mask::splat(true),
+                    id_simd_c + Simd::splat(1),
+                    Simd::splat(0),
+                )
+            };
+            (delta_simd.as_array().into_iter().cloned())
+                .filter(|delta| delta != 0)
+                .zip(id_simd.as_array().into_iter())
+                .map(|(delta, id)| (delta, *id as usize))
+                .for_each(|(delta, id)| {
+                    //if delta != 0 {
                     let from_index = *unsafe { inner.packed_output_indexes.get_unchecked(id) };
                     let to_index = *unsafe { inner.packed_output_indexes.get_unchecked(id + 1) };
                     for output_id in unsafe {
@@ -984,8 +1000,8 @@ impl CompiledNetwork {
                             gate_status::mark_in_update_list(other_status);
                         }
                     }
-                }
-            }
+                    //}
+                });
         }
     }
 }
