@@ -78,7 +78,7 @@ impl RunTimeGateType {
 // Nor, And: max inactive: n
 // Xor, Xnor: no limitation
 // u16 and u32 have similar speeds for this
-type AccTypeInner = u32;
+type AccTypeInner = i32;
 type AccType = AccTypeInner;
 
 type SimdLogicType = AccTypeInner;
@@ -86,7 +86,7 @@ type SimdLogicType = AccTypeInner;
 // tests don't need that many indexes, but this is obviously a big limitation.
 // u16 enough for typical applications (65536), u32
 // u32 > u16, u32
-type IndexType = u32; //AccTypeInner;
+type IndexType = i32; //AccTypeInner;
 type UpdateList = crate::raw_list::RawList<IndexType>;
 
 type GateKey = (GateType, Vec<IndexType>);
@@ -101,7 +101,7 @@ type GateKey = (GateType, Vec<IndexType>);
 
 mod gate_status {
     use super::*;
-    pub(crate) type Inner = u32;
+    pub(crate) type Inner = i32;
     pub(crate) type GateStatus = Inner;
     pub(crate) type InnerSigned = i32;
     // bit locations
@@ -365,14 +365,14 @@ impl Gate {
         // inverted from perspective of or gate
         // hopefully this generates branchless code.
         if !is_xor {
-            (acc != (0)) != is_inverted
+            (acc != 0) != is_inverted
         } else {
-            acc % (2) == (1)
+            acc & 1 == 1
         }
     }
     #[inline(always)]
     fn evaluate_branchless(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
-        !is_xor && ((acc != 0) != is_inverted) || is_xor && (acc % 2 == 1)
+        !is_xor && ((acc != 0) != is_inverted) || is_xor && (acc & 1 == 1)
     }
     #[inline(always)] // inline always required to keep SIMD in registers.
     #[must_use]
@@ -938,13 +938,17 @@ impl CompiledNetwork {
         });
 
         for id_simd in packed_simd {
+            debug_assert_eq!(LANES, 8);
             let id_simd = *id_simd;
             let id_simd_c = id_simd.cast();
 
             //let id_simd_i = unsafe { transmute::<u32x8, i32x8>(id_simd) };
             //let id_simd_m: __m256i = __m256i::from(id_simd_i);
-            
-            //gather_32x8_to_32x8(&inner.acc, id_simd_m);
+
+            //let acc_simd = unsafe {
+            //    transmute::<i32x8, u32x8>(Simd::from(gather_32x8_to_32x8(&inner.acc, id_simd_m)))
+            //};
+
             let acc_simd = unsafe {
                 Simd::gather_select_unchecked(
                     &inner.acc,
@@ -953,6 +957,9 @@ impl CompiledNetwork {
                     Simd::splat(0),
                 )
             };
+            //let mut status_simd = unsafe {
+            //    transmute::<i32x8, u32x8>(Simd::from(gather_32x8_to_32x8(&inner.status, id_simd_m)))
+            //};
             let mut status_simd = unsafe {
                 Simd::gather_select_unchecked(
                     &inner.status,
@@ -1029,7 +1036,7 @@ use std::mem::transmute;
 #[inline(always)]
 fn gather_32x8_to_32x8(data: &[u32], indexes: __m256i) -> __m256i {
     assert!(is_x86_feature_detected!("avx2"));
-    const SCALE: i32 = 4; // 4 bytes/32 bit?
+    const SCALE: i32 = 4; // 4 bytes in 32 bit?
     unsafe {
         let ptr = transmute::<*const u32, *const i32>(data.as_ptr());
         core::arch::x86_64::_mm256_i32gather_epi32(ptr, indexes, SCALE)
@@ -1133,6 +1140,16 @@ mod tests {
                         Gate::evaluate(acc, kind),
                         gate_status::state(status),
                     ];
+                    
+                    assert!(
+                        res.windows(2).all(|r| r[0] == r[1]),
+                        "Some gate evaluators have diffrent behavior: 
+                        res: {res:?}, 
+                        kind: {kind:?}, 
+                        flags: {flags:?}, 
+                        acc: {acc}, 
+                        prev state: {state}"
+                    );
 
                     let mut simd_state_vec: Vec<bool> = status_simd
                         .as_array()
@@ -1145,7 +1162,7 @@ mod tests {
 
                     assert!(
                         res.windows(2).all(|r| r[0] == r[1]),
-                        "Some gate evaluators have diffrent behavior: 
+                        "SIMD gate evaluators have diffrent behavior: 
                         res: {res:?}, 
                         kind: {kind:?}, 
                         flags: {flags:?}, 
