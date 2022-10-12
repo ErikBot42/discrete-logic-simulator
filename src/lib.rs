@@ -126,15 +126,15 @@ mod tests {
         assert!(simd_test(true));
     }
 
-    #[test]
-    fn simd_repeated() {
-        let mut correct: bool = true;
-        for _ in 0..10 {
-            correct &= simd_test(true);
-            correct &= simd_test(false);
-        }
-        assert!(correct);
-    }
+    //#[test]
+    //fn simd_repeated() {
+    //    let mut correct: bool = true;
+    //    for _ in 0..10 {
+    //        correct &= simd_test(true);
+    //        correct &= simd_test(false);
+    //    }
+    //    assert!(correct);
+    //}
 
     #[test]
     fn basic_gate_test_optimized() {

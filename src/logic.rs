@@ -78,7 +78,7 @@ impl RunTimeGateType {
 // Nor, And: max inactive: n
 // Xor, Xnor: no limitation
 // u16 and u32 have similar speeds for this
-type AccTypeInner = i32;
+type AccTypeInner = u32;
 type AccType = AccTypeInner;
 
 type SimdLogicType = AccTypeInner;
@@ -86,7 +86,7 @@ type SimdLogicType = AccTypeInner;
 // tests don't need that many indexes, but this is obviously a big limitation.
 // u16 enough for typical applications (65536), u32
 // u32 > u16, u32
-type IndexType = i32; //AccTypeInner;
+type IndexType = u32; //AccTypeInner;
 type UpdateList = crate::raw_list::RawList<IndexType>;
 
 type GateKey = (GateType, Vec<IndexType>);
@@ -101,7 +101,7 @@ type GateKey = (GateType, Vec<IndexType>);
 
 mod gate_status {
     use super::*;
-    pub(crate) type Inner = i32;
+    pub(crate) type Inner = u32;
     pub(crate) type GateStatus = Inner;
     pub(crate) type InnerSigned = i32;
     // bit locations
@@ -192,6 +192,51 @@ mod gate_status {
         //unsafe {
         //    std::intrinsics::assume(state_changed_1 == 0 || state_changed_1 == 1);
         //}
+
+        if state_changed_1 != 0 {
+            (new_state_1 << 1).wrapping_sub(1) as AccType
+        } else {
+            0
+        }
+    }
+    
+    const fn splat_u32(value: u8) -> u32{
+        u32::from_le_bytes([value; 4])
+    }
+    
+    // TODO: save on the 4 unused bits, maybe merge 2 iterations?
+    pub(crate) fn eval_mut_scalar<const CLUSTER: bool>(
+        inner_mut: &mut u32,
+        acc: u32,
+    ) -> u32 {
+
+        let inner = *inner_mut;
+
+        let flag_bits = inner & FLAGS_MASK;
+
+        let state_1 = (inner >> STATE) & 1;
+        let acc = acc as Inner; // XXXXXXXX
+        let new_state_1 = if CLUSTER {
+            (acc != 0) as Inner
+        } else {
+            let is_xor = inner >> IS_XOR; // 0|1
+            let acc_parity = acc; // XXXXXXXX
+            let xor_term = is_xor & acc_parity; // 0|1
+            let acc_not_zero = (acc != 0) as Inner; // 0|1
+            let is_inverted = inner >> IS_INVERTED; // XX
+            let not_xor = !is_xor; // 0|11111111
+            let acc_term = not_xor & (is_inverted ^ acc_not_zero); // XXXXXXXX
+            xor_term | (acc_term & 1)
+        };
+
+        let state_changed_1 = new_state_1 ^ state_1;
+
+        // automatically sets "in_update_list" bit to zero
+        *inner_mut = (new_state_1 << STATE) | flag_bits;
+
+        debug_assert!(!in_update_list(*inner_mut));
+        debug_assert!(state_changed_1 == 0 || state_changed_1 == 1);
+        debug_assert!(state_changed_1 < 2);
 
         if state_changed_1 != 0 {
             (new_state_1 << 1).wrapping_sub(1) as AccType
@@ -668,11 +713,11 @@ pub(crate) struct CompiledNetwork {
     update_list: UpdateList,
     cluster_update_list: UpdateList,
 }
-macro_rules! gather_32x8_to_32x8 {
-    ($data:expr, $indexes:expr) => {
-        unsafe { core::arch::x86_64::_mm256_i32gather_epi32($data.as_ptr(), $indexes, 4) }
-    };
-}
+//macro_rules! gather_32x8_to_32x8 {
+//    ($data:expr, $indexes:expr) => {
+//        unsafe { core::arch::x86_64::_mm256_i32gather_epi32($data.as_ptr(), $indexes, 4) }
+//    };
+//}
 impl CompiledNetwork {
     /// Adds all non-cluster gates to update list
     pub(crate) fn add_all_to_update_list(&mut self) {
@@ -950,25 +995,25 @@ impl CompiledNetwork {
             //let id_simd_i = unsafe { transmute::<u32x8, i32x8>(id_simd) };
             let id_simd_m: __m256i = __m256i::from(id_simd);
 
-            let acc_simd = Simd::from(gather_32x8_to_32x8!(&inner.acc, id_simd_m));
+            //let acc_simd = Simd::from(gather_32x8_to_32x8!(&inner.acc, id_simd_m));
 
-            //let acc_simd = unsafe {
-            //    Simd::gather_select_unchecked(
-            //        &inner.acc,
-            //        Mask::splat(true),
-            //        id_simd_c,
-            //        Simd::splat(0),
-            //    )
-            //};
-            let mut status_simd = Simd::from(gather_32x8_to_32x8!(&inner.status, id_simd_m));
-            //let mut status_simd = unsafe {
-            //    Simd::gather_select_unchecked(
-            //        &inner.status,
-            //        Mask::splat(true),
-            //        id_simd_c,
-            //        Simd::splat(0),
-            //    )
-            //};
+            let acc_simd = unsafe {
+                Simd::gather_select_unchecked(
+                    &inner.acc,
+                    Mask::splat(true),
+                    id_simd_c,
+                    Simd::splat(0),
+                )
+            };
+            //let mut status_simd = Simd::from(gather_32x8_to_32x8!(&inner.status, id_simd_m));
+            let mut status_simd = unsafe {
+                Simd::gather_select_unchecked(
+                    &inner.status,
+                    Mask::splat(true),
+                    id_simd_c,
+                    Simd::splat(0),
+                )
+            };
             let delta_simd =
                 gate_status::eval_mut_simd::<CLUSTER, LANES>(&mut status_simd, acc_simd);
 
