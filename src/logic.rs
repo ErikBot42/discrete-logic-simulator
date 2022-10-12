@@ -293,7 +293,9 @@ mod GateStatus {
     }
 
     #[inline(always)]
-    pub(crate) fn state_simd<const LANES: usize>(inner: Simd<Inner, LANES>) -> Mask<InnerSigned,LANES>
+    pub(crate) fn state_simd<const LANES: usize>(
+        inner: Simd<Inner, LANES>,
+    ) -> Mask<InnerSigned, LANES>
     where
         LaneCount<LANES>: SupportedLaneCount,
     {
@@ -636,9 +638,8 @@ impl Network {
     }
 }
 
-/// Contains prepared datastructures to run the network.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct CompiledNetwork {
+struct CompiledNetworkInner {
     packed_outputs: Vec<IndexType>,
     packed_output_indexes: Vec<IndexType>,
 
@@ -649,16 +650,23 @@ pub(crate) struct CompiledNetwork {
     kind: Vec<GateType>,
 
     gate_status: Vec<GateStatus::Inner>,
-    update_list: UpdateList,
-    cluster_update_list: UpdateList,
     translation_table: Vec<IndexType>,
     pub iterations: usize,
     number_of_gates: usize,
 }
+
+/// Contains prepared datastructures to run the network.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct CompiledNetwork {
+    i: CompiledNetworkInner,
+
+    update_list: UpdateList,
+    cluster_update_list: UpdateList,
+}
 impl CompiledNetwork {
     /// Adds all non-cluster gates to update list
     pub(crate) fn add_all_to_update_list(&mut self) {
-        for (s, k) in self.gate_status.iter_mut().zip(self.kind.iter()) {
+        for (s, k) in self.i.gate_status.iter_mut().zip(self.i.kind.iter()) {
             if *k != GateType::Cluster {
                 GateStatus::mark_in_update_list(s)
             } else {
@@ -667,9 +675,9 @@ impl CompiledNetwork {
         }
         self.update_list.clear();
         self.update_list.collect(
-            (0..self.number_of_gates as IndexType)
+            (0..self.i.number_of_gates as IndexType)
                 .into_iter()
-                .zip(self.kind.iter())
+                .zip(self.i.kind.iter())
                 .filter(|(_, k)| **k != GateType::Cluster)
                 .map(|(i, _)| i),
         );
@@ -708,19 +716,22 @@ impl CompiledNetwork {
         let kind = gates.iter().map(|g| g.kind).collect();
 
         Self {
-            packed_outputs,
-            packed_output_indexes,
-            //state,
-            acc: gates.iter().map(|gate| gate.acc).collect(),
-            //in_update_list,
-            //runtime_gate_kind,
-            gate_status,
+            i: CompiledNetworkInner {
+                packed_outputs,
+                packed_output_indexes,
+                //state,
+                acc: gates.iter().map(|gate| gate.acc).collect(),
+                //in_update_list,
+                //runtime_gate_kind,
+                gate_status,
+
+                iterations: 0,
+                translation_table: network.translation_table,
+                number_of_gates,
+                kind,
+            },
             update_list,
             cluster_update_list: UpdateList::new(number_of_gates),
-            iterations: 0,
-            translation_table: network.translation_table,
-            number_of_gates,
-            kind,
         } //.clone()
     }
     fn pack_outputs(gates: &Vec<Gate>) -> (Vec<IndexType>, Vec<IndexType>) {
@@ -738,9 +749,9 @@ impl CompiledNetwork {
     /// Not initialized, if `gate_id` is out of range
     #[must_use]
     pub(crate) fn get_state(&self, gate_id: usize) -> bool {
-        let gate_id = self.translation_table[gate_id];
+        let gate_id = self.i.translation_table[gate_id];
         //self.state[gate_id as usize] != 0
-        GateStatus::state(self.gate_status[gate_id as usize])
+        GateStatus::state(self.i.gate_status[gate_id as usize])
     }
     #[inline(always)]
     pub(crate) fn update_simd(&mut self) {
@@ -755,7 +766,7 @@ impl CompiledNetwork {
     }
     //#[inline(always)]
     fn update_internal<const USE_SIMD: bool>(&mut self) {
-        self.iterations += 1;
+        self.i.iterations += 1;
         // This somehow improves performance, even when update list is non-zero.
         // It should also be very obvious to the compiler...
         if self.update_list.len() == 0 {
@@ -807,8 +818,8 @@ impl CompiledNetwork {
             //};
             let delta = unsafe {
                 GateStatus::eval_mut::<CLUSTER>(
-                    self.gate_status.get_unchecked_mut(id),
-                    *self.acc.get_unchecked(id),
+                    self.i.gate_status.get_unchecked_mut(id),
+                    *self.i.acc.get_unchecked(id),
                 )
             };
             //let next_state_expected = Gate::evaluate(*unsafe { self.acc.get_unchecked(id) }, kind);
@@ -837,21 +848,21 @@ impl CompiledNetwork {
                 //    (0 as AccTypeInner).wrapping_sub(1 as AccTypeInner)
                 //};
                 //debug_assert_eq!(delta, delta_expected, "{}", id);
-                let from_index = *unsafe { self.packed_output_indexes.get_unchecked(id) };
-                let to_index = *unsafe { self.packed_output_indexes.get_unchecked(id + 1) };
+                let from_index = *unsafe { self.i.packed_output_indexes.get_unchecked(id) };
+                let to_index = *unsafe { self.i.packed_output_indexes.get_unchecked(id + 1) };
                 debug_assert!(from_index <= to_index);
                 for output_id in unsafe {
-                    self.packed_outputs
+                    self.i.packed_outputs
                         .get_unchecked(from_index as usize..to_index as usize)
                 }
                 .iter()
                 {
                     //let in_update_list =
                     //    unsafe { self.in_update_list.get_unchecked_mut(*output_id as usize) };
-                    let other_acc = unsafe { self.acc.get_unchecked_mut(*output_id as usize) };
+                    let other_acc = unsafe { self.i.acc.get_unchecked_mut(*output_id as usize) };
                     *other_acc = other_acc.wrapping_add(delta);
                     let other_status =
-                        unsafe { self.gate_status.get_unchecked_mut(*output_id as usize) };
+                        unsafe { self.i.gate_status.get_unchecked_mut(*output_id as usize) };
                     //debug_assert_eq!(*in_update_list, other_status.in_update_list());
                     if !GateStatus::in_update_list(*other_status) {
                         //*in_update_list = true;
@@ -866,35 +877,15 @@ impl CompiledNetwork {
     }
     #[inline(always)]
     //#[inline(never)]
-    fn update_gates_in_list_simd<const ASSUME_CLUSTER: bool>(
-        &mut self,
-        //update_list: &[IndexType],
-        //next_update_list: &mut UpdateList,
-        //acc: &mut [AccType],
-        //state: &mut [u8],
-        //in_update_list: &mut [bool],
-
-        //gate_kinds: &[RunTimeGateType],
-        //gate_flags: &[(bool, bool)],
-        //gate_flag_xor: &[u8],
-        //gate_flag_inverted: &[u8],
-        //packed_output_indexes: &[IndexType],
-        //packed_outputs: &[IndexType],
-    ) {
-        todo!();
-        //self.update_gates_in_list::<ASSUME_CLUSTER>();
-
-        //TODO: SIMD: make assumptions when cluster.
-        //if update_list.len() == 0 {
-        //    return;
-        //}
-        //const LANES: usize = 16; //16; //16; //16; //TODO: optimize
-
+    fn update_gates_in_list_simd<const ASSUME_CLUSTER: bool>(&mut self) {
+        //const LANES: usize = 32;
+        ////self.update_gates_in_list::<ASSUME_CLUSTER>();
+        ////todo!();
         //let (packed_pre, packed_simd, packed_suf): (
         //    &[IndexType],
         //    &[Simd<IndexType, LANES>],
         //    &[IndexType],
-        //) = update_list.as_simd::<LANES>();
+        //) = unsafe { self.update_list.get_slice().as_simd::<LANES>() };
         //Self::update_gates_in_list::<ASSUME_CLUSTER>(
         //    packed_pre,
         //    next_update_list,
@@ -1109,7 +1100,7 @@ mod tests {
                     let mut status = GateStatus::new(in_update_list, state, kind);
                     let status_delta = GateStatus::eval_mut::<false>(&mut status, acc);
 
-                    const LANES: usize = 1;
+                    const LANES: usize = 64;
                     let mut status_simd: Simd<GateStatus::Inner, LANES> =
                         Simd::splat(GateStatus::new(in_update_list, state, kind));
                     let status_delta_simd = GateStatus::eval_mut_simd::<false, LANES>(
@@ -1124,7 +1115,12 @@ mod tests {
                         GateStatus::state(status),
                     ];
 
-                    let mut simd_state_vec: Vec<bool> = status_simd.as_array().iter().cloned().map(|s| GateStatus::state(s)).collect();
+                    let mut simd_state_vec: Vec<bool> = status_simd
+                        .as_array()
+                        .iter()
+                        .cloned()
+                        .map(|s| GateStatus::state(s))
+                        .collect();
 
                     res.append(&mut simd_state_vec);
 
