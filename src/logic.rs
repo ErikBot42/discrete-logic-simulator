@@ -200,6 +200,9 @@ mod gate_status {
         }
     }
 
+    const fn splat_u4_u8(value: u8) -> u8 {
+        (value << 4) | value
+    }
     const fn splat_u32(value: u8) -> u32 {
         u32::from_le_bytes([value; 4])
     }
