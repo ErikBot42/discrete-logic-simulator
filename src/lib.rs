@@ -116,15 +116,15 @@ mod tests {
         correct
     }
 
-    //#[test]
-    //fn simd_regression_test_unoptimized() {
-    //    assert!(simd_test(false));
-    //}
+    #[test]
+    fn simd_regression_test_unoptimized() {
+        assert!(simd_test(false));
+    }
 
-    //#[test]
-    //fn simd_regression_test_optimized() {
-    //    assert!(simd_test(true));
-    //}
+    #[test]
+    fn simd_regression_test_optimized() {
+        assert!(simd_test(true));
+    }
 
     //#[test]
     //fn simd_repeated() {

@@ -783,31 +783,46 @@ impl CompiledNetwork {
     //#[inline(always)]
     fn update_gates<const CLUSTER: bool, const USE_SIMD: bool>(&mut self) {
         if USE_SIMD {
-            Self::update_gates_in_list::<CLUSTER>(&mut self.i, &mut self.update_list, &mut self.cluster_update_list);
+            Self::update_gates_in_list_wrapper::<CLUSTER>(
+                &mut self.i,
+                &mut self.update_list,
+                &mut self.cluster_update_list,
+            );
             //self.update_gates_in_list_simd::<CLUSTER>();
         } else {
-            Self::update_gates_in_list::<CLUSTER>(&mut self.i, &mut self.update_list, &mut self.cluster_update_list);
+            Self::update_gates_in_list_wrapper::<CLUSTER>(
+                &mut self.i,
+                &mut self.update_list,
+                &mut self.cluster_update_list,
+            );
         }
+    }
+    #[inline(always)]
+    fn update_gates_in_list_wrapper<const CLUSTER: bool>(
+        inner: &mut CompiledNetworkInner,
+        gate_update_list: &mut UpdateList,
+        cluster_update_list: &mut UpdateList,
+    ) {
+        let (update_list, next_update_list) = if CLUSTER {
+            (unsafe { cluster_update_list.get_slice() }, gate_update_list)
+        } else {
+            (unsafe { gate_update_list.get_slice() }, cluster_update_list)
+        };
+        Self::update_gates_in_list::<CLUSTER>(inner, update_list, next_update_list);
     }
     /// Update all gates in update list.
     /// Appends next update list.
     #[inline(always)]
     fn update_gates_in_list<const CLUSTER: bool>(
         inner: &mut CompiledNetworkInner,
-        gate_update_list: &mut UpdateList,
-        cluster_update_list: &mut UpdateList,
+        update_list: &[IndexType],
+        next_update_list: &mut UpdateList,
     ) {
-        let (update_list, next_update_list) = if CLUSTER {
-            (
-                unsafe { cluster_update_list.get_slice() },
-                gate_update_list,
-            )
-        } else {
-            (
-                unsafe { gate_update_list.get_slice() },
-                cluster_update_list,
-            )
-        };
+        //let (update_list, next_update_list) = if CLUSTER {
+        //    (unsafe { cluster_update_list.get_slice() }, gate_update_list)
+        //} else {
+        //    (unsafe { gate_update_list.get_slice() }, cluster_update_list)
+        //};
         if update_list.len() == 0 {
             return;
         }
@@ -883,15 +898,26 @@ impl CompiledNetwork {
     }
     #[inline(always)]
     //#[inline(never)]
-    fn update_gates_in_list_simd<const ASSUME_CLUSTER: bool>(&mut self) {
+    fn update_gates_in_list_simd<const CLUSTER: bool>(
+        inner: &mut CompiledNetworkInner,
+        gate_update_list: &mut UpdateList,
+        cluster_update_list: &mut UpdateList,
+    ) {
+        //let (update_list, next_update_list) = if CLUSTER {
+        //    (unsafe { cluster_update_list }, gate_update_list)
+        //} else {
+        //    (unsafe { gate_update_list }, cluster_update_list)
+        //};
         //const LANES: usize = 32;
-        ////self.update_gates_in_list::<ASSUME_CLUSTER>();
-        ////todo!();
+        //////self.update_gates_in_list::<ASSUME_CLUSTER>();
+        //////todo!();
         //let (packed_pre, packed_simd, packed_suf): (
         //    &[IndexType],
         //    &[Simd<IndexType, LANES>],
         //    &[IndexType],
-        //) = unsafe { self.update_list.get_slice().as_simd::<LANES>() };
+        //) = unsafe { update_list.get_slice_mut() }.as_simd::<LANES>();
+        //Self::update_gates_in_list::<CLUSTER>(inner, packed_pre, next_update_list);
+
         //Self::update_gates_in_list::<ASSUME_CLUSTER>(
         //    packed_pre,
         //    next_update_list,

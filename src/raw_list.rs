@@ -64,6 +64,17 @@ where
         unsafe { self.list.get_unchecked(..self.len) }
     }
     #[inline(always)]
+    pub(crate) unsafe fn get_slice_mut(&mut self) -> &mut [T] {
+        // &self.list[0..self.len]
+        debug_assert!(
+            self.list.len() > self.len,
+            "{} <= {}",
+            self.list.len(),
+            self.len
+        );
+        unsafe { self.list.get_unchecked_mut(..self.len) }
+    }
+    #[inline(always)]
     pub(crate) fn len(&self) -> usize {
         self.len
     }
