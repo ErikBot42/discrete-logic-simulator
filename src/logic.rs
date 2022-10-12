@@ -981,7 +981,6 @@ mod tests {
                         0
                     };
                     assert_eq!(status_delta, expected_status_delta);
-
                 }
             }
         }
