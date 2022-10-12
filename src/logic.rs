@@ -783,24 +783,29 @@ impl CompiledNetwork {
     //#[inline(always)]
     fn update_gates<const CLUSTER: bool, const USE_SIMD: bool>(&mut self) {
         if USE_SIMD {
-            self.update_gates_in_list_simd::<CLUSTER>();
+            Self::update_gates_in_list::<CLUSTER>(&mut self.i, &mut self.update_list, &mut self.cluster_update_list);
+            //self.update_gates_in_list_simd::<CLUSTER>();
         } else {
-            self.update_gates_in_list::<CLUSTER>();
+            Self::update_gates_in_list::<CLUSTER>(&mut self.i, &mut self.update_list, &mut self.cluster_update_list);
         }
     }
     /// Update all gates in update list.
     /// Appends next update list.
     #[inline(always)]
-    fn update_gates_in_list<const CLUSTER: bool>(&mut self) {
+    fn update_gates_in_list<const CLUSTER: bool>(
+        inner: &mut CompiledNetworkInner,
+        gate_update_list: &mut UpdateList,
+        cluster_update_list: &mut UpdateList,
+    ) {
         let (update_list, next_update_list) = if CLUSTER {
             (
-                unsafe { self.cluster_update_list.get_slice() },
-                &mut self.update_list,
+                unsafe { cluster_update_list.get_slice() },
+                gate_update_list,
             )
         } else {
             (
-                unsafe { self.update_list.get_slice() },
-                &mut self.cluster_update_list,
+                unsafe { gate_update_list.get_slice() },
+                cluster_update_list,
             )
         };
         if update_list.len() == 0 {
@@ -818,8 +823,8 @@ impl CompiledNetwork {
             //};
             let delta = unsafe {
                 GateStatus::eval_mut::<CLUSTER>(
-                    self.i.gate_status.get_unchecked_mut(id),
-                    *self.i.acc.get_unchecked(id),
+                    inner.gate_status.get_unchecked_mut(id),
+                    *inner.acc.get_unchecked(id),
                 )
             };
             //let next_state_expected = Gate::evaluate(*unsafe { self.acc.get_unchecked(id) }, kind);
@@ -848,21 +853,22 @@ impl CompiledNetwork {
                 //    (0 as AccTypeInner).wrapping_sub(1 as AccTypeInner)
                 //};
                 //debug_assert_eq!(delta, delta_expected, "{}", id);
-                let from_index = *unsafe { self.i.packed_output_indexes.get_unchecked(id) };
-                let to_index = *unsafe { self.i.packed_output_indexes.get_unchecked(id + 1) };
+                let from_index = *unsafe { inner.packed_output_indexes.get_unchecked(id) };
+                let to_index = *unsafe { inner.packed_output_indexes.get_unchecked(id + 1) };
                 debug_assert!(from_index <= to_index);
                 for output_id in unsafe {
-                    self.i.packed_outputs
+                    inner
+                        .packed_outputs
                         .get_unchecked(from_index as usize..to_index as usize)
                 }
                 .iter()
                 {
                     //let in_update_list =
-                    //    unsafe { self.in_update_list.get_unchecked_mut(*output_id as usize) };
-                    let other_acc = unsafe { self.i.acc.get_unchecked_mut(*output_id as usize) };
+                    //    unsafe { innern_update_list.get_unchecked_mut(*output_id as usize) };
+                    let other_acc = unsafe { inner.acc.get_unchecked_mut(*output_id as usize) };
                     *other_acc = other_acc.wrapping_add(delta);
                     let other_status =
-                        unsafe { self.i.gate_status.get_unchecked_mut(*output_id as usize) };
+                        unsafe { inner.gate_status.get_unchecked_mut(*output_id as usize) };
                     //debug_assert_eq!(*in_update_list, other_status.in_update_list());
                     if !GateStatus::in_update_list(*other_status) {
                         //*in_update_list = true;
@@ -872,7 +878,7 @@ impl CompiledNetwork {
                 }
             }
             // this gate should be ready to be re-added to the update list.
-            //*unsafe { self.in_update_list.get_unchecked_mut(id) } = false;
+            //*unsafe { innern_update_list.get_unchecked_mut(id) } = false;
         }
     }
     #[inline(always)]
