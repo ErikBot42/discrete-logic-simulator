@@ -783,7 +783,7 @@ impl CompiledNetwork {
     //#[inline(always)]
     fn update_gates<const CLUSTER: bool, const USE_SIMD: bool>(&mut self) {
         if USE_SIMD {
-            Self::update_gates_in_list_wrapper::<CLUSTER>(
+            Self::update_gates_in_list_simd_wrapper::<CLUSTER>(
                 &mut self.i,
                 &mut self.update_list,
                 &mut self.cluster_update_list,
@@ -896,27 +896,43 @@ impl CompiledNetwork {
             //*unsafe { innern_update_list.get_unchecked_mut(id) } = false;
         }
     }
+
+
     #[inline(always)]
-    //#[inline(never)]
-    fn update_gates_in_list_simd<const CLUSTER: bool>(
+    fn update_gates_in_list_simd_wrapper<const CLUSTER: bool>(
         inner: &mut CompiledNetworkInner,
         gate_update_list: &mut UpdateList,
         cluster_update_list: &mut UpdateList,
     ) {
-        //let (update_list, next_update_list) = if CLUSTER {
-        //    (unsafe { cluster_update_list }, gate_update_list)
-        //} else {
-        //    (unsafe { gate_update_list }, cluster_update_list)
-        //};
-        //const LANES: usize = 32;
+        let (update_list, next_update_list) = if CLUSTER {
+            (unsafe { cluster_update_list.get_slice() }, gate_update_list)
+        } else {
+            (unsafe { gate_update_list.get_slice() }, cluster_update_list)
+        };
+        Self::update_gates_in_list_simd::<CLUSTER>(inner, update_list, next_update_list);
+    }
+
+    #[inline(always)]
+    //#[inline(never)]
+    fn update_gates_in_list_simd<const CLUSTER: bool>(
+        inner: &mut CompiledNetworkInner,
+        update_list: &[IndexType],
+        next_update_list: &mut UpdateList,
+    ) {
+        const LANES: usize = 32;
         //////self.update_gates_in_list::<ASSUME_CLUSTER>();
         //////todo!();
-        //let (packed_pre, packed_simd, packed_suf): (
-        //    &[IndexType],
-        //    &[Simd<IndexType, LANES>],
-        //    &[IndexType],
-        //) = unsafe { update_list.get_slice_mut() }.as_simd::<LANES>();
-        //Self::update_gates_in_list::<CLUSTER>(inner, packed_pre, next_update_list);
+        let (packed_pre, packed_simd, packed_suf): (
+            &[IndexType],
+            &[Simd<IndexType, LANES>],
+            &[IndexType],
+        ) = update_list.as_simd::<LANES>();
+        Self::update_gates_in_list::<CLUSTER>(inner, packed_pre, next_update_list);
+        Self::update_gates_in_list::<CLUSTER>(inner, packed_suf, next_update_list);
+        packed_simd.into_iter().for_each(|packed| {
+        Self::update_gates_in_list::<CLUSTER>(inner, packed.as_array(), next_update_list);
+        
+        });
 
         //Self::update_gates_in_list::<ASSUME_CLUSTER>(
         //    packed_pre,
