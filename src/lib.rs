@@ -12,6 +12,14 @@ macro_rules! unwrap_or_else {
     };
 }
 
+/// Assume in release, assert in debug.
+macro_rules! assume_debug_assert {
+    ($expression:expr) => {
+        debug_assert!($expression);
+        unsafe { std::intrinsics::assume($expression) };
+    };
+}
+
 pub mod blueprint;
 pub mod logic;
 pub mod raw_list;
@@ -45,19 +53,29 @@ mod tests {
 
     #[test]
     fn optimization_regression_test() {
-        let unoptimized = prep_cases(false);
-        let optimized = prep_cases(true);
-        for ((name, mut unoptimized), (_, mut optimized)) in
-            unoptimized.into_iter().zip(optimized.into_iter())
-        {
-            for i in 0..100 {
-                assert_eq!(
-                    unoptimized.make_state_vec(),
-                    optimized.make_state_vec(),
-                    "optimized/unoptimized mismatch for test {name}, in iteration {i}"
-                );
-                optimized.update();
-                unoptimized.update();
+        for add_all_optimized in [true, false] {
+            for add_all_unoptimized in [true, false] {
+                let unoptimized = prep_cases(false);
+                let optimized = prep_cases(true);
+                for ((name, mut unoptimized), (_, mut optimized)) in
+                    unoptimized.into_iter().zip(optimized.into_iter())
+                {
+                    for i in 0..100 {
+                        assert_eq!(
+                            unoptimized.make_state_vec(),
+                            optimized.make_state_vec(),
+                            "optimized/unoptimized mismatch for test {name}, in iteration {i} {add_all_unoptimized} {add_all_optimized}"
+                        );
+                        if add_all_optimized {
+                            optimized.compiled_network.add_all_to_update_list()
+                        };
+                        if add_all_unoptimized {
+                            optimized.compiled_network.add_all_to_update_list()
+                        };
+                        optimized.update();
+                        unoptimized.update();
+                    }
+                }
             }
         }
     }
@@ -120,14 +138,16 @@ mod tests {
 
     #[test]
     fn basic_gate_test_optimized() {
-        basic_gate_test(true)
+        basic_gate_test(true, false);
+        basic_gate_test(true, true);
     }
     #[test]
     fn basic_gate_test_unoptimimized() {
-        basic_gate_test(true)
+        basic_gate_test(false, false);
+        basic_gate_test(false, true);
     }
 
-    fn basic_gate_test(optimize: bool) {
+    fn basic_gate_test(optimize: bool, add_all: bool) {
         let mut board = Parser::parse(include_str!("../test_files/gates.blueprint"), optimize);
         board.print();
         assert_eq!(
@@ -158,6 +178,9 @@ mod tests {
             .collect::<Vec<bool>>()
         );
         println!("OK0");
+        if add_all {
+            board.compiled_network.add_all_to_update_list()
+        };
         board.update();
         board.print();
         assert_eq!(
@@ -188,6 +211,9 @@ mod tests {
             .collect::<Vec<bool>>()
         );
         println!("OK1");
+        if add_all {
+            board.compiled_network.add_all_to_update_list()
+        };
         board.update();
         board.print();
         assert_eq!(
@@ -218,6 +244,9 @@ mod tests {
             .collect::<Vec<bool>>()
         );
         println!("OK2");
+        if add_all {
+            board.compiled_network.add_all_to_update_list()
+        };
         board.update();
         board.print();
         assert_eq!(

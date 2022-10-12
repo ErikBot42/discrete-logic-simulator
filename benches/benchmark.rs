@@ -21,7 +21,8 @@ fn criterion_benchmark(c: &mut Criterion) {
             include_str!("../test_files/bcd_count.blueprint"),
         ),
         ("intro", include_str!("../test_files/intro.blueprint")),
-        ("gates", include_str!("../test_files/gates.blueprint")),
+        // literally turns into a noop...
+        // ("gates", include_str!("../test_files/gates.blueprint")),
     ];
     let mut pre_parsed: Vec<(&str, VcbBoard)> = tests
         .clone()

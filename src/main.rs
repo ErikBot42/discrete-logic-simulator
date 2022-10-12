@@ -44,9 +44,14 @@ fn main() {
         "run" => loop {
             board.update();
             board.print();
-            let mut child = std::process::Command::new("sleep").arg("0.5").spawn().unwrap();
+            let mut child = std::process::Command::new("sleep")
+                .arg("0.5")
+                .spawn()
+                .unwrap();
             child.wait().unwrap();
-
+        },
+        "forever_bench" => loop {
+            board.update()
         },
 
         _ => loop {

@@ -93,17 +93,27 @@ type GateKey = (GateType, Vec<IndexType>);
 
 //TODO: this only uses 4 bits, 2 adjacent gates could share their
 //      in_update_list flag and be updated at the same time.
+type GateStatusInner = u8;
 #[derive(Debug, Clone, Copy)]
+
+
+
 struct GateStatus {
     inner: u8,
 }
 impl GateStatus {
     // bit locations
-    const STATE: u8 = 1;
-    const IN_UPDATE_LIST: u8 = 0;
+    const STATE: u8 = 0;
+    const IN_UPDATE_LIST: u8 = 1;
     const IS_INVERTED: u8 = 2;
     const IS_XOR: u8 = 3;
-    const FLAGS_MASK: u8 = (1 << Self::IS_XOR) | (1 << Self::IS_INVERTED);
+
+    const FLAG_STATE: u8 = (1 << Self::STATE);
+    const FLAG_IN_UPDATE_LIST: u8 = (1 << Self::IN_UPDATE_LIST);
+    const FLAG_IS_INVERTED: u8 = (1 << Self::IS_INVERTED);
+    const FLAG_IS_XOR: u8 = (1 << Self::IS_XOR);
+
+    const FLAGS_MASK: u8 = Self::FLAG_IS_INVERTED | Self::FLAG_IS_XOR;
 
     fn new(in_update_list: bool, state: bool, kind: RunTimeGateType) -> Self {
         //let in_update_list = in_update_list as u8;
@@ -136,51 +146,81 @@ impl GateStatus {
         //(is_xor, is_inverted, in_update_list, state)
         // variables are valid for their *first* bit
         debug_assert!(self.in_update_list());
-        //let expected_new_state = Gate::evaluate_from_flags(acc, self.flags());
 
         let inner = self.inner; // 0000XX1X
-        let state = inner >> Self::STATE;
+
+        let flag_bits = inner & Self::FLAGS_MASK;
+
+        let state_1 = (inner >> Self::STATE) & 1;
         let acc = acc as u8; // XXXXXXXX
-        let new_state = if CLUSTER {
+        let new_state_1 = if CLUSTER {
             (acc != 0) as u8
         } else {
+            match flag_bits {
+                0 => (acc != 0) as u8,
+                Self::FLAG_IS_INVERTED => (acc == 0) as u8,
+                Self::FLAG_IS_XOR => acc & 1,
+                //_ => 0,
+                _ => unsafe {
+                    debug_assert!(false);
+                    std::hint::unreachable_unchecked()
+                },
+            }
+        };
+        debug_assert_eq!(new_state_1, {
             let is_xor = inner >> Self::IS_XOR; // 0|1
+            debug_assert_eq!(is_xor & 1, is_xor);
             let acc_parity = acc; // XXXXXXXX
             let xor_term = is_xor & acc_parity; // 0|1
-
+            debug_assert_eq!(xor_term & 1, xor_term);
             let acc_not_zero = (acc != 0) as u8; // 0|1
             let is_inverted = inner >> Self::IS_INVERTED; // XX
             let not_xor = !is_xor; // 0|11111111
             let acc_term = not_xor & (is_inverted ^ acc_not_zero); // XXXXXXXX
-            xor_term | acc_term
-        };
+            xor_term | (acc_term & 1)
+        });
 
-        let state_changed = new_state ^ state;
-        let new_state_1 = new_state & 1;
+        let state_changed_1 = new_state_1 ^ state_1;
 
         // automatically sets "in_update_list" bit to zero
-        self.inner = (new_state_1 << Self::STATE) | (self.inner & Self::FLAGS_MASK);
+        self.inner = (new_state_1 << Self::STATE) | flag_bits;
 
         debug_assert!(!self.in_update_list());
         //debug_assert_eq!(expected_new_state, new_state_1 != 0);
+        //super::debug_assert_assume(true);
+        debug_assert!(state_changed_1 == 0 || state_changed_1 == 1);
+        debug_assert!(state_changed_1 < 2);
+        //unsafe {
+        //    std::intrinsics::assume(state_changed_1 == 0 || state_changed_1 == 1);
+        //}
 
-        if state_changed & 1 != 0 {
+        if state_changed_1 != 0 {
             (new_state_1 << 1).wrapping_sub(1)
         } else {
             0
         }
     }
+
+    //#[inline(always)]
+    //fn eval_mut_simd<const LANES: usize>(
+    //    // only acc is not u8...
+    //    acc: Simd<AccType, LANES>,
+    //    is_inverted: Simd<SimdLogicType, LANES>,
+    //    is_xor: Simd<SimdLogicType, LANES>,
+    //    old_state: Simd<SimdLogicType, LANES>,
+    //) -> (Simd<SimdLogicType, LANES>, Simd<SimdLogicType, LANES>)
+
     #[inline(always)]
     fn mark_in_update_list(&mut self) {
-        self.inner |= 1 << Self::IN_UPDATE_LIST;
+        self.inner |= Self::FLAG_IN_UPDATE_LIST;
     }
     #[inline(always)]
     fn in_update_list(&self) -> bool {
-        self.inner & (1 << Self::IN_UPDATE_LIST) != 0
+        self.inner & Self::FLAG_IN_UPDATE_LIST != 0
     }
     #[inline(always)]
     fn state(&self) -> bool {
-        (self.inner & (1 << Self::STATE)) != 0
+        self.inner & Self::FLAG_STATE != 0
     }
 }
 
@@ -529,19 +569,40 @@ pub(crate) struct CompiledNetwork {
     //in_update_list: Vec<bool>,
     //runtime_gate_kind: Vec<RunTimeGateType>,
     acc: Vec<AccType>,
+    kind: Vec<GateType>,
 
     gate_status: Vec<GateStatus>,
     update_list: UpdateList,
     cluster_update_list: UpdateList,
     translation_table: Vec<IndexType>,
     pub iterations: usize,
+    number_of_gates: usize,
 }
 impl CompiledNetwork {
+    /// Adds all non-cluster gates to update list
+    pub(crate) fn add_all_to_update_list(&mut self) {
+        for (s, k) in self.gate_status.iter_mut().zip(self.kind.iter()) {
+            if *k != GateType::Cluster {
+                s.mark_in_update_list()
+            } else {
+                assert!(!s.in_update_list());
+            }
+        }
+        self.update_list.clear();
+        self.update_list.collect(
+            (0..self.number_of_gates as IndexType)
+                .into_iter()
+                .zip(self.kind.iter())
+                .filter(|(_, k)| **k != GateType::Cluster)
+                .map(|(i, _)| i),
+        );
+        assert_eq!(self.cluster_update_list.len(), 0);
+    }
     fn create(network: &Network, optimize: bool) -> Self {
         let mut network = network.initialized(optimize);
 
         let number_of_gates = network.gates.len();
-        let update_list = UpdateList::collect(
+        let update_list = UpdateList::collect_size(
             network
                 .gates
                 .iter_mut()
@@ -567,6 +628,7 @@ impl CompiledNetwork {
             .zip(runtime_gate_kind.iter())
             .map(|((i, s), r)| GateStatus::new(*i, *s != 0, *r))
             .collect::<Vec<GateStatus>>();
+        let kind = gates.iter().map(|g| g.kind).collect();
 
         Self {
             packed_outputs,
@@ -580,6 +642,8 @@ impl CompiledNetwork {
             cluster_update_list: UpdateList::new(number_of_gates),
             iterations: 0,
             translation_table: network.translation_table,
+            number_of_gates,
+            kind,
         } //.clone()
     }
     fn pack_outputs(gates: &Vec<Gate>) -> (Vec<IndexType>, Vec<IndexType>) {
@@ -603,16 +667,16 @@ impl CompiledNetwork {
     }
     #[inline(always)]
     pub(crate) fn update_simd(&mut self) {
-        todo!();
         self.update_internal::<true>();
     }
     /// Updates state of all gates.
     /// # Panics
     /// Not initialized (debug)
-    #[inline(always)]
+    //#[inline(always)] //<- results in slight regression
     pub(crate) fn update(&mut self) {
         self.update_internal::<false>();
     }
+    //#[inline(always)]
     fn update_internal<const USE_SIMD: bool>(&mut self) {
         self.iterations += 1;
         // This somehow improves performance, even when update list is non-zero.
@@ -628,6 +692,7 @@ impl CompiledNetwork {
         self.update_gates::<true, USE_SIMD>();
         self.cluster_update_list.clear();
     }
+    //#[inline(always)]
     fn update_gates<const CLUSTER: bool, const USE_SIMD: bool>(&mut self) {
         if USE_SIMD {
             self.update_gates_in_list_simd::<CLUSTER>();
@@ -640,9 +705,15 @@ impl CompiledNetwork {
     #[inline(always)]
     fn update_gates_in_list<const CLUSTER: bool>(&mut self) {
         let (update_list, next_update_list) = if CLUSTER {
-            (self.cluster_update_list.get_slice(), &mut self.update_list)
+            (
+                unsafe { self.cluster_update_list.get_slice() },
+                &mut self.update_list,
+            )
         } else {
-            (self.update_list.get_slice(), &mut self.cluster_update_list)
+            (
+                unsafe { self.update_list.get_slice() },
+                &mut self.cluster_update_list,
+            )
         };
         if update_list.len() == 0 {
             return;
@@ -690,6 +761,7 @@ impl CompiledNetwork {
                 //debug_assert_eq!(delta, delta_expected, "{}", id);
                 let from_index = *unsafe { self.packed_output_indexes.get_unchecked(id) };
                 let to_index = *unsafe { self.packed_output_indexes.get_unchecked(id + 1) };
+                debug_assert!(from_index <= to_index);
                 for output_id in unsafe {
                     self.packed_outputs
                         .get_unchecked(from_index as usize..to_index as usize)
@@ -705,7 +777,7 @@ impl CompiledNetwork {
                     //debug_assert_eq!(*in_update_list, other_status.in_update_list());
                     if !other_status.in_update_list() {
                         //*in_update_list = true;
-                        next_update_list.push(*output_id);
+                        unsafe { next_update_list.push(*output_id) };
                         other_status.mark_in_update_list();
                     }
                 }
@@ -731,7 +803,8 @@ impl CompiledNetwork {
         //packed_output_indexes: &[IndexType],
         //packed_outputs: &[IndexType],
     ) {
-        self.update_gates_in_list::<ASSUME_CLUSTER>();
+        todo!();
+        //self.update_gates_in_list::<ASSUME_CLUSTER>();
 
         //TODO: SIMD: make assumptions when cluster.
         //if update_list.len() == 0 {
