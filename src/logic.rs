@@ -78,10 +78,10 @@ impl RunTimeGateType {
 // Nor, And: max inactive: n
 // Xor, Xnor: no limitation
 // u16 and u32 have similar speeds for this
-type AccTypeInner = u8;
+type AccTypeInner = u32;
 type AccType = AccTypeInner;
 
-type SimdLogicType = u8;
+type SimdLogicType = AccTypeInner;
 
 // tests don't need that many indexes, but this is obviously a big limitation.
 // u16 enough for typical applications (65536), u32
@@ -100,21 +100,21 @@ type GateKey = (GateType, Vec<IndexType>);
 //}
 mod gate_status {
     use super::*;
-    pub(crate) type Inner = u8;
+    pub(crate) type Inner = u32;
     pub(crate) type GateStatus = Inner;
-    pub(crate) type InnerSigned = i8;
+    pub(crate) type InnerSigned = i32;
     // bit locations
-    const STATE: u8 = 0;
-    const IN_UPDATE_LIST: u8 = 1;
-    const IS_INVERTED: u8 = 2;
-    const IS_XOR: u8 = 3;
+    const STATE: Inner = 0;
+    const IN_UPDATE_LIST: Inner = 1;
+    const IS_INVERTED: Inner = 2;
+    const IS_XOR: Inner = 3;
 
-    const FLAG_STATE: u8 = 1 << STATE;
-    const FLAG_IN_UPDATE_LIST: u8 = 1 << IN_UPDATE_LIST;
-    const FLAG_IS_INVERTED: u8 = 1 << IS_INVERTED;
-    const FLAG_IS_XOR: u8 = 1 << IS_XOR;
+    const FLAG_STATE: Inner = 1 << STATE;
+    const FLAG_IN_UPDATE_LIST: Inner = 1 << IN_UPDATE_LIST;
+    const FLAG_IS_INVERTED: Inner = 1 << IS_INVERTED;
+    const FLAG_IS_XOR: Inner = 1 << IS_XOR;
 
-    const FLAGS_MASK: u8 = FLAG_IS_INVERTED | FLAG_IS_XOR;
+    const FLAGS_MASK: Inner = FLAG_IS_INVERTED | FLAG_IS_XOR;
 
     //TODO: pub super?
     pub(crate) fn new(in_update_list: bool, state: bool, kind: RunTimeGateType) -> Inner {
@@ -122,10 +122,10 @@ mod gate_status {
         //let state = state as u8;
         let (is_inverted, is_xor) = Gate::calc_flags(kind);
 
-        ((state as u8) << STATE)
-            | ((in_update_list as u8) << IN_UPDATE_LIST)
-            | ((is_inverted as u8) << IS_INVERTED)
-            | ((is_xor as u8) << IS_XOR)
+        ((state as Inner) << STATE)
+            | ((in_update_list as Inner) << IN_UPDATE_LIST)
+            | ((is_inverted as Inner) << IS_INVERTED)
+            | ((is_xor as Inner) << IS_XOR)
     }
 
     pub(crate) fn flags(inner: &Inner) -> (bool, bool) {
@@ -150,13 +150,13 @@ mod gate_status {
         let flag_bits = inner & FLAGS_MASK;
 
         let state_1 = (inner >> STATE) & 1;
-        let acc = acc as u8; // XXXXXXXX
+        let acc = acc as Inner; // XXXXXXXX
         let new_state_1 = if CLUSTER {
-            (acc != 0) as u8
+            (acc != 0) as Inner
         } else {
             match flag_bits {
-                0 => (acc != 0) as u8,
-                FLAG_IS_INVERTED => (acc == 0) as u8,
+                0 => (acc != 0) as Inner,
+                FLAG_IS_INVERTED => (acc == 0) as Inner,
                 FLAG_IS_XOR => acc & 1,
                 //_ => 0,
                 _ => unsafe {
@@ -171,7 +171,7 @@ mod gate_status {
             let acc_parity = acc; // XXXXXXXX
             let xor_term = is_xor & acc_parity; // 0|1
             debug_assert_eq!(xor_term & 1, xor_term);
-            let acc_not_zero = (acc != 0) as u8; // 0|1
+            let acc_not_zero = (acc != 0) as Inner; // 0|1
             let is_inverted = inner >> IS_INVERTED; // XX
             let not_xor = !is_xor; // 0|11111111
             let acc_term = not_xor & (is_inverted ^ acc_not_zero); // XXXXXXXX
