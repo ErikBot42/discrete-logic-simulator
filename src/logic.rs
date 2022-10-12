@@ -93,46 +93,41 @@ type GateKey = (GateType, Vec<IndexType>);
 
 //TODO: this only uses 4 bits, 2 adjacent gates could share their
 //      in_update_list flag and be updated at the same time.
-type GateStatusInner = u8;
-#[derive(Debug, Clone, Copy)]
+//#[derive(Debug, Clone, Copy)]
 
-
-
-struct GateStatus {
-    inner: u8,
-}
-impl GateStatus {
+//struct GateStatus {
+//    inner: u8,
+//}
+mod GateStatus {
+    use super::*;
+    pub(crate) type Inner = u8;
     // bit locations
     const STATE: u8 = 0;
     const IN_UPDATE_LIST: u8 = 1;
     const IS_INVERTED: u8 = 2;
     const IS_XOR: u8 = 3;
 
-    const FLAG_STATE: u8 = (1 << Self::STATE);
-    const FLAG_IN_UPDATE_LIST: u8 = (1 << Self::IN_UPDATE_LIST);
-    const FLAG_IS_INVERTED: u8 = (1 << Self::IS_INVERTED);
-    const FLAG_IS_XOR: u8 = (1 << Self::IS_XOR);
+    const FLAG_STATE: u8 = 1 << STATE;
+    const FLAG_IN_UPDATE_LIST: u8 = 1 << IN_UPDATE_LIST;
+    const FLAG_IS_INVERTED: u8 = 1 << IS_INVERTED;
+    const FLAG_IS_XOR: u8 = 1 << IS_XOR;
 
-    const FLAGS_MASK: u8 = Self::FLAG_IS_INVERTED | Self::FLAG_IS_XOR;
+    const FLAGS_MASK: u8 = FLAG_IS_INVERTED | FLAG_IS_XOR;
 
-    fn new(in_update_list: bool, state: bool, kind: RunTimeGateType) -> Self {
+    //TODO: pub super?
+    pub(crate) fn new(in_update_list: bool, state: bool, kind: RunTimeGateType) -> Inner {
         //let in_update_list = in_update_list as u8;
         //let state = state as u8;
         let (is_inverted, is_xor) = Gate::calc_flags(kind);
 
-        Self {
-            inner: ((state as u8) << Self::STATE)
-                | ((in_update_list as u8) << Self::IN_UPDATE_LIST)
-                | ((is_inverted as u8) << Self::IS_INVERTED)
-                | ((is_xor as u8) << Self::IS_XOR),
-        }
+        ((state as u8) << STATE)
+            | ((in_update_list as u8) << IN_UPDATE_LIST)
+            | ((is_inverted as u8) << IS_INVERTED)
+            | ((is_xor as u8) << IS_XOR)
     }
 
-    fn flags(&self) -> (bool, bool) {
-        (
-            (self.inner >> Self::IS_INVERTED) & 1 != 0,
-            (self.inner >> Self::IS_XOR) & 1 != 0,
-        )
+    pub(crate) fn flags(inner: &Inner) -> (bool, bool) {
+        ((inner >> IS_INVERTED) & 1 != 0, (inner >> IS_XOR) & 1 != 0)
     }
 
     /// Evaluate and update internal state.
@@ -140,26 +135,27 @@ impl GateStatus {
     /// Delta (+-1) if state changed (0 = no change)
     /// TODO: assumptions for CLUSTER
     #[inline(always)]
-    fn eval_mut<const CLUSTER: bool>(&mut self, acc: AccType) -> AccType {
+    pub(crate) fn eval_mut<const CLUSTER: bool>(inner_mut: &mut Inner, acc: AccType) -> AccType {
         // <- high, low ->
         //(     3,           2,              1,     0)
         //(is_xor, is_inverted, in_update_list, state)
         // variables are valid for their *first* bit
-        debug_assert!(self.in_update_list());
+        let inner = *inner_mut;
+        debug_assert!(in_update_list(inner));
 
-        let inner = self.inner; // 0000XX1X
+        //let inner = self.inner; // 0000XX1X
 
-        let flag_bits = inner & Self::FLAGS_MASK;
+        let flag_bits = inner & FLAGS_MASK;
 
-        let state_1 = (inner >> Self::STATE) & 1;
+        let state_1 = (inner >> STATE) & 1;
         let acc = acc as u8; // XXXXXXXX
         let new_state_1 = if CLUSTER {
             (acc != 0) as u8
         } else {
             match flag_bits {
                 0 => (acc != 0) as u8,
-                Self::FLAG_IS_INVERTED => (acc == 0) as u8,
-                Self::FLAG_IS_XOR => acc & 1,
+                FLAG_IS_INVERTED => (acc == 0) as u8,
+                FLAG_IS_XOR => acc & 1,
                 //_ => 0,
                 _ => unsafe {
                     debug_assert!(false);
@@ -168,13 +164,13 @@ impl GateStatus {
             }
         };
         debug_assert_eq!(new_state_1, {
-            let is_xor = inner >> Self::IS_XOR; // 0|1
+            let is_xor = inner >> IS_XOR; // 0|1
             debug_assert_eq!(is_xor & 1, is_xor);
             let acc_parity = acc; // XXXXXXXX
             let xor_term = is_xor & acc_parity; // 0|1
             debug_assert_eq!(xor_term & 1, xor_term);
             let acc_not_zero = (acc != 0) as u8; // 0|1
-            let is_inverted = inner >> Self::IS_INVERTED; // XX
+            let is_inverted = inner >> IS_INVERTED; // XX
             let not_xor = !is_xor; // 0|11111111
             let acc_term = not_xor & (is_inverted ^ acc_not_zero); // XXXXXXXX
             xor_term | (acc_term & 1)
@@ -183,9 +179,9 @@ impl GateStatus {
         let state_changed_1 = new_state_1 ^ state_1;
 
         // automatically sets "in_update_list" bit to zero
-        self.inner = (new_state_1 << Self::STATE) | flag_bits;
+        *inner_mut = (new_state_1 << STATE) | flag_bits;
 
-        debug_assert!(!self.in_update_list());
+        debug_assert!(!in_update_list(*inner_mut));
         //debug_assert_eq!(expected_new_state, new_state_1 != 0);
         //super::debug_assert_assume(true);
         debug_assert!(state_changed_1 == 0 || state_changed_1 == 1);
@@ -211,16 +207,16 @@ impl GateStatus {
     //) -> (Simd<SimdLogicType, LANES>, Simd<SimdLogicType, LANES>)
 
     #[inline(always)]
-    fn mark_in_update_list(&mut self) {
-        self.inner |= Self::FLAG_IN_UPDATE_LIST;
+    pub(crate) fn mark_in_update_list(inner: &mut Inner) {
+        *inner |= FLAG_IN_UPDATE_LIST;
     }
     #[inline(always)]
-    fn in_update_list(&self) -> bool {
-        self.inner & Self::FLAG_IN_UPDATE_LIST != 0
+    pub(crate) fn in_update_list(inner: Inner) -> bool {
+        inner & FLAG_IN_UPDATE_LIST != 0
     }
     #[inline(always)]
-    fn state(&self) -> bool {
-        self.inner & Self::FLAG_STATE != 0
+    pub(crate) fn state(inner: Inner) -> bool {
+        inner & FLAG_STATE != 0
     }
 }
 
@@ -571,7 +567,7 @@ pub(crate) struct CompiledNetwork {
     acc: Vec<AccType>,
     kind: Vec<GateType>,
 
-    gate_status: Vec<GateStatus>,
+    gate_status: Vec<GateStatus::Inner>,
     update_list: UpdateList,
     cluster_update_list: UpdateList,
     translation_table: Vec<IndexType>,
@@ -583,9 +579,9 @@ impl CompiledNetwork {
     pub(crate) fn add_all_to_update_list(&mut self) {
         for (s, k) in self.gate_status.iter_mut().zip(self.kind.iter()) {
             if *k != GateType::Cluster {
-                s.mark_in_update_list()
+                GateStatus::mark_in_update_list(s)
             } else {
-                assert!(!s.in_update_list());
+                assert!(!GateStatus::in_update_list(*s));
             }
         }
         self.update_list.clear();
@@ -622,12 +618,12 @@ impl CompiledNetwork {
             .collect();
         let in_update_list: Vec<bool> = gates.iter().map(|gate| gate.in_update_list).collect();
         let state: Vec<u8> = gates.iter().map(|gate| gate.state as u8).collect();
-        let gate_status: Vec<GateStatus> = in_update_list
+        let gate_status: Vec<GateStatus::Inner> = in_update_list
             .iter()
             .zip(state.iter())
             .zip(runtime_gate_kind.iter())
             .map(|((i, s), r)| GateStatus::new(*i, *s != 0, *r))
-            .collect::<Vec<GateStatus>>();
+            .collect::<Vec<GateStatus::Inner>>();
         let kind = gates.iter().map(|g| g.kind).collect();
 
         Self {
@@ -663,7 +659,7 @@ impl CompiledNetwork {
     pub(crate) fn get_state(&self, gate_id: usize) -> bool {
         let gate_id = self.translation_table[gate_id];
         //self.state[gate_id as usize] != 0
-        self.gate_status[gate_id as usize].state()
+        GateStatus::state(self.gate_status[gate_id as usize])
     }
     #[inline(always)]
     pub(crate) fn update_simd(&mut self) {
@@ -729,9 +725,9 @@ impl CompiledNetwork {
             //    )
             //};
             let delta = unsafe {
-                self.gate_status
-                    .get_unchecked_mut(id)
-                    .eval_mut::<CLUSTER>(*self.acc.get_unchecked(id))
+                GateStatus::eval_mut::<CLUSTER>(
+                    self.gate_status.get_unchecked_mut(id), *self.acc.get_unchecked(id),
+                )
             };
             //let next_state_expected = Gate::evaluate(*unsafe { self.acc.get_unchecked(id) }, kind);
             //let state_changed_expected = next_state_expected != (self.state[id] != 0);
@@ -775,10 +771,10 @@ impl CompiledNetwork {
                     let other_status =
                         unsafe { self.gate_status.get_unchecked_mut(*output_id as usize) };
                     //debug_assert_eq!(*in_update_list, other_status.in_update_list());
-                    if !other_status.in_update_list() {
+                    if !GateStatus::in_update_list(*other_status) {
                         //*in_update_list = true;
                         unsafe { next_update_list.push(*output_id) };
-                        other_status.mark_in_update_list();
+                        GateStatus::mark_in_update_list(other_status);
                     }
                 }
             }
@@ -1029,12 +1025,12 @@ mod tests {
                     let flags = Gate::calc_flags(kind);
                     let in_update_list = true;
                     let mut status = GateStatus::new(in_update_list, state, kind);
-                    let status_delta = status.eval_mut::<false>(acc);
+                    let status_delta = GateStatus::eval_mut::<false>(&mut status, acc);
                     let res = [
                         Gate::evaluate_from_flags(acc, flags),
                         Gate::evaluate_branchless(acc, flags),
                         Gate::evaluate(acc, kind),
-                        status.state(),
+                        GateStatus::state(status),
                     ];
                     assert!(
                         res.windows(2).all(|r| r[0] == r[1]),
