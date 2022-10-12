@@ -668,6 +668,11 @@ pub(crate) struct CompiledNetwork {
     update_list: UpdateList,
     cluster_update_list: UpdateList,
 }
+macro_rules! gather_32x8_to_32x8 {
+    ($data:expr, $indexes:expr) => {
+        unsafe { core::arch::x86_64::_mm256_i32gather_epi32($data.as_ptr(), $indexes, 4) }
+    };
+}
 impl CompiledNetwork {
     /// Adds all non-cluster gates to update list
     pub(crate) fn add_all_to_update_list(&mut self) {
@@ -943,31 +948,27 @@ impl CompiledNetwork {
             let id_simd_c = id_simd.cast();
 
             //let id_simd_i = unsafe { transmute::<u32x8, i32x8>(id_simd) };
-            //let id_simd_m: __m256i = __m256i::from(id_simd_i);
+            let id_simd_m: __m256i = __m256i::from(id_simd);
+
+            let acc_simd = Simd::from(gather_32x8_to_32x8!(&inner.acc, id_simd_m));
 
             //let acc_simd = unsafe {
-            //    transmute::<i32x8, u32x8>(Simd::from(gather_32x8_to_32x8(&inner.acc, id_simd_m)))
+            //    Simd::gather_select_unchecked(
+            //        &inner.acc,
+            //        Mask::splat(true),
+            //        id_simd_c,
+            //        Simd::splat(0),
+            //    )
             //};
-
-            let acc_simd = unsafe {
-                Simd::gather_select_unchecked(
-                    &inner.acc,
-                    Mask::splat(true),
-                    id_simd_c,
-                    Simd::splat(0),
-                )
-            };
+            let mut status_simd = Simd::from(gather_32x8_to_32x8!(&inner.status, id_simd_m));
             //let mut status_simd = unsafe {
-            //    transmute::<i32x8, u32x8>(Simd::from(gather_32x8_to_32x8(&inner.status, id_simd_m)))
+            //    Simd::gather_select_unchecked(
+            //        &inner.status,
+            //        Mask::splat(true),
+            //        id_simd_c,
+            //        Simd::splat(0),
+            //    )
             //};
-            let mut status_simd = unsafe {
-                Simd::gather_select_unchecked(
-                    &inner.status,
-                    Mask::splat(true),
-                    id_simd_c,
-                    Simd::splat(0),
-                )
-            };
             let delta_simd =
                 gate_status::eval_mut_simd::<CLUSTER, LANES>(&mut status_simd, acc_simd);
 
@@ -984,36 +985,35 @@ impl CompiledNetwork {
             }
             //assert!(!all_zeroes);
 
-            let from_index_simd = unsafe {
-                Simd::gather_select_unchecked(
-                    &inner.packed_output_indexes,
-                    Mask::splat(true),
-                    id_simd_c,
-                    Simd::splat(0),
-                )
-            };
-            let to_index_simd = unsafe {
-                Simd::gather_select_unchecked(
-                    &inner.packed_output_indexes,
-                    Mask::splat(true),
-                    id_simd_c + Simd::splat(1),
-                    Simd::splat(0),
-                )
-            };
-            for ((delta, from_index), to_index) in delta_simd
+            //let from_index_simd = unsafe {
+            //    Simd::gather_select_unchecked(
+            //        &inner.packed_output_indexes,
+            //        Mask::splat(true),
+            //        id_simd_c,
+            //        Simd::splat(0),
+            //    )
+            //};
+            //let to_index_simd = unsafe {
+            //    Simd::gather_select_unchecked(
+            //        &inner.packed_output_indexes,
+            //        Mask::splat(true),
+            //        id_simd_c + Simd::splat(1),
+            //        Simd::splat(0),
+            //    )
+            //};
+            for (delta, id) in delta_simd
                 .as_array()
                 .into_iter()
-                .zip(from_index_simd.as_array().into_iter())
-                .zip(to_index_simd.as_array().into_iter())
-                .filter(|((delta, _), _)| **delta != 0)
+                .zip(id_simd.as_array().into_iter())
+                .filter(|(delta, _)| **delta != 0)
+                .map(|(delta, id)| (delta, *id as usize))
             {
-                //let from_index = *unsafe { inner.packed_output_indexes.get_unchecked(id) };
-                //let to_index =
-                //    *unsafe { inner.packed_output_indexes.get_unchecked(id + 1) };
+                let from_index = *unsafe { inner.packed_output_indexes.get_unchecked(id) };
+                let to_index = *unsafe { inner.packed_output_indexes.get_unchecked(id + 1) };
                 for output_id in unsafe {
                     inner
                         .packed_outputs
-                        .get_unchecked(*from_index as usize..*to_index as usize)
+                        .get_unchecked(from_index as usize..to_index as usize)
                 }
                 .iter()
                 {
@@ -1034,14 +1034,14 @@ impl CompiledNetwork {
 use core::arch::x86_64::__m256i;
 use std::mem::transmute;
 #[inline(always)]
-fn gather_32x8_to_32x8(data: &[u32], indexes: __m256i) -> __m256i {
-    assert!(is_x86_feature_detected!("avx2"));
-    const SCALE: i32 = 4; // 4 bytes in 32 bit?
+fn gather_32x8_to_32x8(data: &[i32], indexes: __m256i) -> __m256i {
+    //debug_assert!(is_x86_feature_detected!("avx2"));
     unsafe {
-        let ptr = transmute::<*const u32, *const i32>(data.as_ptr());
-        core::arch::x86_64::_mm256_i32gather_epi32(ptr, indexes, SCALE)
+        //let ptr = transmute::<*const u32, *const i32>(data.as_ptr());
+        core::arch::x86_64::_mm256_i32gather_epi32(data.as_ptr(), indexes, 4)
     }
 }
+
 #[derive(Debug, Default, Clone)]
 pub struct GateNetwork {
     network: Network,
@@ -1140,7 +1140,7 @@ mod tests {
                         Gate::evaluate(acc, kind),
                         gate_status::state(status),
                     ];
-                    
+
                     assert!(
                         res.windows(2).all(|r| r[0] == r[1]),
                         "Some gate evaluators have diffrent behavior: 
