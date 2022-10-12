@@ -62,7 +62,7 @@ mod tests {
         }
     }
 
-    fn simd_test(optimized: bool) -> bool{
+    fn simd_test(optimized: bool) -> bool {
         let optimized_board = prep_cases(optimized);
         let optimized_simd = prep_cases(optimized);
         let mut correct: bool = true;
@@ -91,20 +91,6 @@ mod tests {
                     correct = false;
                     break;
                 }
-                //for (j, (optim_bool, optim_bool_simd)) in optimized_state
-                //    .iter()
-                //    .zip(optimized_state_simd.iter())
-                //    .enumerate()
-                //{
-                //    assert_eq!(
-                //        optim_bool, optim_bool_simd,
-                //        "simd/non simd mismatch for test {name}, in iteration {i} at position {j}"
-                //    );
-                //}
-                //assert_eq!(
-                //    optimized.make_state_vec().into_iter().map(|x| x as u8).collect::<Vec<u8>>(),
-                //    optimized_simd.make_state_vec().into_iter().map(|x| x as u8).collect::<Vec<u8>>(),
-                //                    //);
                 optimized_simd.compiled_network.update_simd();
                 optimized.update();
             }
@@ -133,9 +119,16 @@ mod tests {
     //}
 
     #[test]
-    fn basic_gate_test() {
-        //let mut board = Parser::parse(include_str!("../test_files/gates.blueprint"), true);
-        let mut board = Parser::parse(include_str!("../test_files/gates.blueprint"), false);
+    fn basic_gate_test_optimized() {
+        basic_gate_test(true)
+    }
+    #[test]
+    fn basic_gate_test_unoptimimized() {
+        basic_gate_test(true)
+    }
+
+    fn basic_gate_test(optimize: bool) {
+        let mut board = Parser::parse(include_str!("../test_files/gates.blueprint"), optimize);
         board.print();
         assert_eq!(
             board.make_state_vec(),
