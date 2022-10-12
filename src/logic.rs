@@ -98,6 +98,7 @@ type GateKey = (GateType, Vec<IndexType>);
 //struct GateStatus {
 //    inner: u8,
 //}
+
 mod gate_status {
     use super::*;
     pub(crate) type Inner = u32;
@@ -234,10 +235,10 @@ mod gate_status {
             //}
 
             let is_xor = inner >> Simd::splat(IS_XOR); // 0|1
-            debug_assert_eq!(is_xor & Simd::splat(1), is_xor);
+                                                       //debug_assert_eq!(is_xor & Simd::splat(1), is_xor);
             let acc_parity = acc; // XXXXXXXX
             let xor_term = is_xor & acc_parity; // 0|1
-            debug_assert_eq!(xor_term & Simd::splat(1), xor_term);
+                                                //debug_assert_eq!(xor_term & Simd::splat(1), xor_term);
             let acc_not_zero = acc
                 .simd_ne(Simd::splat(0))
                 .select(Simd::splat(1), Simd::splat(0)); // 0|1
@@ -359,6 +360,7 @@ impl Gate {
             RunTimeGateType::XorXnor => acc & (1) == (1),
         }
     }
+    #[inline(always)]
     fn evaluate_from_flags(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
         // inverted from perspective of or gate
         // hopefully this generates branchless code.
@@ -368,6 +370,7 @@ impl Gate {
             acc % (2) == (1)
         }
     }
+    #[inline(always)]
     fn evaluate_branchless(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
         !is_xor && ((acc != 0) != is_inverted) || is_xor && (acc % 2 == 1)
     }
@@ -755,7 +758,7 @@ impl CompiledNetwork {
         //self.state[gate_id as usize] != 0
         gate_status::state(self.i.status[gate_id as usize])
     }
-    #[inline(always)]
+    //#[inline(always)]
     pub(crate) fn update_simd(&mut self) {
         self.update_internal::<true>();
     }
@@ -767,6 +770,7 @@ impl CompiledNetwork {
         self.update_internal::<false>();
     }
     //#[inline(always)]
+    #[inline(always)]
     fn update_internal<const USE_SIMD: bool>(&mut self) {
         self.i.iterations += 1;
         // This somehow improves performance, even when update list is non-zero.
@@ -783,6 +787,7 @@ impl CompiledNetwork {
         self.cluster_update_list.clear();
     }
     //#[inline(always)]
+    #[inline(always)]
     fn update_gates<const CLUSTER: bool, const USE_SIMD: bool>(&mut self) {
         if USE_SIMD {
             Self::update_gates_in_list_simd_wrapper::<CLUSTER>(
@@ -933,7 +938,13 @@ impl CompiledNetwork {
         });
 
         for id_simd in packed_simd {
+            let id_simd = *id_simd;
             let id_simd_c = id_simd.cast();
+
+            //let id_simd_i = unsafe { transmute::<u32x8, i32x8>(id_simd) };
+            //let id_simd_m: __m256i = __m256i::from(id_simd_i);
+            
+            //gather_32x8_to_32x8(&inner.acc, id_simd_m);
             let acc_simd = unsafe {
                 Simd::gather_select_unchecked(
                     &inner.acc,
@@ -952,6 +963,7 @@ impl CompiledNetwork {
             };
             let delta_simd =
                 gate_status::eval_mut_simd::<CLUSTER, LANES>(&mut status_simd, acc_simd);
+
             unsafe {
                 status_simd.scatter_select_unchecked(
                     &mut inner.status,
@@ -959,6 +971,11 @@ impl CompiledNetwork {
                     id_simd_c,
                 )
             };
+            let all_zeroes = delta_simd == Simd::splat(0);
+            if all_zeroes {
+                continue;
+            }
+            //assert!(!all_zeroes);
 
             let from_index_simd = unsafe {
                 Simd::gather_select_unchecked(
@@ -976,36 +993,48 @@ impl CompiledNetwork {
                     Simd::splat(0),
                 )
             };
-            (delta_simd.as_array().into_iter().cloned())
-                .filter(|delta| delta != 0)
-                .zip(id_simd.as_array().into_iter())
-                .map(|(delta, id)| (delta, *id as usize))
-                .for_each(|(delta, id)| {
-                    //if delta != 0 {
-                    let from_index = *unsafe { inner.packed_output_indexes.get_unchecked(id) };
-                    let to_index = *unsafe { inner.packed_output_indexes.get_unchecked(id + 1) };
-                    for output_id in unsafe {
-                        inner
-                            .packed_outputs
-                            .get_unchecked(from_index as usize..to_index as usize)
+            for ((delta, from_index), to_index) in delta_simd
+                .as_array()
+                .into_iter()
+                .zip(from_index_simd.as_array().into_iter())
+                .zip(to_index_simd.as_array().into_iter())
+                .filter(|((delta, _), _)| **delta != 0)
+            {
+                //let from_index = *unsafe { inner.packed_output_indexes.get_unchecked(id) };
+                //let to_index =
+                //    *unsafe { inner.packed_output_indexes.get_unchecked(id + 1) };
+                for output_id in unsafe {
+                    inner
+                        .packed_outputs
+                        .get_unchecked(*from_index as usize..*to_index as usize)
+                }
+                .iter()
+                {
+                    let other_acc = unsafe { inner.acc.get_unchecked_mut(*output_id as usize) };
+                    *other_acc = other_acc.wrapping_add(*delta);
+                    let other_status =
+                        unsafe { inner.status.get_unchecked_mut(*output_id as usize) };
+                    if !gate_status::in_update_list(*other_status) {
+                        unsafe { next_update_list.push(*output_id) };
+                        gate_status::mark_in_update_list(other_status);
                     }
-                    .iter()
-                    {
-                        let other_acc = unsafe { inner.acc.get_unchecked_mut(*output_id as usize) };
-                        *other_acc = other_acc.wrapping_add(delta);
-                        let other_status =
-                            unsafe { inner.status.get_unchecked_mut(*output_id as usize) };
-                        if !gate_status::in_update_list(*other_status) {
-                            unsafe { next_update_list.push(*output_id) };
-                            gate_status::mark_in_update_list(other_status);
-                        }
-                    }
-                    //}
-                });
+                }
+            }
         }
     }
 }
 
+use core::arch::x86_64::__m256i;
+use std::mem::transmute;
+#[inline(always)]
+fn gather_32x8_to_32x8(data: &[u32], indexes: __m256i) -> __m256i {
+    assert!(is_x86_feature_detected!("avx2"));
+    const SCALE: i32 = 4; // 4 bytes/32 bit?
+    unsafe {
+        let ptr = transmute::<*const u32, *const i32>(data.as_ptr());
+        core::arch::x86_64::_mm256_i32gather_epi32(ptr, indexes, SCALE)
+    }
+}
 #[derive(Debug, Default, Clone)]
 pub struct GateNetwork {
     network: Network,

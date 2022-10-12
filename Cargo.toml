@@ -16,9 +16,9 @@ autotests = true
 
 # Very expensive, but makes 
 # code a tiny bit faster:
-#lto = true
-#codegen-units = 1
-#panic = "abort"
+lto = true
+codegen-units = 1
+panic = "abort"
 
 
 opt-level = 3
