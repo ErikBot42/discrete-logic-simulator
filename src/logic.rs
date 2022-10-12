@@ -603,6 +603,7 @@ impl CompiledNetwork {
     }
     #[inline(always)]
     pub(crate) fn update_simd(&mut self) {
+        todo!();
         self.update_internal::<true>();
     }
     /// Updates state of all gates.
