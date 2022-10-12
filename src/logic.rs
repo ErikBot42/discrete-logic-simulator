@@ -78,7 +78,7 @@ impl RunTimeGateType {
 // Nor, And: max inactive: n
 // Xor, Xnor: no limitation
 // u16 and u32 have similar speeds for this
-type AccTypeInner = u32;
+type AccTypeInner = u8;
 type AccType = AccTypeInner;
 
 type SimdLogicType = AccTypeInner;
@@ -101,9 +101,9 @@ type GateKey = (GateType, Vec<IndexType>);
 
 mod gate_status {
     use super::*;
-    pub(crate) type Inner = u32;
+    pub(crate) type Inner = u8;
     pub(crate) type GateStatus = Inner;
-    pub(crate) type InnerSigned = i32;
+    pub(crate) type InnerSigned = i8;
     // bit locations
     const STATE: Inner = 0;
     const IN_UPDATE_LIST: Inner = 1;
@@ -199,50 +199,62 @@ mod gate_status {
             0
         }
     }
-    
-    const fn splat_u32(value: u8) -> u32{
+
+    const fn splat_u32(value: u8) -> u32 {
         u32::from_le_bytes([value; 4])
     }
-    
+    /// if byte contains any bit set, it will be
+    /// replaced with 0xff
+    const fn or_combine(value: u32) -> u32 {
+        //TODO: try using a tree here.
+        //      this is extremely sequential
+        let mut value = value;
+        value |= (splat_u32(0b11110000) & value) >> 4;
+        value |= (splat_u32(0b11001100) & value) >> 2;
+        value |= (splat_u32(0b10101010) & value) >> 1;
+        value |= (splat_u32(0b00001111) & value) << 4;
+        value |= (splat_u32(0b00110011) & value) << 2;
+        value |= (splat_u32(0b01010101) & value) << 1;
+        value
+    }
+    /// like or_combine, but replaces with 0x1 instead.
+    /// equivalent to bytewise != 0
+    const fn or_combine_1(value: u32) -> u32 {
+        let mut value = value;
+        value |= (splat_u32(0b11110000) & value) >> 4;
+        value |= (splat_u32(0b11001100) & value) >> 2;
+        value |= (splat_u32(0b10101010) & value) >> 1;
+        value & splat_u32(1)
+    }
     // TODO: save on the 4 unused bits, maybe merge 2 iterations?
-    pub(crate) fn eval_mut_scalar<const CLUSTER: bool>(
-        inner_mut: &mut u32,
-        acc: u32,
-    ) -> u32 {
-
+    // TODO: relaxed or_combine
+    pub(crate) fn eval_mut_scalar<const CLUSTER: bool>(inner_mut: &mut u32, acc: u32) -> u32 {
         let inner = *inner_mut;
 
-        let flag_bits = inner & FLAGS_MASK;
+        let flag_bits = inner & splat_u32(FLAGS_MASK);
+        let state_1 = (inner >> STATE) & splat_u32(1);
 
-        let state_1 = (inner >> STATE) & 1;
-        let acc = acc as Inner; // XXXXXXXX
         let new_state_1 = if CLUSTER {
-            (acc != 0) as Inner
+            //TODO ne impl.
+            //(acc != 0) as u32
+            or_combine_1(acc) // bool
         } else {
-            let is_xor = inner >> IS_XOR; // 0|1
-            let acc_parity = acc; // XXXXXXXX
-            let xor_term = is_xor & acc_parity; // 0|1
-            let acc_not_zero = (acc != 0) as Inner; // 0|1
-            let is_inverted = inner >> IS_INVERTED; // XX
-            let not_xor = !is_xor; // 0|11111111
-            let acc_term = not_xor & (is_inverted ^ acc_not_zero); // XXXXXXXX
-            xor_term | (acc_term & 1)
+            let is_xor = inner >> IS_XOR; // ?
+            let acc_parity = acc; // ?
+            let xor_term = is_xor & acc_parity; // ?
+            let acc_not_zero = or_combine_1(acc); // bool
+            let is_inverted = inner >> IS_INVERTED; // ?
+            let not_xor = !is_xor; // ?
+            let acc_term = not_xor & (is_inverted ^ acc_not_zero); // ?
+            (xor_term | acc_term) & splat_u32(1) // bool
         };
-
-        let state_changed_1 = new_state_1 ^ state_1;
+        let state_changed_1 = new_state_1 ^ state_1; // bool
 
         // automatically sets "in_update_list" bit to zero
         *inner_mut = (new_state_1 << STATE) | flag_bits;
-
-        debug_assert!(!in_update_list(*inner_mut));
-        debug_assert!(state_changed_1 == 0 || state_changed_1 == 1);
-        debug_assert!(state_changed_1 < 2);
-
-        if state_changed_1 != 0 {
-            (new_state_1 << 1).wrapping_sub(1) as AccType
-        } else {
-            0
-        }
+        let increment_1 = new_state_1 & state_changed_1;
+        let decrement_1 = !new_state_1 & state_changed_1;
+        or_combine_1(decrement_1) | increment_1
     }
 
     #[inline(always)]
@@ -348,6 +360,40 @@ mod gate_status {
         LaneCount<LANES>: SupportedLaneCount,
     {
         (inner & Simd::splat(FLAG_STATE)).simd_ne(Simd::splat(0))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        #[test]
+        fn test_or_combine() {
+            for value2 in 0..32 {
+                for value in 0..32 {
+                    let value: u32 = (1 << value) | (1 << value2);
+                    let mut bytes = value.to_le_bytes();
+                    for byte in bytes.iter_mut() {
+                        if *byte != 0 {
+                            *byte = 255;
+                        }
+                    }
+                    let expected = u32::from_le_bytes(bytes);
+                    assert_eq!(
+                        expected,
+                        or_combine(value),
+                        "invalid or_combine() for: {}",
+                        value
+                    );
+
+                    let expected_1 = expected & splat_u32(1);
+                    assert_eq!(
+                        expected_1,
+                        or_combine_1(value),
+                        "invalid or_combine_1() for: {}",
+                        value
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -993,7 +1039,7 @@ impl CompiledNetwork {
             let id_simd_c = id_simd.cast();
 
             //let id_simd_i = unsafe { transmute::<u32x8, i32x8>(id_simd) };
-            let id_simd_m: __m256i = __m256i::from(id_simd);
+            //let id_simd_m: __m256i = __m256i::from(id_simd);
 
             //let acc_simd = Simd::from(gather_32x8_to_32x8!(&inner.acc, id_simd_m));
 
