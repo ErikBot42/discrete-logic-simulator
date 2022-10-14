@@ -2,7 +2,6 @@
 #![allow(clippy::inline_always)]
 use itertools::Itertools;
 use std::collections::HashMap;
-use std::convert::From;
 use std::simd::*;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, PartialOrd, Ord)]
@@ -57,9 +56,6 @@ pub(crate) enum RunTimeGateType {
     OrNand,
     AndNor,
     XorXnor,
-    //OrNand = 0,
-    //AndNor = 1,
-    //XorXnor = 2,
 }
 impl RunTimeGateType {
     fn new(kind: GateType) -> Self {
@@ -104,6 +100,7 @@ mod gate_status {
     pub(crate) type Inner = u8;
     pub(crate) type GateStatus = Inner;
     pub(crate) type InnerSigned = i8;
+    pub(crate) type Packed = u32;
     // bit locations
     const STATE: Inner = 0;
     const IN_UPDATE_LIST: Inner = 1;
@@ -221,7 +218,7 @@ mod gate_status {
         value
     }
     /// like or_combine, but replaces with 0x1 instead.
-    /// equivalent to bytewise != 0
+    /// equivalent to BYTEwise != 0
     const fn or_combine_1(value: u32) -> u32 {
         let mut value = value;
         value |= (splat_u32(0b11110000) & value) >> 4;
@@ -238,8 +235,6 @@ mod gate_status {
         let state_1 = (inner >> STATE) & splat_u32(1);
 
         let new_state_1 = if CLUSTER {
-            //TODO ne impl.
-            //(acc != 0) as u32
             or_combine_1(acc) // bool
         } else {
             let is_xor = inner >> IS_XOR; // ?
@@ -269,10 +264,6 @@ mod gate_status {
         LaneCount<LANES>: SupportedLaneCount,
     {
         let inner = *inner_mut;
-        // cannot assert this in simd
-        //debug_assert!(in_update_list(inner));
-
-        //let inner = self.inner; // 0000XX1X
 
         let flag_bits = inner & Simd::splat(FLAGS_MASK);
 
@@ -283,17 +274,6 @@ mod gate_status {
             acc.simd_ne(Simd::splat(0 as SimdLogicType))
                 .select(Simd::splat(1), Simd::splat(0))
         } else {
-            //match flag_bits {
-            //    0 => (acc != 0) as u8,
-            //    FLAG_IS_INVERTED => (acc == 0) as u8,
-            //    FLAG_IS_XOR => acc & 1,
-            //    //_ => 0,
-            //    _ => unsafe {
-            //        debug_assert!(false);
-            //        std::hint::unreachable_unchecked()
-            //    },
-            //}
-
             let is_xor = inner >> Simd::splat(IS_XOR); // 0|1
                                                        //debug_assert_eq!(is_xor & Simd::splat(1), is_xor);
             let acc_parity = acc; // XXXXXXXX
@@ -313,33 +293,16 @@ mod gate_status {
         // TODO: optimize
         let state_changed_1_signed: Simd<InnerSigned, LANES> = state_changed_1.cast();
 
-        //TODO: invert
         let state_changed_mask =
             unsafe { Mask::from_int_unchecked(state_changed_1_signed - Simd::splat(1)) };
 
         // automatically sets "in_update_list" bit to zero
         *inner_mut = (new_state_1 << Simd::splat(STATE)) | flag_bits;
 
-        // cannot assert this in simd
-        //debug_assert!(!in_update_list(*inner_mut));
-        //debug_assert_eq!(expected_new_state, new_state_1 != 0);
-        //super::debug_assert_assume(true);
-        //debug_assert!(state_changed_1 == 0 || state_changed_1 == 1);
-        //debug_assert!(state_changed_1 < 2);
-        //unsafe {
-        //    std::intrinsics::assume(state_changed_1 == 0 || state_changed_1 == 1);
-        //}
         state_changed_mask.select(
             Simd::splat(0),
             (new_state_1 << Simd::splat(1)) - Simd::splat(1),
         )
-
-        //if state_changed_1 != 0 {
-        //    (new_state_1 << 1).wrapping_sub(1)
-        //} else {
-        //    0
-        //}
-        //todo!()
     }
 
     #[inline(always)]
@@ -363,6 +326,19 @@ mod gate_status {
         LaneCount<LANES>: SupportedLaneCount,
     {
         (inner & Simd::splat(FLAG_STATE)).simd_ne(Simd::splat(0))
+    }
+
+    pub(crate) fn pack(mut iter: impl Iterator<Item = u8>) -> Vec<Packed> {
+        let mut tmp = Vec::new();
+        loop {
+            tmp.push(Packed::from_le_bytes([
+                unwrap_or_else!(iter.next(), break),
+                iter.next().unwrap_or(0),
+                iter.next().unwrap_or(0),
+                iter.next().unwrap_or(0),
+            ]));
+        }
+        tmp
     }
 
     #[cfg(test)]
@@ -447,6 +423,7 @@ impl Gate {
         self.inputs.append(inputs);
     }
     #[inline(always)]
+    #[cfg(test)]
     fn evaluate(acc: AccType, kind: RunTimeGateType) -> bool {
         match kind {
             RunTimeGateType::OrNand => acc != (0),
@@ -455,6 +432,7 @@ impl Gate {
         }
     }
     #[inline(always)]
+    #[cfg(test)]
     fn evaluate_from_flags(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
         // inverted from perspective of or gate
         // hopefully this generates branchless code.
@@ -465,11 +443,13 @@ impl Gate {
         }
     }
     #[inline(always)]
+    #[cfg(test)]
     fn evaluate_branchless(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
         !is_xor && ((acc != 0) != is_inverted) || is_xor && (acc & 1 == 1)
     }
     #[inline(always)] // inline always required to keep SIMD in registers.
-    #[must_use]
+    //#[must_use]
+    #[cfg(test)]
     fn evaluate_simd<const LANES: usize>(
         // only acc is not u8...
         acc: Simd<AccType, LANES>,
@@ -539,8 +519,10 @@ impl Network {
             .map(|x| x as IndexType)
             .collect();
         assert_ne!(network.gates.len(), 0, "no gates where added.");
+        self.print_info();
         if optimize {
             network = network.optimized();
+            self.print_info();
         }
         assert_ne!(network.gates.len(), 0, "optimization removed all gates");
         return network;
@@ -746,11 +728,15 @@ struct CompiledNetworkInner {
     //in_update_list: Vec<bool>,
     //runtime_gate_kind: Vec<RunTimeGateType>,
     acc: Vec<AccType>,
-    kind: Vec<GateType>,
 
+    status_packed: Vec<gate_status::Packed>,
     status: Vec<gate_status::Inner>,
     translation_table: Vec<IndexType>,
     pub iterations: usize,
+
+    #[cfg(test)]
+    kind: Vec<GateType>,
+    #[cfg(test)]
     number_of_gates: usize,
 }
 
@@ -762,13 +748,9 @@ pub(crate) struct CompiledNetwork {
     update_list: UpdateList,
     cluster_update_list: UpdateList,
 }
-//macro_rules! gather_32x8_to_32x8 {
-//    ($data:expr, $indexes:expr) => {
-//        unsafe { core::arch::x86_64::_mm256_i32gather_epi32($data.as_ptr(), $indexes, 4) }
-//    };
-//}
 impl CompiledNetwork {
     /// Adds all non-cluster gates to update list
+    #[cfg(test)]
     pub(crate) fn add_all_to_update_list(&mut self) {
         for (s, k) in self.i.status.iter_mut().zip(self.i.kind.iter()) {
             if *k != GateType::Cluster {
@@ -811,27 +793,38 @@ impl CompiledNetwork {
             .collect();
         let in_update_list: Vec<bool> = gates.iter().map(|gate| gate.in_update_list).collect();
         let state: Vec<u8> = gates.iter().map(|gate| gate.state as u8).collect();
-        let gate_status: Vec<gate_status::Inner> = in_update_list
+
+        let acc = gates.iter().map(|gate| gate.acc).collect();
+
+        let status: Vec<gate_status::Inner> = in_update_list
             .iter()
             .zip(state.iter())
             .zip(runtime_gate_kind.iter())
             .map(|((i, s), r)| gate_status::new(*i, *s != 0, *r))
             .collect::<Vec<gate_status::Inner>>();
+
+        let status_packed = gate_status::pack(status.iter().cloned());
+        let acc_packed = gate_status::pack(status.iter().cloned());
+
+        #[cfg(test)]
         let kind = gates.iter().map(|g| g.kind).collect();
 
         Self {
             i: CompiledNetworkInner {
+                acc,
                 packed_outputs,
                 packed_output_indexes,
                 //state,
-                acc: gates.iter().map(|gate| gate.acc).collect(),
                 //in_update_list,
                 //runtime_gate_kind,
-                status: gate_status,
+                status,
+                status_packed,
 
                 iterations: 0,
                 translation_table: network.translation_table,
+                #[cfg(test)]
                 number_of_gates,
+                #[cfg(test)]
                 kind,
             },
             update_list,
@@ -877,9 +870,6 @@ impl CompiledNetwork {
         if self.update_list.len() == 0 {
             return;
         }
-        //TODO: move clear into update functions.
-        //TODO: move update list into separate struct to borrow them
-        //      separately
         self.update_gates::<false, USE_SIMD>();
         self.update_list.clear();
         self.update_gates::<true, USE_SIMD>();
@@ -894,7 +884,6 @@ impl CompiledNetwork {
                 &mut self.update_list,
                 &mut self.cluster_update_list,
             );
-            //self.update_gates_in_list_simd::<CLUSTER>();
         } else {
             Self::update_gates_in_list_wrapper::<CLUSTER>(
                 &mut self.i,
@@ -1018,7 +1007,6 @@ impl CompiledNetwork {
     }
 
     #[inline(always)]
-    //#[inline(never)]
     fn update_gates_in_list_simd<const CLUSTER: bool>(
         inner: &mut CompiledNetworkInner,
         update_list: &[IndexType],
@@ -1037,14 +1025,7 @@ impl CompiledNetwork {
         });
 
         for id_simd in packed_simd {
-            debug_assert_eq!(LANES, 8);
-            let id_simd = *id_simd;
             let id_simd_c = id_simd.cast();
-
-            //let id_simd_i = unsafe { transmute::<u32x8, i32x8>(id_simd) };
-            //let id_simd_m: __m256i = __m256i::from(id_simd);
-
-            //let acc_simd = Simd::from(gather_32x8_to_32x8!(&inner.acc, id_simd_m));
 
             let acc_simd = unsafe {
                 Simd::gather_select_unchecked(
@@ -1054,7 +1035,6 @@ impl CompiledNetwork {
                     Simd::splat(0),
                 )
             };
-            //let mut status_simd = Simd::from(gather_32x8_to_32x8!(&inner.status, id_simd_m));
             let mut status_simd = unsafe {
                 Simd::gather_select_unchecked(
                     &inner.status,
@@ -1077,28 +1057,10 @@ impl CompiledNetwork {
             if all_zeroes {
                 continue;
             }
-            //assert!(!all_zeroes);
-
-            //let from_index_simd = unsafe {
-            //    Simd::gather_select_unchecked(
-            //        &inner.packed_output_indexes,
-            //        Mask::splat(true),
-            //        id_simd_c,
-            //        Simd::splat(0),
-            //    )
-            //};
-            //let to_index_simd = unsafe {
-            //    Simd::gather_select_unchecked(
-            //        &inner.packed_output_indexes,
-            //        Mask::splat(true),
-            //        id_simd_c + Simd::splat(1),
-            //        Simd::splat(0),
-            //    )
-            //};
             for (delta, id) in delta_simd
                 .as_array()
                 .into_iter()
-                .zip(id_simd.as_array().into_iter())
+                .zip((*id_simd).as_array().into_iter())
                 .filter(|(delta, _)| **delta != 0)
                 .map(|(delta, id)| (delta, *id as usize))
             {
@@ -1122,17 +1084,6 @@ impl CompiledNetwork {
                 }
             }
         }
-    }
-}
-
-use core::arch::x86_64::__m256i;
-use std::mem::transmute;
-#[inline(always)]
-fn gather_32x8_to_32x8(data: &[i32], indexes: __m256i) -> __m256i {
-    //debug_assert!(is_x86_feature_detected!("avx2"));
-    unsafe {
-        //let ptr = transmute::<*const u32, *const i32>(data.as_ptr());
-        core::arch::x86_64::_mm256_i32gather_epi32(data.as_ptr(), indexes, 4)
     }
 }
 
@@ -1237,11 +1188,11 @@ mod tests {
 
                     assert!(
                         res.windows(2).all(|r| r[0] == r[1]),
-                        "Some gate evaluators have diffrent behavior: 
-                        res: {res:?}, 
-                        kind: {kind:?}, 
-                        flags: {flags:?}, 
-                        acc: {acc}, 
+                        "Some gate evaluators have diffrent behavior:
+                        res: {res:?},
+                        kind: {kind:?},
+                        flags: {flags:?},
+                        acc: {acc},
                         prev state: {state}"
                     );
 
@@ -1256,11 +1207,11 @@ mod tests {
 
                     assert!(
                         res.windows(2).all(|r| r[0] == r[1]),
-                        "SIMD gate evaluators have diffrent behavior: 
-                        res: {res:?}, 
-                        kind: {kind:?}, 
-                        flags: {flags:?}, 
-                        acc: {acc}, 
+                        "SIMD gate evaluators have diffrent behavior:
+                        res: {res:?},
+                        kind: {kind:?},
+                        flags: {flags:?},
+                        acc: {acc},
                         prev state: {state}"
                     );
                     let expected_status_delta = if res[0] != state {
@@ -1279,7 +1230,5 @@ mod tests {
                 }
             }
         }
-        //fn eval_mut<const CLUSTER: bool>(&mut self, acc: AccType) -> AccType {
-        //fn evaluate_simd<const LANES: usize>(
     }
 }
