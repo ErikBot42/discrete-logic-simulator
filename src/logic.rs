@@ -89,12 +89,6 @@ type GateKey = (GateType, Vec<IndexType>);
 
 //TODO: this only uses 4 bits, 2 adjacent gates could share their
 //      in_update_list flag and be updated at the same time.
-//#[derive(Debug, Clone, Copy)]
-
-//struct GateStatus {
-//    inner: u8,
-//}
-
 mod gate_status {
     use super::*;
     pub(crate) type Inner = u8;
@@ -668,8 +662,6 @@ impl Network {
         loop {
             let new_network = self.optimization_pass();
             if new_network.gates.len() == prev_network_gate_count {
-                //return std::hint::black_box(new_network.sorted());
-                //return new_network.sorted();
                 return new_network;
             }
             prev_network_gate_count = new_network.gates.len();
@@ -913,56 +905,17 @@ impl CompiledNetwork {
         update_list: &[IndexType],
         next_update_list: &mut UpdateList,
     ) {
-        //let (update_list, next_update_list) = if CLUSTER {
-        //    (unsafe { cluster_update_list.get_slice() }, gate_update_list)
-        //} else {
-        //    (unsafe { gate_update_list.get_slice() }, cluster_update_list)
-        //};
         if update_list.len() == 0 {
             return;
         }
         for id in update_list.iter().map(|id| *id as usize) {
-            //debug_assert!(self.in_update_list[id], "{id:?}");
-            //let (kind /*flags*/,) = if CLUSTER {
-            //    (RunTimeGateType::OrNand /*(false, false)*/,)
-            //} else {
-            //    (
-            //        unsafe { *self.runtime_gate_kind.get_unchecked(id) },
-            //        //unsafe { *self.gate_flags.get_unchecked(id) },
-            //    )
-            //};
             let delta = unsafe {
                 gate_status::eval_mut::<CLUSTER>(
                     inner.status.get_unchecked_mut(id),
                     *inner.acc.get_unchecked(id),
                 )
             };
-            //let next_state_expected = Gate::evaluate(*unsafe { self.acc.get_unchecked(id) }, kind);
-            //let state_changed_expected = next_state_expected != (self.state[id] != 0);
-
-            //*unsafe { self.state.get_unchecked_mut(id) } = next_state_expected as u8;
-            //debug_assert_eq!(
-            //    delta != 0,
-            //    state_changed_expected,
-            //    "id: {id} status {} acc {} kind {:?} flags1 {:?} flags2 {:?}",
-            //    self.gate_status[id].inner,
-            //    self.acc[id],
-            //    kind,
-            //    Gate::calc_flags(kind),
-            //    self.gate_status[id].flags(),
-            //);
-            //let next_state =
-            //    Gate::evaluate_from_flags(*unsafe { self.acc.get_unchecked(id) }, flags);
-            //let next_state = Gate::evaluate_branchless(*unsafe { acc.get_unchecked(id) }, flags);
-            //if (*unsafe { self.state.get_unchecked(id) } != 0) != next_state {
             if delta != 0 {
-                //let delta: AccType = ((next_state as AccType) << 1).wrapping_sub(1) as AccType;
-                //let delta_expected: AccType = if next_state_expected {
-                //    1 as AccTypeInner
-                //} else {
-                //    (0 as AccTypeInner).wrapping_sub(1 as AccTypeInner)
-                //};
-                //debug_assert_eq!(delta, delta_expected, "{}", id);
                 let from_index = *unsafe { inner.packed_output_indexes.get_unchecked(id) };
                 let to_index = *unsafe { inner.packed_output_indexes.get_unchecked(id + 1) };
                 debug_assert!(from_index <= to_index);
@@ -973,22 +926,16 @@ impl CompiledNetwork {
                 }
                 .iter()
                 {
-                    //let in_update_list =
-                    //    unsafe { innern_update_list.get_unchecked_mut(*output_id as usize) };
                     let other_acc = unsafe { inner.acc.get_unchecked_mut(*output_id as usize) };
                     *other_acc = other_acc.wrapping_add(delta);
                     let other_status =
                         unsafe { inner.status.get_unchecked_mut(*output_id as usize) };
-                    //debug_assert_eq!(*in_update_list, other_status.in_update_list());
                     if !gate_status::in_update_list(*other_status) {
-                        //*in_update_list = true;
                         unsafe { next_update_list.push(*output_id) };
                         gate_status::mark_in_update_list(other_status);
                     }
                 }
             }
-            // this gate should be ready to be re-added to the update list.
-            //*unsafe { innern_update_list.get_unchecked_mut(id) } = false;
         }
     }
 
