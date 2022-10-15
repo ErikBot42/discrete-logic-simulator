@@ -12,13 +12,13 @@ macro_rules! unwrap_or_else {
     };
 }
 
-/// Assume in release, assert in debug.
-macro_rules! assume_debug_assert {
-    ($expression:expr) => {
-        debug_assert!($expression);
-        unsafe { std::intrinsics::assume($expression) };
-    };
-}
+///// Assume in release, assert in debug.
+//macro_rules! assume_debug_assert {
+//    ($expression:expr) => {
+//        debug_assert!($expression);
+//        unsafe { std::intrinsics::assume($expression) };
+//    };
+//}
 
 pub mod blueprint;
 pub mod logic;
@@ -31,7 +31,7 @@ mod tests {
     //#[cfg(test)]
     //use pretty_assertions::assert_eq;
 
-    fn prep_cases(optimize: bool) -> Vec<(&'static str, VcbBoard)> {
+    fn prep_cases<const STRATEGY: u8>(optimize: bool) -> Vec<(&'static str, VcbBoard<STRATEGY>)> {
         let cases: Vec<(&str, &str)> = vec![
             ("gates", include_str!("../test_files/gates.blueprint")),
             (
@@ -48,15 +48,15 @@ mod tests {
             .clone()
             .into_iter()
             .map(|x| (x.0, Parser::parse(x.1, optimize)))
-            .collect::<Vec<(&str, VcbBoard)>>()
+            .collect::<Vec<(&str, VcbBoard<STRATEGY>)>>()
     }
 
     #[test]
     fn optimization_regression_test() {
         for add_all_optimized in [true, false] {
             for add_all_unoptimized in [true, false] {
-                let unoptimized = prep_cases(false);
-                let optimized = prep_cases(true);
+                let unoptimized = prep_cases::<0>(false);
+                let optimized = prep_cases::<0>(true);
                 for ((name, mut unoptimized), (_, mut optimized)) in
                     unoptimized.into_iter().zip(optimized.into_iter())
                 {
@@ -81,8 +81,8 @@ mod tests {
     }
 
     fn simd_test(optimized: bool) -> bool {
-        let optimized_board = prep_cases(optimized);
-        let optimized_simd = prep_cases(optimized);
+        let optimized_board = prep_cases::<0>(optimized);
+        let optimized_simd = prep_cases::<0>(optimized);
         let mut correct: bool = true;
         for ((name, mut optimized), (_, mut optimized_simd)) in
             optimized_board.into_iter().zip(optimized_simd.into_iter())
@@ -148,7 +148,7 @@ mod tests {
     }
 
     fn basic_gate_test(optimize: bool, add_all: bool) {
-        let mut board = Parser::parse(include_str!("../test_files/gates.blueprint"), optimize);
+        let mut board: VcbBoard<0> = Parser::parse(include_str!("../test_files/gates.blueprint"), optimize);
         board.print();
         assert_eq!(
             board.make_state_vec(),

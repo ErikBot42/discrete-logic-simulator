@@ -95,6 +95,7 @@ mod gate_status {
     pub(crate) type GateStatus = Inner;
     pub(crate) type InnerSigned = i8;
     pub(crate) type Packed = u32;
+    pub(crate) const PACKED_ELEMENTS: usize = std::mem::size_of::<Packed>();
     // bit locations
     const STATE: Inner = 0;
     const IN_UPDATE_LIST: Inner = 1;
@@ -127,7 +128,6 @@ mod gate_status {
     /// Evaluate and update internal state.
     /// # Returns
     /// Delta (+-1) if state changed (0 = no change)
-    /// TODO: assumptions for CLUSTER
     #[inline(always)]
     pub(crate) fn eval_mut<const CLUSTER: bool>(inner_mut: &mut Inner, acc: AccType) -> AccType {
         // <- high, low ->
@@ -333,6 +333,12 @@ mod gate_status {
             ]));
         }
         tmp
+    }
+    pub(crate) fn pack_single(unpacked: [u8; PACKED_ELEMENTS]) -> Packed {
+        Packed::from_le_bytes(unpacked)
+    }
+    pub(crate) fn unpack_single(packed: Packed) -> [u8; PACKED_ELEMENTS] {
+        Packed::to_le_bytes(packed)
     }
 
     #[cfg(test)]
@@ -719,6 +725,7 @@ struct CompiledNetworkInner {
     //state: Vec<u8>,
     //in_update_list: Vec<bool>,
     //runtime_gate_kind: Vec<RunTimeGateType>,
+    acc_packed: Vec<gate_status::Packed>,
     acc: Vec<AccType>,
 
     status_packed: Vec<gate_status::Packed>,
@@ -730,17 +737,44 @@ struct CompiledNetworkInner {
     kind: Vec<GateType>,
     #[cfg(test)]
     number_of_gates: usize,
+    update_strategy: UpdateStrategy,
+}
+
+#[derive(Debug, Default, Clone)]
+enum UpdateStrategy {
+    #[default]
+    Reference = 1,
+    ScalarSimd = 2,
+    Simd = 3,
+}
+impl From<u8> for UpdateStrategy {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::Reference,
+            1 => Self::ScalarSimd,
+            2 => Self::Simd,
+            _ => panic!(":("),
+        }
+    }
+}
+impl Into<u8> for UpdateStrategy {
+    fn into(self) -> u8 {
+        self as u8
+    }
 }
 
 /// Contains prepared datastructures to run the network.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct CompiledNetwork {
+pub(crate) struct CompiledNetwork<const STRATEGY: u8> {
     i: CompiledNetworkInner,
 
     update_list: UpdateList,
     cluster_update_list: UpdateList,
 }
-impl CompiledNetwork {
+impl<const STRATEGY: u8> CompiledNetwork<STRATEGY> {
+    fn strategy() -> UpdateStrategy {
+        STRATEGY.into()
+    }
     /// Adds all non-cluster gates to update list
     #[cfg(test)]
     pub(crate) fn add_all_to_update_list(&mut self) {
@@ -803,6 +837,8 @@ impl CompiledNetwork {
 
         Self {
             i: CompiledNetworkInner {
+                update_strategy: UpdateStrategy::Reference,
+                acc_packed,
                 acc,
                 packed_outputs,
                 packed_output_indexes,
@@ -897,6 +933,40 @@ impl CompiledNetwork {
         };
         Self::update_gates_in_list::<CLUSTER>(inner, update_list, next_update_list);
     }
+
+    //TODO: Proof of concept, use an update list later
+    fn update_gates_scalar<const CLUSTER: bool>(inner: &mut CompiledNetworkInner) {
+        // this updates EVERY gate
+        // TODO: unchecked reads.
+        for (id_p, status_p) in inner.status_packed.iter_mut().enumerate() {
+            let acc_p = &mut inner.acc_packed[id_p];
+            let delta_p = gate_status::eval_mut_scalar::<CLUSTER>(status_p, *acc_p);
+            let delta_u = gate_status::unpack_single(delta_p);
+            if delta_u == [0; gate_status::PACKED_ELEMENTS] {
+                continue;
+            }
+            for (i, delta) in gate_status::unpack_single(delta_p).into_iter().enumerate() {
+                if delta == 0 {
+                    continue;
+                }
+                let id = id_p * gate_status::PACKED_ELEMENTS + i;
+                let from_index = inner.packed_output_indexes[id] as usize;
+                let to_index = inner.packed_output_indexes[id + 1] as usize;
+
+                // inc/dec output accs
+                for output_id in inner.packed_outputs[from_index..to_index].into_iter() {
+                    let output_id = *output_id as usize;
+                    let output_id_p = output_id / gate_status::PACKED_ELEMENTS;
+                    let output_id_i = output_id % gate_status::PACKED_ELEMENTS;
+                    let mut other_acc_p = gate_status::unpack_single(inner.acc_packed[output_id_p]);
+                    let other_acc = &mut other_acc_p[output_id_i];
+                    *other_acc = other_acc.wrapping_add(delta);
+                    inner.acc_packed[output_id_p] = gate_status::pack_single(other_acc_p);
+                }
+            }
+        }
+    }
+
     /// Update all gates in update list.
     /// Appends next update list.
     #[inline(always)]
@@ -1035,10 +1105,10 @@ impl CompiledNetwork {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct GateNetwork {
+pub struct GateNetwork<const STRATEGY: u8> {
     network: Network,
 }
-impl GateNetwork {
+impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
     /// Internally creates a vertex.
     /// Returns vertex id
     /// ids of gates are guaranteed to be unique
@@ -1090,7 +1160,7 @@ impl GateNetwork {
     /// # Panics
     /// Already initialized
     #[must_use]
-    pub(crate) fn compiled(&mut self, optimize: bool) -> CompiledNetwork {
+    pub(crate) fn compiled(&mut self, optimize: bool) -> CompiledNetwork<{ STRATEGY }> {
         return CompiledNetwork::create(&self.network, optimize);
     }
 }

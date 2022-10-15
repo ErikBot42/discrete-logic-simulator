@@ -2,7 +2,7 @@
 //extern crate zstd;
 //extern crate colored;
 
-use logic_simulator::blueprint::Parser;
+use logic_simulator::blueprint::{Parser, VcbBoard};
 
 fn main() {
     let string = include_str!("../test_files/big_decoder.blueprint");
@@ -14,7 +14,7 @@ fn main() {
     //let string = include_str!("../test_files/invalid_base64.blueprint");
     //let string = include_str!("../test_files/invalid_zstd.blueprint");
 
-    let mut board = Parser::parse(string, true);
+    let mut board: VcbBoard<0> = Parser::parse(string, true);
 
     let args: Vec<String> = std::env::args().collect();
 

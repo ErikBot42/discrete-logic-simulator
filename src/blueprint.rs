@@ -182,12 +182,12 @@ impl Trace {
 /// It is probably a mistake to
 /// make a copy of this type.
 #[derive(Debug)]
-struct BoardElement {
+struct BoardElement<const STRATEGY: u8> {
     color: [u8; 4],
     kind: Trace,
     id: Option<usize>,
 }
-impl BoardElement {
+impl<const STRATEGY: u8> BoardElement <STRATEGY>{
     fn new(color: &[u8]) -> Self {
         BoardElement {
             color: color.try_into().unwrap(),
@@ -195,7 +195,7 @@ impl BoardElement {
             id: None,
         }
     }
-    fn print(&self, board: &VcbBoard, _i: usize, marked: bool) {
+    fn print(&self, board: &VcbBoard<STRATEGY>, _i: usize, marked: bool) {
         let mut brfac: u32 = 100;
         let tmpstr = if let Some(t) = self.id {
             if let Some(id) = board.nodes[t].network_id {
@@ -259,15 +259,15 @@ impl BoardNode {
 }
 
 #[derive(Debug)]
-pub struct VcbBoard {
-    elements: Vec<BoardElement>,
+pub struct VcbBoard<const STRATEGY: u8> {
+    elements: Vec<BoardElement<STRATEGY>>,
     nodes: Vec<BoardNode>,
-    pub(crate) network: GateNetwork,
-    pub(crate) compiled_network: CompiledNetwork,
+    pub(crate) network: GateNetwork<STRATEGY>,
+    pub(crate) compiled_network: CompiledNetwork<STRATEGY>,
     pub width: usize,
     pub height: usize,
 }
-impl VcbBoard {
+impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     /// For regression testing
     #[must_use]
     pub fn make_state_vec(&self) -> Vec<bool> {
@@ -486,12 +486,12 @@ impl Footer {
     const SIZE: usize = 32; // 8*4 bytes
 }
 #[derive(Default)]
-pub struct Parser {}
-impl Parser {
+pub struct Parser<const STRATEGY: u8> {}
+impl<const STRATEGY: u8> Parser<STRATEGY> {
     /// # Panics
     /// invalid base64 string, invalid zstd, invalid colors
     #[must_use]
-    pub fn parse(data: &str, optimize: bool) -> VcbBoard {
+    pub fn parse(data: &str, optimize: bool) -> VcbBoard<STRATEGY> {
         let bytes = base64::decode_config(data.trim(), base64::STANDARD).unwrap();
         let data_bytes = &bytes[..bytes.len() - Footer::SIZE];
         let footer_bytes: [u8; Footer::SIZE] = bytes[bytes.len() - Footer::SIZE..bytes.len()]
