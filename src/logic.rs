@@ -2,6 +2,7 @@
 #![allow(clippy::inline_always)]
 use itertools::Itertools;
 use std::collections::HashMap;
+use std::mem::transmute;
 use std::simd::*;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, PartialOrd, Ord)]
@@ -194,7 +195,7 @@ mod gate_status {
     const fn splat_u4_u8(value: u8) -> u8 {
         (value << 4) | value
     }
-    const fn splat_u32(value: u8) -> u32 {
+    pub(crate) const fn splat_u32(value: u8) -> u32 {
         u32::from_le_bytes([value; 4])
     }
     /// if byte contains any bit set, it will be
@@ -224,7 +225,6 @@ mod gate_status {
     // TODO: relaxed or_combine
     pub(crate) fn eval_mut_scalar<const CLUSTER: bool>(inner_mut: &mut u32, acc: u32) -> u32 {
         let inner = *inner_mut;
-
         let flag_bits = inner & splat_u32(FLAGS_MASK);
         let state_1 = (inner >> STATE) & splat_u32(1);
 
@@ -339,6 +339,12 @@ mod gate_status {
     }
     pub(crate) fn unpack_single(packed: Packed) -> [u8; PACKED_ELEMENTS] {
         Packed::to_le_bytes(packed)
+    }
+    pub(crate) fn packed_state_vec(packed: Packed) -> Vec<bool> {
+        unpack_single(packed & splat_u32(FLAG_STATE))
+            .into_iter()
+            .map(|x| x == !0)
+            .collect()
     }
 
     #[cfg(test)]
@@ -737,31 +743,22 @@ struct CompiledNetworkInner {
     kind: Vec<GateType>,
     #[cfg(test)]
     number_of_gates: usize,
-    update_strategy: UpdateStrategy,
 }
 
 #[derive(Debug, Default, Clone)]
+#[repr(u8)]
 enum UpdateStrategy {
     #[default]
-    Reference = 1,
-    ScalarSimd = 2,
-    Simd = 3,
-}
-impl From<u8> for UpdateStrategy {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => Self::Reference,
-            1 => Self::ScalarSimd,
-            2 => Self::Simd,
-            _ => panic!(":("),
-        }
-    }
+    Reference,
+    ScalarSimd,
+    Simd,
 }
 impl Into<u8> for UpdateStrategy {
     fn into(self) -> u8 {
-        self as u8
+        unsafe { transmute::<UpdateStrategy, u8>(self) }
     }
 }
+
 
 /// Contains prepared datastructures to run the network.
 #[derive(Debug, Default, Clone)]
@@ -772,8 +769,9 @@ pub(crate) struct CompiledNetwork<const STRATEGY: u8> {
     cluster_update_list: UpdateList,
 }
 impl<const STRATEGY: u8> CompiledNetwork<STRATEGY> {
-    fn strategy() -> UpdateStrategy {
-        STRATEGY.into()
+    /// Assumes that STRATEGY is valid
+    const fn strategy() -> UpdateStrategy {
+        unsafe { transmute::<u8, UpdateStrategy>(STRATEGY) }
     }
     /// Adds all non-cluster gates to update list
     #[cfg(test)]
@@ -837,7 +835,6 @@ impl<const STRATEGY: u8> CompiledNetwork<STRATEGY> {
 
         Self {
             i: CompiledNetworkInner {
-                update_strategy: UpdateStrategy::Reference,
                 acc_packed,
                 acc,
                 packed_outputs,
@@ -1170,10 +1167,11 @@ mod tests {
     use super::*;
     #[test]
     fn gate_evaluation_regression() {
-        for kind in [
-            RunTimeGateType::OrNand,
-            RunTimeGateType::AndNor,
-            RunTimeGateType::XorXnor,
+        for (kind, cluster) in [
+            (RunTimeGateType::OrNand, true),
+            (RunTimeGateType::OrNand, false),
+            (RunTimeGateType::AndNor, false),
+            (RunTimeGateType::XorXnor, false),
         ] {
             for acc in [
                 (0 as AccType).wrapping_sub(2),
@@ -1186,15 +1184,32 @@ mod tests {
                     let flags = Gate::calc_flags(kind);
                     let in_update_list = true;
                     let mut status = gate_status::new(in_update_list, state, kind);
-                    let status_delta = gate_status::eval_mut::<false>(&mut status, acc);
+                    let status_delta = if cluster {
+                        gate_status::eval_mut::<true>(&mut status, acc)
+                    } else {
+                        gate_status::eval_mut::<false>(&mut status, acc)
+                    };
 
                     const LANES: usize = 64;
                     let mut status_simd: Simd<gate_status::Inner, LANES> =
                         Simd::splat(gate_status::new(in_update_list, state, kind));
-                    let status_delta_simd = gate_status::eval_mut_simd::<false, LANES>(
-                        &mut status_simd,
-                        Simd::splat(acc),
-                    );
+                    let status_delta_simd = if cluster {
+                        gate_status::eval_mut_simd::<true, LANES>(
+                            &mut status_simd,
+                            Simd::splat(acc),
+                        )
+                    } else {
+                        gate_status::eval_mut_simd::<false, LANES>(
+                            &mut status_simd,
+                            Simd::splat(acc),
+                        )
+                    };
+                    let mut status_scalar =
+                        gate_status::splat_u32(gate_status::new(in_update_list, state, kind));
+                    let status_scalar_pre = status_scalar;
+                    let acc_scalar = gate_status::splat_u32(acc);
+                    let status_delta_scalar =
+                        gate_status::eval_mut_scalar::<false>(&mut status_scalar, acc_scalar);
 
                     let mut res = vec![
                         Gate::evaluate_from_flags(acc, flags),
@@ -1211,6 +1226,27 @@ mod tests {
                         flags: {flags:?},
                         acc: {acc},
                         prev state: {state}"
+                    );
+
+                    let mut scalar_state_vec: Vec<bool> =
+                        gate_status::packed_state_vec(status_scalar);
+                    res.append(&mut scalar_state_vec);
+
+                    assert!(
+                        res.windows(2).all(|r| r[0] == r[1]),
+                        "Scalar gate evaluators have diffrent behavior:
+                        res: {res:?},
+                        kind: {kind:?},
+                        flags: {flags:?},
+                        acc: {acc},
+                        acc4: {acc_scalar},
+                        status_pre: {:?},
+                        status_scalar: {:?},
+                        prev state: {state},
+                        state_vec: {:?}",
+                        gate_status::unpack_single(status_scalar_pre),
+                        gate_status::unpack_single(status_scalar),
+                        gate_status::packed_state_vec(status_scalar)
                     );
 
                     let mut simd_state_vec: Vec<bool> = status_simd
@@ -1231,6 +1267,7 @@ mod tests {
                         acc: {acc},
                         prev state: {state}"
                     );
+
                     let expected_status_delta = if res[0] != state {
                         if res[0] {
                             1
