@@ -51,7 +51,7 @@ fn main() {
             child.wait().unwrap();
         },
         "forever_bench" => loop {
-            board.update_simd()
+            board.update()
         },
 
         _ => loop {

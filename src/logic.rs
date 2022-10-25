@@ -195,12 +195,12 @@ mod gate_status {
     const fn splat_u4_u8(value: u8) -> u8 {
         (value << 4) | value
     }
-    pub(crate) const fn splat_u32(value: u8) -> u32 {
-        u32::from_le_bytes([value; 4])
+    pub(crate) const fn splat_u32(value: u8) -> Packed {
+        Packed::from_le_bytes([value; PACKED_ELEMENTS])
     }
     /// if byte contains any bit set, it will be
     /// replaced with 0xff
-    const fn or_combine(value: u32) -> u32 {
+    const fn or_combine(value: Packed) -> Packed {
         //TODO: try using a tree here.
         //      this is extremely sequential
         let mut value = value;
@@ -214,7 +214,7 @@ mod gate_status {
     }
     /// like or_combine, but replaces with 0x1 instead.
     /// equivalent to BYTEwise != 0
-    const fn or_combine_1(value: u32) -> u32 {
+    const fn or_combine_1(value: Packed) -> Packed {
         let mut value = value;
         value |= (splat_u32(0b11110000) & value) >> 4;
         value |= (splat_u32(0b11001100) & value) >> 2;
@@ -223,7 +223,10 @@ mod gate_status {
     }
     // TODO: save on the 4 unused bits, maybe merge 2 iterations?
     // TODO: relaxed or_combine
-    pub(crate) fn eval_mut_scalar<const CLUSTER: bool>(inner_mut: &mut u32, acc: u32) -> u32 {
+    pub(crate) fn eval_mut_scalar<const CLUSTER: bool>(
+        inner_mut: &mut Packed,
+        acc: Packed,
+    ) -> Packed {
         let inner = *inner_mut;
         let flag_bits = inner & splat_u32(FLAGS_MASK);
         let state_1 = (inner >> STATE) & splat_u32(1);
@@ -340,11 +343,24 @@ mod gate_status {
     pub(crate) fn unpack_single(packed: Packed) -> [u8; PACKED_ELEMENTS] {
         Packed::to_le_bytes(packed)
     }
+    pub(crate) fn packed_state(packed: Packed) -> [bool; PACKED_ELEMENTS] {
+        let mut res = [false; PACKED_ELEMENTS];
+        res.iter_mut()
+            .zip(unpack_single(packed & splat_u32(FLAG_STATE)))
+            .for_each(|(res, x)| *res = x != 0);
+        res
+    }
     pub(crate) fn packed_state_vec(packed: Packed) -> Vec<bool> {
         unpack_single(packed & splat_u32(FLAG_STATE))
             .into_iter()
-            .map(|x| x == !0)
+            .map(|x| x != 0)
             .collect()
+    }
+    pub(crate) fn get_state_from_packed_slice(packed: &[Packed], index: usize) -> bool {
+        let outer_index = index / PACKED_ELEMENTS;
+        let inner_index = index % PACKED_ELEMENTS;
+
+        packed_state(packed[outer_index])[inner_index]
     }
 
     #[cfg(test)]
@@ -354,14 +370,14 @@ mod gate_status {
         fn test_or_combine() {
             for value2 in 0..32 {
                 for value in 0..32 {
-                    let value: u32 = (1 << value) | (1 << value2);
+                    let value: Packed = (1 << value) | (1 << value2);
                     let mut bytes = value.to_le_bytes();
                     for byte in bytes.iter_mut() {
                         if *byte != 0 {
                             *byte = 255;
                         }
                     }
-                    let expected = u32::from_le_bytes(bytes);
+                    let expected = Packed::from_le_bytes(bytes);
                     assert_eq!(
                         expected,
                         or_combine(value),
@@ -430,7 +446,7 @@ impl Gate {
     }
     #[inline(always)]
     #[cfg(test)]
-    fn evaluate(acc: AccType, kind: RunTimeGateType) -> bool {
+    const fn evaluate(acc: AccType, kind: RunTimeGateType) -> bool {
         match kind {
             RunTimeGateType::OrNand => acc != (0),
             RunTimeGateType::AndNor => acc == (0),
@@ -439,7 +455,7 @@ impl Gate {
     }
     #[inline(always)]
     #[cfg(test)]
-    fn evaluate_from_flags(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
+    const fn evaluate_from_flags(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
         // inverted from perspective of or gate
         // hopefully this generates branchless code.
         if !is_xor {
@@ -450,7 +466,7 @@ impl Gate {
     }
     #[inline(always)]
     #[cfg(test)]
-    fn evaluate_branchless(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
+    const fn evaluate_branchless(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
         !is_xor && ((acc != 0) != is_inverted) || is_xor && (acc & 1 == 1)
     }
     #[inline(always)] // inline always required to keep SIMD in registers.
@@ -739,7 +755,7 @@ struct CompiledNetworkInner {
     translation_table: Vec<IndexType>,
     pub iterations: usize,
 
-    #[cfg(test)]
+    //#[cfg(test)]
     kind: Vec<GateType>,
     #[cfg(test)]
     number_of_gates: usize,
@@ -747,18 +763,12 @@ struct CompiledNetworkInner {
 
 #[derive(Debug, Default, Clone)]
 #[repr(u8)]
-enum UpdateStrategy {
+pub enum UpdateStrategy {
     #[default]
-    Reference,
-    ScalarSimd,
-    Simd,
+    Reference = 0,
+    ScalarSimd = 1,
+    Simd = 2,
 }
-impl Into<u8> for UpdateStrategy {
-    fn into(self) -> u8 {
-        unsafe { transmute::<UpdateStrategy, u8>(self) }
-    }
-}
-
 
 /// Contains prepared datastructures to run the network.
 #[derive(Debug, Default, Clone)]
@@ -768,11 +778,17 @@ pub(crate) struct CompiledNetwork<const STRATEGY: u8> {
     update_list: UpdateList,
     cluster_update_list: UpdateList,
 }
-impl<const STRATEGY: u8> CompiledNetwork<STRATEGY> {
-    /// Assumes that STRATEGY is valid
-    const fn strategy() -> UpdateStrategy {
-        unsafe { transmute::<u8, UpdateStrategy>(STRATEGY) }
-    }
+impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
+    /// Assumes that STRATEGY_I is valid
+    const STRATEGY: UpdateStrategy = match STRATEGY_I {
+        0 => UpdateStrategy::Reference,
+        1 => UpdateStrategy::ScalarSimd,
+        2 => UpdateStrategy::Simd,
+        _ => panic!(),
+    };
+
+    //unsafe { transmute::<u8, UpdateStrategy>(STRATEGY_I)};
+
     /// Adds all non-cluster gates to update list
     #[cfg(test)]
     pub(crate) fn add_all_to_update_list(&mut self) {
@@ -830,7 +846,6 @@ impl<const STRATEGY: u8> CompiledNetwork<STRATEGY> {
         let status_packed = gate_status::pack(status.iter().cloned());
         let acc_packed = gate_status::pack(status.iter().cloned());
 
-        #[cfg(test)]
         let kind = gates.iter().map(|g| g.kind).collect();
 
         Self {
@@ -849,7 +864,6 @@ impl<const STRATEGY: u8> CompiledNetwork<STRATEGY> {
                 translation_table: network.translation_table,
                 #[cfg(test)]
                 number_of_gates,
-                #[cfg(test)]
                 kind,
             },
             update_list,
@@ -873,48 +887,62 @@ impl<const STRATEGY: u8> CompiledNetwork<STRATEGY> {
     pub(crate) fn get_state(&self, gate_id: usize) -> bool {
         let gate_id = self.i.translation_table[gate_id];
         //self.state[gate_id as usize] != 0
-        gate_status::state(self.i.status[gate_id as usize])
+        match Self::STRATEGY {
+            UpdateStrategy::ScalarSimd => {
+                gate_status::get_state_from_packed_slice(&self.i.status_packed, gate_id as usize)
+            },
+            UpdateStrategy::Reference | UpdateStrategy::Simd => {
+                gate_status::state(self.i.status[gate_id as usize])
+            },
+        }
     }
     //#[inline(always)]
-    pub(crate) fn update_simd(&mut self) {
-        self.update_internal::<true>();
-    }
+    //pub(crate) fn update_simd(&mut self) {
+    //    self.update_internal();
+    //}
     /// Updates state of all gates.
     /// # Panics
     /// Not initialized (debug)
     //#[inline(always)] //<- results in slight regression
     pub(crate) fn update(&mut self) {
-        self.update_internal::<false>();
+        self.update_internal();
     }
+
     //#[inline(always)]
     #[inline(always)]
-    fn update_internal<const USE_SIMD: bool>(&mut self) {
+    fn update_internal(&mut self) {
         self.i.iterations += 1;
         // This somehow improves performance, even when update list is non-zero.
         // It should also be very obvious to the compiler...
-        if self.update_list.len() == 0 {
-            return;
-        }
-        self.update_gates::<false, USE_SIMD>();
+        //if self.update_list.len() == 0 {
+        //    return;
+        //}
+        self.update_gates::<false>();
         self.update_list.clear();
-        self.update_gates::<true, USE_SIMD>();
+        self.update_gates::<true>();
         self.cluster_update_list.clear();
     }
     //#[inline(always)]
     #[inline(always)]
-    fn update_gates<const CLUSTER: bool, const USE_SIMD: bool>(&mut self) {
-        if USE_SIMD {
-            Self::update_gates_in_list_simd_wrapper::<CLUSTER>(
-                &mut self.i,
-                &mut self.update_list,
-                &mut self.cluster_update_list,
-            );
-        } else {
-            Self::update_gates_in_list_wrapper::<CLUSTER>(
-                &mut self.i,
-                &mut self.update_list,
-                &mut self.cluster_update_list,
-            );
+    fn update_gates<const CLUSTER: bool>(&mut self) {
+        match Self::STRATEGY {
+            UpdateStrategy::Simd => {
+                Self::update_gates_in_list_simd_wrapper::<CLUSTER>(
+                    &mut self.i,
+                    &mut self.update_list,
+                    &mut self.cluster_update_list,
+                );
+            },
+            UpdateStrategy::Reference => {
+                Self::update_gates_in_list_wrapper::<CLUSTER>(
+                    &mut self.i,
+                    &mut self.update_list,
+                    &mut self.cluster_update_list,
+                );
+            },
+            UpdateStrategy::ScalarSimd => {
+                Self::update_gates_scalar::<CLUSTER>(&mut self.i);
+            },
         }
     }
     #[inline(always)]
@@ -932,33 +960,44 @@ impl<const STRATEGY: u8> CompiledNetwork<STRATEGY> {
     }
 
     //TODO: Proof of concept, use an update list later
+    //TODO: Separation of CLUSTER and non CLUSTER
     fn update_gates_scalar<const CLUSTER: bool>(inner: &mut CompiledNetworkInner) {
         // this updates EVERY gate
         // TODO: unchecked reads.
-        for (id_p, status_p) in inner.status_packed.iter_mut().enumerate() {
-            let acc_p = &mut inner.acc_packed[id_p];
+        for (id_packed, status_p) in inner.status_packed.iter_mut().enumerate() {
+            let acc_p = &inner.acc_packed[id_packed];
+
+            [
+                (inner.kind[0 + id_packed * gate_status::PACKED_ELEMENTS] == GateType::Cluster) as u8,
+                (inner.kind[1 + id_packed * gate_status::PACKED_ELEMENTS] == GateType::Cluster) as u8,
+                (inner.kind[2 + id_packed * gate_status::PACKED_ELEMENTS] == GateType::Cluster) as u8,
+                (inner.kind[3 + id_packed * gate_status::PACKED_ELEMENTS] == GateType::Cluster) as u8,
+
+            ];
             let delta_p = gate_status::eval_mut_scalar::<CLUSTER>(status_p, *acc_p);
+            println!("{:?}", gate_status::unpack_single(delta_p));
             let delta_u = gate_status::unpack_single(delta_p);
             if delta_u == [0; gate_status::PACKED_ELEMENTS] {
                 continue;
             }
-            for (i, delta) in gate_status::unpack_single(delta_p).into_iter().enumerate() {
+            for (id_inner, delta) in gate_status::unpack_single(delta_p).into_iter().enumerate() {
                 if delta == 0 {
                     continue;
                 }
-                let id = id_p * gate_status::PACKED_ELEMENTS + i;
+                let id = id_packed * gate_status::PACKED_ELEMENTS + id_inner;
                 let from_index = inner.packed_output_indexes[id] as usize;
                 let to_index = inner.packed_output_indexes[id + 1] as usize;
 
                 // inc/dec output accs
                 for output_id in inner.packed_outputs[from_index..to_index].into_iter() {
                     let output_id = *output_id as usize;
-                    let output_id_p = output_id / gate_status::PACKED_ELEMENTS;
-                    let output_id_i = output_id % gate_status::PACKED_ELEMENTS;
-                    let mut other_acc_p = gate_status::unpack_single(inner.acc_packed[output_id_p]);
-                    let other_acc = &mut other_acc_p[output_id_i];
+                    let output_id_packed = output_id / gate_status::PACKED_ELEMENTS;
+                    let output_id_inner = output_id % gate_status::PACKED_ELEMENTS;
+                    let mut other_acc_p =
+                        gate_status::unpack_single(inner.acc_packed[output_id_packed]);
+                    let other_acc = &mut other_acc_p[output_id_inner];
                     *other_acc = other_acc.wrapping_add(delta);
-                    inner.acc_packed[output_id_p] = gate_status::pack_single(other_acc_p);
+                    inner.acc_packed[output_id_packed] = gate_status::pack_single(other_acc_p);
                 }
             }
         }
@@ -1157,7 +1196,7 @@ impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
     /// # Panics
     /// Already initialized
     #[must_use]
-    pub(crate) fn compiled(&mut self, optimize: bool) -> CompiledNetwork<{ STRATEGY }> {
+    pub(crate) fn compiled(&self, optimize: bool) -> CompiledNetwork<{ STRATEGY }> {
         return CompiledNetwork::create(&self.network, optimize);
     }
 }

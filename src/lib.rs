@@ -27,6 +27,7 @@ pub mod raw_list;
 #[cfg(test)]
 mod tests {
     use crate::blueprint::{Parser, VcbBoard};
+    use crate::logic::UpdateStrategy;
 
     //#[cfg(test)]
     //use pretty_assertions::assert_eq;
@@ -55,8 +56,9 @@ mod tests {
     fn optimization_regression_test() {
         for add_all_optimized in [true, false] {
             for add_all_unoptimized in [true, false] {
-                let unoptimized = prep_cases::<0>(false);
-                let optimized = prep_cases::<0>(true);
+                const STRATEGY: u8 = UpdateStrategy::Reference as u8;
+                let unoptimized = prep_cases::<STRATEGY>(false);
+                let optimized = prep_cases::<STRATEGY>(true);
                 for ((name, mut unoptimized), (_, mut optimized)) in
                     unoptimized.into_iter().zip(optimized.into_iter())
                 {
@@ -81,14 +83,16 @@ mod tests {
     }
 
     fn simd_test(optimized: bool) -> bool {
-        let optimized_board = prep_cases::<0>(optimized);
-        let optimized_simd = prep_cases::<0>(optimized);
-        let mut correct: bool = true;
+        const STRATEGY_REF: u8 = UpdateStrategy::Reference as u8;
+        const STRATEGY_SIMD: u8 = UpdateStrategy::Simd as u8;
+        let optimized_board = prep_cases::<STRATEGY_REF>(optimized);
+        let optimized_simd = prep_cases::<STRATEGY_SIMD>(optimized);
+        //let mut correct: bool = true;
         for ((name, mut optimized), (_, mut optimized_simd)) in
             optimized_board.into_iter().zip(optimized_simd.into_iter())
         {
-            let width = optimized.width;
-            for i in 0..30 {
+            //let width = optimized.width;
+            for i in 1..30 {
                 let optimized_state = optimized.make_state_vec();
                 let optimized_state_simd = optimized_simd.make_state_vec();
                 let diff_ids: Vec<usize> = optimized_state
@@ -96,24 +100,66 @@ mod tests {
                     .zip(optimized_state_simd)
                     .enumerate()
                     .filter(|(_, (optim_bool, optim_bool_simd))| optim_bool != optim_bool_simd)
-                    //.map(|(j, (_, _))| (j%width, j/width))
                     .map(|(j, (_, _))| j)
                     .collect();
                 if diff_ids.len() != 0 {
-                    //println!("Scalar:");
-                    //optimized.print();
-                    //println!("SIMD:");
-                    //optimized_simd.print();
                     optimized.print_marked(&diff_ids);
-                    println!("simd/non simd mismatch for test {name}, in iteration {i} at positions {diff_ids:?}");
-                    correct = false;
-                    break;
+                    panic!("simd/non simd mismatch for test {name}, in iteration {i} at positions {diff_ids:?}");
+                    //correct = false;
+                    //break;
                 }
-                optimized_simd.compiled_network.update_simd();
+                optimized_simd.compiled_network.update();
                 optimized.update();
             }
         }
-        correct
+        //correct
+        true
+    }
+    fn scalar_test(optimized: bool) -> bool {
+        const STRATEGY_REF: u8 = UpdateStrategy::Reference as u8;
+        const STRATEGY_SCALAR: u8 = UpdateStrategy::ScalarSimd as u8;
+        let optimized_board = prep_cases::<STRATEGY_REF>(optimized);
+        let optimized_scalar = prep_cases::<STRATEGY_SCALAR>(optimized);
+        //let mut correct: bool = true;
+        for ((name, mut optimized), (_, mut optimized_scalar)) in
+            optimized_board.into_iter().zip(optimized_scalar.into_iter())
+        {
+            //let width = optimized.width;
+            for i in 1..30 {
+                let optimized_state = optimized.make_state_vec();
+                let optimized_state_simd = optimized_scalar.make_state_vec();
+                let diff_ids: Vec<usize> = optimized_state
+                    .into_iter()
+                    .zip(optimized_state_simd)
+                    .enumerate()
+                    .filter(|(_, (optim_bool, optim_bool_simd))| optim_bool != optim_bool_simd)
+                    .map(|(j, (_, _))| j)
+                    .collect();
+                if diff_ids.len() != 0 {
+                    println!("got");
+                    optimized_scalar.print();
+                    println!("expected:");
+                    optimized.print();
+                    optimized.print_marked(&diff_ids);
+                    panic!("scalar/non scalar mismatch for test {name}, in iteration {i} at positions {diff_ids:?}");
+                    //correct = false;
+                    //break;
+                }
+                optimized_scalar.compiled_network.update();
+                optimized.update();
+            }
+        }
+        //correct
+        true
+
+    }
+    #[test]
+    fn scalar_regression_test_unoptimized() {
+        assert!(scalar_test(false));
+    }
+    #[test]
+    fn scalar_regression_test_optimized() {
+        assert!(scalar_test(true));
     }
 
     #[test]
@@ -148,7 +194,8 @@ mod tests {
     }
 
     fn basic_gate_test(optimize: bool, add_all: bool) {
-        let mut board: VcbBoard<0> = Parser::parse(include_str!("../test_files/gates.blueprint"), optimize);
+        const STRATEGY: u8 = UpdateStrategy::Reference as u8;
+        let mut board: VcbBoard<STRATEGY> = Parser::parse(include_str!("../test_files/gates.blueprint"), optimize);
         board.print();
         assert_eq!(
             board.make_state_vec(),

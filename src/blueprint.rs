@@ -283,10 +283,10 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         }
         a
     }
-    #[inline(always)]
-    pub fn update_simd(&mut self) {
-        self.compiled_network.update_simd();
-    }
+    //#[inline(always)]
+    //pub fn update_simd(&mut self) {
+    //    self.compiled_network.update_simd();
+    //}
     #[inline(always)]
     pub fn update(&mut self) {
         self.compiled_network.update();

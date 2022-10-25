@@ -16,18 +16,20 @@ autotests = true
 
 # Very expensive, but makes 
 # code a tiny bit faster:
-lto = true
-codegen-units = 1
-panic = "abort"
+#lto = true
+#codegen-units = 1
+#panic = "abort"
 
 
-opt-level = 3
+#opt-level = 3
 
 #rustflags = "-C llvm-args=\"-unroll-threshold=1000\""
 #rustflags = "-C target-cpu=native"
-debug = 1
+debug = true
+
 [rust]
-debuginfo-level = 1
+debuginfo-level = 2
+opt-level = 0
 
 #[lib]
 #test = true
