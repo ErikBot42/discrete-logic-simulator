@@ -196,7 +196,7 @@ impl<const STRATEGY: u8> BoardElement <STRATEGY>{
         }
     }
     fn print(&self, board: &VcbBoard<STRATEGY>, _i: usize, marked: bool) {
-        let mut brfac: u32 = 100;
+        let mut brfac: u32 = 50;
         let tmpstr = if let Some(t) = self.id {
             if let Some(id) = board.nodes[t].network_id {
                 if board.compiled_network.get_state(id) {
@@ -282,6 +282,10 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             });
         }
         a
+    }
+    #[must_use]
+    pub(crate) fn make_inner_state_vec(&self) -> Vec<bool> {
+        self.compiled_network.get_state_vec()
     }
     //#[inline(always)]
     //pub fn update_simd(&mut self) {
