@@ -93,7 +93,6 @@ type GateKey = (GateType, Vec<IndexType>);
 mod gate_status {
     use super::*;
     pub(crate) type Inner = u8;
-    pub(crate) type GateStatus = Inner;
     pub(crate) type InnerSigned = i8;
     pub(crate) type Packed = u32;
     pub(crate) const PACKED_ELEMENTS: usize = std::mem::size_of::<Packed>();
@@ -249,6 +248,7 @@ mod gate_status {
         *inner_mut = (new_state_1 << STATE) | flag_bits;
         let increment_1 = new_state_1 & state_changed_1;
         let decrement_1 = !new_state_1 & state_changed_1;
+        debug_assert_eq!(increment_1 & decrement_1, 0, "{increment_1}, {decrement_1}");
         or_combine_1(decrement_1) | increment_1
     }
 
@@ -328,7 +328,7 @@ mod gate_status {
     pub(crate) fn pack(mut iter: impl Iterator<Item = u8>) -> Vec<Packed> {
         let mut tmp = Vec::new();
         loop {
-            tmp.push(Packed::from_le_bytes([
+            tmp.push(pack_single([
                 unwrap_or_else!(iter.next(), break),
                 iter.next().unwrap_or(0),
                 iter.next().unwrap_or(0),
@@ -366,6 +366,23 @@ mod gate_status {
     #[cfg(test)]
     mod tests {
         use super::*;
+        #[test]
+        fn pack_unpack_single() {
+            test_pack_single([1, 2, 3, 4]);
+            test_pack_single([255, 2, 254, 4]);
+            test_pack_single([25, 122, 254, 124]);
+        }
+        fn test_pack_single(t: [u8; PACKED_ELEMENTS]) {
+            assert_eq!(t, unpack_single(pack_single(t)));
+        }
+        fn pack_multiple() {
+            test_pack(&[1, 2, 3, 4]);
+        }
+        fn test_pack(buffer: &[u8]) {
+            let packed = pack(buffer.iter().cloned());
+            let buffer_iter = buffer.iter().cloned();
+            for p in packed {}
+        }
         #[test]
         fn test_or_combine() {
             for value2 in 0..32 {
@@ -787,6 +804,21 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     };
 
     //unsafe { transmute::<u8, UpdateStrategy>(STRATEGY_I)};
+    #[cfg(test)]
+    pub(crate) fn get_acc_test(&self) -> Box<dyn Iterator<Item = u8>> {
+        match Self::STRATEGY {
+            UpdateStrategy::Reference => Box::new(self.i.acc.clone().into_iter()),
+            UpdateStrategy::Simd => Box::new(self.i.acc.clone().into_iter()),
+            UpdateStrategy::ScalarSimd => Box::new(
+                self.i
+                    .acc_packed
+                    .clone()
+                    .into_iter()
+                    .map(|x| gate_status::unpack_single(x))
+                    .flatten(),
+            ),
+        }
+    }
 
     /// Adds all non-cluster gates to update list
     #[cfg(test)]
@@ -809,6 +841,18 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         assert_eq!(self.cluster_update_list.len(), 0);
     }
     fn create(network: &Network, optimize: bool) -> Self {
+        dbg!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        dbg!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        dbg!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        dbg!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        dbg!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        dbg!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        dbg!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        dbg!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        dbg!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        dbg!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        dbg!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        dbg!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
         let mut network = network.initialized(optimize);
 
         let number_of_gates = network.gates.len();
@@ -833,7 +877,8 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         let in_update_list: Vec<bool> = gates.iter().map(|gate| gate.in_update_list).collect();
         let state: Vec<u8> = gates.iter().map(|gate| gate.state as u8).collect();
 
-        let acc = gates.iter().map(|gate| gate.acc).collect();
+        let acc: Vec<u8> = gates.iter().map(|gate| gate.acc).collect();
+        dbg!(gates.iter().map(|gate| gate.acc as i8).collect::<Vec<i8>>());
 
         let status: Vec<gate_status::Inner> = in_update_list
             .iter()
@@ -843,7 +888,20 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             .collect::<Vec<gate_status::Inner>>();
 
         let status_packed = gate_status::pack(status.iter().cloned());
-        let acc_packed = gate_status::pack(status.iter().cloned());
+        let acc_packed = gate_status::pack(acc.iter().cloned());
+        dbg!(acc_packed
+            .iter()
+            .map(|x| gate_status::unpack_single(*x))
+            .collect::<Vec<[u8; 4]>>());
+
+        acc_packed
+            .iter()
+            .cloned()
+            .map(|x| gate_status::unpack_single(x))
+            .flatten()
+            .zip(acc.iter().cloned())
+            .enumerate()
+            .for_each(|(i, (a, b))| debug_assert_eq!(a, b, "{a}, {b}, {i}"));
 
         let mut kind: Vec<GateType> = gates.iter().map(|g| g.kind).collect();
         kind.push(GateType::Or);
@@ -912,7 +970,11 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     /// Not initialized (debug)
     //#[inline(always)] //<- results in slight regression
     pub(crate) fn update(&mut self) {
+        let iterations = self.i.iterations;
+        let t = Self::STRATEGY;
+        println!("UPDATE START {iterations} {t:?} *****************");
         self.update_internal();
+        println!("UPDATE END   {iterations} {t:?} *****************");
     }
 
     //#[inline(always)]
@@ -932,7 +994,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     //#[inline(always)]
     #[inline(always)]
     fn update_gates<const CLUSTER: bool>(&mut self) {
-        match Self::STRATEGY {
+        match dbg!(Self::STRATEGY) {
             UpdateStrategy::Simd => {
                 Self::update_gates_in_list_simd_wrapper::<CLUSTER>(
                     &mut self.i,
@@ -971,6 +1033,11 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     fn update_gates_scalar<const CLUSTER: bool>(inner: &mut CompiledNetworkInner) {
         // this updates EVERY gate
         // TODO: unchecked reads.
+        dbg!(&inner
+            .acc_packed
+            .iter()
+            .map(|x| gate_status::unpack_single(*x))
+            .collect::<Vec<[u8; 4]>>());
         println!(
             "update_gates_scalar: {}",
             if CLUSTER { "CLUSTER" } else { "not CLUSTER" }
@@ -1025,19 +1092,26 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     continue;
                 }
                 let id = id_packed * gate_status::PACKED_ELEMENTS + id_inner;
+                println!("-------- activate: {delta}, id: {id}");
                 let from_index = inner.packed_output_indexes[id] as usize;
                 let to_index = inner.packed_output_indexes[id + 1] as usize;
 
                 // inc/dec output accs
                 for output_id in inner.packed_outputs[from_index..to_index].into_iter() {
+                    //dbg!("------------------------");
                     let output_id = *output_id as usize;
                     let output_id_packed = output_id / gate_status::PACKED_ELEMENTS;
                     let output_id_inner = output_id % gate_status::PACKED_ELEMENTS;
-                    let mut other_acc_p =
+                    let mut other_acc_u =
                         gate_status::unpack_single(inner.acc_packed[output_id_packed]);
-                    let other_acc = &mut other_acc_p[output_id_inner];
+                    //dbg!(other_acc_u);
+                    //dbg!(output_id_inner);
+                    let other_acc = &mut other_acc_u[output_id_inner];
+                    //dbg!(*other_acc);
                     *other_acc = other_acc.wrapping_add(delta);
-                    inner.acc_packed[output_id_packed] = gate_status::pack_single(other_acc_p);
+                    //dbg!(*other_acc);
+                    //dbg!(other_acc_u);
+                    inner.acc_packed[output_id_packed] = gate_status::pack_single(other_acc_u);
                 }
             }
         }

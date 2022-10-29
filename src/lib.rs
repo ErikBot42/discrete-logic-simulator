@@ -121,37 +121,65 @@ mod tests {
         let optimized_board = prep_cases::<STRATEGY_REF>(optimized);
         let optimized_scalar = prep_cases::<STRATEGY_SCALAR>(optimized);
         //let mut correct: bool = true;
-        for ((name, mut optimized), (_, mut optimized_scalar)) in
-            optimized_board.into_iter().zip(optimized_scalar.into_iter())
+        for ((name, mut optimized), (_, mut optimized_scalar)) in optimized_board
+            .into_iter()
+            .zip(optimized_scalar.into_iter())
         {
             //let width = optimized.width;
-            for i in 1..30 {
-                let optimized_state = optimized.make_inner_state_vec();
-                let optimized_state_scalar = optimized_scalar.make_inner_state_vec();
-                let diff_ids: Vec<usize> = optimized_state
-                    .into_iter()
-                    .zip(optimized_state_scalar)
-                    .enumerate()
-                    .filter(|(_, (optim_bool, optim_bool_simd))| optim_bool != optim_bool_simd)
-                    .map(|(j, (_, _))| j)
-                    .collect();
-                if diff_ids.len() != 0 {
-                    println!("got");
-                    optimized_scalar.print();
-                    println!("expected:");
-                    optimized.print();
-                    //optimized.print_marked(&diff_ids);
-                    panic!("scalar/non scalar mismatch for test {name}, in iteration {i} at nodes {diff_ids:?}");
-                    //correct = false;
-                    //break;
-                }
-                optimized_scalar.compiled_network.update();
-                optimized.update();
-            }
+            compare_boards_iter(&mut optimized, &mut optimized_scalar, 30);
         }
         //correct
         true
+    }
 
+    fn compare_boards_iter<const STRATEGY_REF: u8, const STRATEGY_OTHER: u8>(
+        reference: &mut VcbBoard<STRATEGY_REF>,
+        other: &mut VcbBoard<STRATEGY_OTHER>,
+        iterations: usize,
+    ) {
+        for _ in 0..iterations {
+            compare_boards(reference, other);
+            other.update();
+            reference.update();
+        }
+    }
+
+    fn compare_boards<const STRATEGY_REF: u8, const STRATEGY_OTHER: u8>(
+        reference: &VcbBoard<STRATEGY_REF>,
+        other: &VcbBoard<STRATEGY_OTHER>,
+    ) {
+        let optimized_state = reference.make_inner_state_vec();
+        let optimized_state_scalar = other.make_inner_state_vec();
+        //let diff_ids_acc: Vec<(usize, (u8, u8))> = optimized
+        //    .compiled_network
+        //    .get_acc_test()
+        //    .zip(optimized_scalar.compiled_network.get_acc_test())
+        //    .enumerate()
+        //    .filter(|(_, (a, b))| a != b)
+        //    .collect();
+        let diff_ids: Vec<usize> = optimized_state
+            .into_iter()
+            .zip(optimized_state_scalar)
+            .enumerate()
+            .filter(|(_, (optim_bool, optim_bool_simd))| optim_bool != optim_bool_simd)
+            .map(|(j, (_, _))| j)
+            .collect();
+        other.print();
+        reference.print();
+        if diff_ids.len() != 0
+        /* || diff_ids_acc.len() != 0*/
+        {
+            println!("got");
+            other.print();
+            println!("expected:");
+            reference.print();
+            //optimized.print_marked(&diff_ids);
+            //scalar/non scalar mismatch for test {name}, in iteration {i} at nodes
+            panic!("{diff_ids:?}");
+            //\n{diff_ids_acc:?}
+            //correct = false;
+            //break;
+        }
     }
     #[test]
     fn scalar_regression_test_unoptimized() {
@@ -195,7 +223,8 @@ mod tests {
 
     fn basic_gate_test(optimize: bool, add_all: bool) {
         const STRATEGY: u8 = UpdateStrategy::Reference as u8;
-        let mut board: VcbBoard<STRATEGY> = Parser::parse(include_str!("../test_files/gates.blueprint"), optimize);
+        let mut board: VcbBoard<STRATEGY> =
+            Parser::parse(include_str!("../test_files/gates.blueprint"), optimize);
         board.print();
         assert_eq!(
             board.make_state_vec(),
