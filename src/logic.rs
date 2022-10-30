@@ -1,4 +1,5 @@
-// logic.rs: contains the simulaion engine itself.
+//! logic.rs: contains the simulaion engine itself.
+
 #![allow(clippy::inline_always)]
 use itertools::Itertools;
 use std::collections::HashMap;
