@@ -171,9 +171,19 @@ mod gate_status {
             let acc_term = not_xor & (is_inverted ^ acc_not_zero); // XXXXXXXX
             let new_state_1_other = xor_term | (acc_term & 1);
             debug_assert_eq!(
-                new_state_1,
-                new_state_1_other,
-                "inner: {inner}, is_xor: {is_xor}, acc: {acc}",
+                new_state_1, new_state_1_other,
+                "
+CLUSTER: {CLUSTER}
+FLAG_IS_INVERTED: {FLAG_IS_INVERTED:b}
+FLAG_IS_XOR: {FLAG_IS_XOR:b}
+inner: {inner:b}
+is_xor: {is_xor:b}
+acc_parity: {acc_parity:b}
+xor_term: {xor_term:b}
+acc_not_zero: {acc_not_zero:b}
+is_inverted: {is_inverted:b}
+not_xor: {not_xor:b}
+acc_term: {acc_term:b}",
             );
         }
 
@@ -262,14 +272,18 @@ mod gate_status {
     pub(crate) fn eval_mut_scalar_slow_reference<const CLUSTER: bool>(
         inner_mut: &mut Packed,
         acc: Packed,
+        is_cluster_in_packed: [bool; PACKED_ELEMENTS],
     ) -> Packed {
         let mut delta = 0;
-        for ((inner_single, acc_single), delta) in bytemuck::bytes_of_mut(inner_mut)
+        for (((inner_single, acc_single), delta), is_cluster) in bytemuck::bytes_of_mut(inner_mut)
             .iter_mut()
             .zip(bytemuck::bytes_of(&acc))
             .zip(bytemuck::bytes_of_mut(&mut delta))
+            .zip(is_cluster_in_packed)
         {
-            *delta = eval_mut::<CLUSTER>(inner_single, *acc_single);
+            if is_cluster == CLUSTER {
+                *delta = eval_mut::<CLUSTER>(inner_single, *acc_single);
+            }
         }
         delta
     }
@@ -1055,6 +1069,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         for (id_packed, status_p) in inner.status_packed.iter_mut().enumerate() {
             let acc_p = &inner.acc_packed[id_packed];
             let actual_ids = [0, 1, 2, 3].map(|x| x + id_packed * gate_status::PACKED_ELEMENTS);
+            let is_cluster = [0, 1, 2, 3].map(|x| (inner.kind[actual_ids[x]] == GateType::Cluster));
             let cluster_mask = gate_status::or_combine(gate_status::pack_single(
                 [0, 1, 2, 3].map(|x| (inner.kind[actual_ids[x]] == GateType::Cluster) as u8),
             ));
@@ -1067,8 +1082,9 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
             let prev_status_p = *status_p;
             //let delta_p = gate_status::eval_mut_scalar::<CLUSTER>(status_p, *acc_p) & active_mask;
-            let delta_p = gate_status::eval_mut_scalar_slow_reference::<CLUSTER>(status_p, *acc_p)
-                & active_mask;
+            let delta_p = gate_status::eval_mut_scalar_slow_reference::<CLUSTER>(
+                status_p, *acc_p, is_cluster,
+            ) & active_mask;
             *status_p = (*status_p & active_mask) | (prev_status_p & inactive_mask);
             for (id_inner, delta) in gate_status::unpack_single(delta_p).into_iter().enumerate() {
                 Self::propagate_delta_to_accs(
@@ -1340,8 +1356,11 @@ mod tests {
                         gate_status::splat_u32(gate_status::new(in_update_list, state, kind));
                     let status_scalar_pre = status_scalar;
                     let acc_scalar = gate_status::splat_u32(acc);
-                    let status_delta_scalar =
-                        gate_status::eval_mut_scalar::<false>(&mut status_scalar, acc_scalar);
+                    let status_delta_scalar = if cluster {
+                        gate_status::eval_mut_scalar::<true>(&mut status_scalar, acc_scalar)
+                    } else {
+                        gate_status::eval_mut_scalar::<false>(&mut status_scalar, acc_scalar)
+                    };
 
                     let mut res = vec![
                         Gate::evaluate_from_flags(acc, flags),
