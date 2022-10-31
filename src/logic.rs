@@ -159,23 +159,23 @@ mod gate_status {
                                      },*/
             }
         };
-        debug_assert_eq!(
-            new_state_1,
-            {
-                let is_xor = inner >> IS_XOR; // 0|1
-                debug_assert_eq!(is_xor & 1, is_xor);
-                let acc_parity = acc; // XXXXXXXX
-                let xor_term = is_xor & acc_parity; // 0|1
-                debug_assert_eq!(xor_term & 1, xor_term);
-                let acc_not_zero = (acc != 0) as Inner; // 0|1
-                let is_inverted = inner >> IS_INVERTED; // XX
-                let not_xor = !is_xor; // 0|11111111
-                let acc_term = not_xor & (is_inverted ^ acc_not_zero); // XXXXXXXX
-                xor_term | (acc_term & 1)
-            },
-            "is xor: {}, acc: {acc}",
-            inner >> IS_XOR
-        );
+        {
+            let is_xor = inner >> IS_XOR; // 0|1
+            debug_assert_eq!(is_xor & 1, is_xor);
+            let acc_parity = acc; // XXXXXXXX
+            let xor_term = is_xor & acc_parity; // 0|1
+            debug_assert_eq!(xor_term & 1, xor_term);
+            let acc_not_zero = (acc != 0) as Inner; // 0|1
+            let is_inverted = inner >> IS_INVERTED; // XX
+            let not_xor = !is_xor; // 0|11111111
+            let acc_term = not_xor & (is_inverted ^ acc_not_zero); // XXXXXXXX
+            let new_state_1_other = xor_term | (acc_term & 1);
+            debug_assert_eq!(
+                new_state_1,
+                new_state_1_other,
+                "inner: {inner}, is_xor: {is_xor}, acc: {acc}",
+            );
+        }
 
         let state_changed_1 = new_state_1 ^ state_1;
 
