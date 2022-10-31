@@ -1,5 +1,8 @@
 // blueprint.rs: parsing VCB blueprints
-#![allow(clippy::upper_case_acronyms)]
+#![allow(clippy::inline_always)]
+//#![allow(clippy::upper_case_acronyms)]
+#![allow(dead_code)]
+#![allow(clippy::cast_sign_loss)]
 use crate::logic::{CompiledNetwork, GateNetwork, GateType};
 use colored::Colorize;
 use std::collections::BTreeSet;
@@ -187,7 +190,7 @@ struct BoardElement<const STRATEGY: u8> {
     kind: Trace,
     id: Option<usize>,
 }
-impl<const STRATEGY: u8> BoardElement <STRATEGY>{
+impl<const STRATEGY: u8> BoardElement<STRATEGY> {
     fn new(color: &[u8]) -> Self {
         BoardElement {
             color: color.try_into().unwrap(),
@@ -220,7 +223,7 @@ impl<const STRATEGY: u8> BoardElement <STRATEGY>{
             "  ".to_string()
         };
         if marked {
-            print!("{}", tmpstr.on_truecolor(255, 0, 0))
+            print!("{}", tmpstr.on_truecolor(255, 0, 0));
         } else {
             print!(
                 "{}",
@@ -235,7 +238,7 @@ impl<const STRATEGY: u8> BoardElement <STRATEGY>{
                         .try_into()
                         .unwrap()
                 )
-            )
+            );
         }
     }
 }
@@ -451,7 +454,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         self.connect_id(this_x, this_id, id_counter);
     }
 
-    pub fn print_marked(&self, marked: &Vec<usize>) {
+    pub fn print_marked(&self, marked: &[usize]) {
         println!("\nBoard:");
         for y in 0..self.height {
             for x in 0..self.width {

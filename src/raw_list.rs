@@ -1,5 +1,8 @@
-/// A list that is just a raw array that is manipulated directly.
-/// Very unsafe but slightly faster than a normal vector
+//! A list that is just a raw array that is manipulated directly.
+//! Very unsafe but slightly faster than a normal vector
+#![allow(dead_code)]
+#![allow(clippy::inline_always)]
+
 #[derive(Debug, Default, Clone)]
 pub(crate) struct RawList<T>
 where
