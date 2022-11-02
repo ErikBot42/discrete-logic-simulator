@@ -208,6 +208,31 @@ acc_term: {acc_term:b}",
         }
     }
 
+    /// TODO: DELETE ME WHEN TESTING IS DONE
+    fn eval_mut_no_assert<const CLUSTER: bool>(inner_mut: &mut Inner, acc: AccType) -> AccType {
+        let inner = *inner_mut;
+        let flag_bits = inner & FLAGS_MASK;
+        let state_1 = (inner >> STATE) & 1;
+        let acc = acc as Inner; // XXXXXXXX
+        let new_state_1 = if CLUSTER {
+            (acc != 0) as Inner
+        } else {
+            match flag_bits {
+                0 => (acc != 0) as Inner,
+                FLAG_IS_INVERTED => (acc == 0) as Inner,
+                FLAG_IS_XOR => acc & 1,
+                _ => unreachable!(),
+            }
+        };
+        let state_changed_1 = new_state_1 ^ state_1;
+        *inner_mut = (new_state_1 << STATE) | flag_bits;
+        if state_changed_1 == 0 {
+            0
+        } else {
+            (new_state_1 << 1).wrapping_sub(1) as AccType
+        }
+    }
+
     const fn splat_u4_u8(value: u8) -> u8 {
         (value << 4) | value
     }
@@ -269,21 +294,31 @@ acc_term: {acc_term:b}",
         or_combine_1(decrement_1) | increment_1
     }
 
-    pub(crate) fn eval_mut_scalar_slow_reference<const CLUSTER: bool>(
+
+    pub(crate) fn eval_mut_scalar_slow_working<const CLUSTER: bool>(
         inner_mut: &mut Packed,
         acc: Packed,
         is_cluster_in_packed: [bool; PACKED_ELEMENTS],
     ) -> Packed {
         let mut delta = 0;
-        for (((inner_single, acc_single), delta), is_cluster) in bytemuck::bytes_of_mut(inner_mut)
-            .iter_mut()
-            .zip(bytemuck::bytes_of(&acc))
-            .zip(bytemuck::bytes_of_mut(&mut delta))
-            .zip(is_cluster_in_packed)
+        let cluster_mask_arr = unpack_single(or_combine(pack_single(
+            is_cluster_in_packed.map(Inner::from),
+        )));
+        for (((inner_single, acc_single), delta), cluster_mask) in
+            bytemuck::bytes_of_mut(inner_mut)
+                .iter_mut()
+                .zip(bytemuck::bytes_of(&acc))
+                .zip(bytemuck::bytes_of_mut(&mut delta))
+                .zip(cluster_mask_arr)
         {
-            if is_cluster == CLUSTER {
-                *delta = eval_mut::<CLUSTER>(inner_single, *acc_single);
-            }
+            let (active_mask, inactive_mask) = if CLUSTER {
+                (cluster_mask, !cluster_mask)
+            } else {
+                (!cluster_mask, cluster_mask)
+            };
+            let mut inner_single_maybe = *inner_single;
+            *delta = eval_mut_no_assert::<CLUSTER>(&mut inner_single_maybe, *acc_single) & active_mask;
+            *inner_single = (*inner_single & inactive_mask) | (inner_single_maybe & active_mask);
         }
         delta
     }
@@ -1082,7 +1117,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
             let prev_status_p = *status_p;
             //let delta_p = gate_status::eval_mut_scalar::<CLUSTER>(status_p, *acc_p) & active_mask;
-            let delta_p = gate_status::eval_mut_scalar_slow_reference::<CLUSTER>(
+            let delta_p = gate_status::eval_mut_scalar_slow_working::<CLUSTER>(
                 status_p, *acc_p, is_cluster,
             ) & active_mask;
             *status_p = (*status_p & active_mask) | (prev_status_p & inactive_mask);
