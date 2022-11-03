@@ -1503,12 +1503,14 @@ mod tests {
                     for delta in status_delta_simd.as_array().iter() {
                         assert_eq!(*delta, expected_status_delta);
                     }
-                    for delta in gate_status::unpack_single(status_scalar) {
+                    for delta in gate_status::unpack_single(status_delta_scalar) {
                         assert_eq!(
                             delta,
                             expected_status_delta,
                             "
 packed scalar has wrong value.
+got delta: {delta:?},
+expected: {expected_status_delta:?}
 res: {res:?},
 kind: {kind:?},
 flags: {flags:?},
