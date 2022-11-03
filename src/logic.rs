@@ -110,6 +110,13 @@ mod gate_status {
     const FLAG_IS_XOR: Inner = 1 << IS_XOR;
 
     const FLAGS_MASK: Inner = FLAG_IS_INVERTED | FLAG_IS_XOR;
+    const ANY_MASK: Inner = FLAG_STATE | FLAG_IN_UPDATE_LIST | FLAG_IS_INVERTED | FLAG_IS_XOR;
+    fn check_valid(val: Inner) {
+        debug_assert!(val & !ANY_MASK == 0);
+    }
+    fn check_valid_packed(val: Packed) {
+        debug_assert!(val & !splat_u32(ANY_MASK) == 0);
+    }
 
     //TODO: pub super?
     pub(crate) fn new(in_update_list: bool, state: bool, kind: RunTimeGateType) -> Inner {
@@ -130,7 +137,7 @@ mod gate_status {
     /// Evaluate and update internal state.
     /// # Returns
     /// Delta (+-1) if state changed (0 = no change)
-    #[inline(always)]
+    #[inline]
     pub(crate) fn eval_mut<const CLUSTER: bool>(inner_mut: &mut Inner, acc: AccType) -> AccType {
         // <- high, low ->
         //(     3,           2,              1,     0)
@@ -237,7 +244,7 @@ acc_term: {acc_term:b}",
         (value << 4) | value
     }
     pub(crate) const fn splat_u32(value: u8) -> Packed {
-        Packed::from_le_bytes([value; PACKED_ELEMENTS])
+        pack_single([value; PACKED_ELEMENTS])
     }
     /// if byte contains any bit set, it will be
     /// replaced with 0xff
@@ -256,11 +263,27 @@ acc_term: {acc_term:b}",
     /// like `or_combine`, but replaces with 0x1 instead.
     /// equivalent to BYTEwise != 0
     const fn or_combine_1(value: Packed) -> Packed {
-        let mut value = value;
-        value |= (splat_u32(0b1111_0000) & value) >> 4;
-        value |= (splat_u32(0b1100_1100) & value) >> 2;
-        value |= (splat_u32(0b1010_1010) & value) >> 1;
+        //let mut value = value;
+        //value |= (splat_u32(0b1111_0000) & value) >> 4;
+        //value |= (splat_u32(0b1100_1100) & value) >> 2;
+        //value |= (splat_u32(0b1010_1010) & value) >> 1;
+        //value & splat_u32(1)
+        let value = value | ((value & splat_u32(0b1111_0000)) >> 4);
+        let value = value | ((value & splat_u32(0b0000_1100)) >> 2);
+        let value = value | ((value & splat_u32(0b0000_0010)) >> 1);
         value & splat_u32(1)
+    }
+    /// for each byte:
+    /// 0 -> 0b0000_0000
+    /// 1 -> 0b1111_1111
+    /// # Panics
+    /// In debug if input byte is not 0 or 1.
+    fn mask_if_one(value: Packed) -> Packed {
+        debug_assert_eq!(value & splat_u32(!1), 0);
+        let value = value & splat_u32(1);
+        let value = value | (value << 4);
+        let value = value | (value << 2);
+        value | (value << 1)
     }
     // TODO: save on the 4 unused bits, maybe merge 2 iterations?
     // TODO: relaxed or_combine
@@ -268,32 +291,49 @@ acc_term: {acc_term:b}",
         inner_mut: &mut Packed,
         acc: Packed,
     ) -> Packed {
+        check_valid_packed(*inner_mut);
         let inner = *inner_mut;
         let flag_bits = inner & splat_u32(FLAGS_MASK);
         let state_1 = (inner >> STATE) & splat_u32(1);
 
-        let new_state_1 = if CLUSTER {
-            or_combine_1(acc) // bool
-        } else {
-            let is_xor = inner >> IS_XOR; // ?
-            let acc_parity = acc; // ?
-            let xor_term = is_xor & acc_parity; // ?
-            let acc_not_zero = or_combine_1(acc); // bool
-            let is_inverted = inner >> IS_INVERTED; // ?
-            let not_xor = !is_xor; // ?
-            let acc_term = not_xor & (is_inverted ^ acc_not_zero); // ?
-            (xor_term | acc_term) & splat_u32(1) // bool
-        };
+        let is_xor = (inner >> IS_XOR) & splat_u32(1);
+        let acc_parity = acc & splat_u32(1);
+        let xor_term = is_xor & acc_parity;
+        let acc_not_zero = or_combine_1(acc) & splat_u32(1);
+        let is_inverted = (inner >> IS_INVERTED) & splat_u32(1);
+        let not_xor = (!is_xor) & splat_u32(1);
+        let acc_term = not_xor & (is_inverted ^ acc_not_zero);
+
+        let new_state_1 = (xor_term | acc_term) & splat_u32(1);
+
         let state_changed_1 = new_state_1 ^ state_1; // bool
 
         // automatically sets "in_update_list" bit to zero
-        *inner_mut = (new_state_1 << STATE) | flag_bits;
+        let new_inner_mut = (new_state_1 << STATE) | flag_bits;
+        *inner_mut = new_inner_mut;
+        check_valid_packed(*inner_mut);
         let increment_1 = new_state_1 & state_changed_1;
         let decrement_1 = !new_state_1 & state_changed_1;
         debug_assert_eq!(increment_1 & decrement_1, 0, "{increment_1}, {decrement_1}");
-        or_combine_1(decrement_1) | increment_1
+        mask_if_one(decrement_1) | increment_1
     }
 
+    pub(crate) fn eval_mut_scalar_masked<const CLUSTER: bool>(
+        inner_mut: &mut Packed,
+        acc: Packed,
+        cluster_mask: [bool; PACKED_ELEMENTS],
+    ) -> Packed {
+        let cluster_mask = or_combine(pack_single(cluster_mask.map(u8::from)));
+        let (active_mask, inactive_mask) = if CLUSTER {
+            (cluster_mask, !cluster_mask)
+        } else {
+            (!cluster_mask, cluster_mask)
+        };
+        let mut inner_mut_new = *inner_mut;
+        let delta = eval_mut_scalar::<CLUSTER>(&mut inner_mut_new, acc) & active_mask;
+        *inner_mut = (inner_mut_new & active_mask) | (*inner_mut & inactive_mask);
+        delta
+    }
 
     pub(crate) fn eval_mut_scalar_slow_working<const CLUSTER: bool>(
         inner_mut: &mut Packed,
@@ -304,12 +344,11 @@ acc_term: {acc_term:b}",
         let cluster_mask_arr = unpack_single(or_combine(pack_single(
             is_cluster_in_packed.map(Inner::from),
         )));
-        for (((inner_single, acc_single), delta), cluster_mask) in
-            bytemuck::bytes_of_mut(inner_mut)
-                .iter_mut()
-                .zip(bytemuck::bytes_of(&acc))
-                .zip(bytemuck::bytes_of_mut(&mut delta))
-                .zip(cluster_mask_arr)
+        for (((inner_single, acc_single), delta), cluster_mask) in bytemuck::bytes_of_mut(inner_mut)
+            .iter_mut()
+            .zip(bytemuck::bytes_of(&acc))
+            .zip(bytemuck::bytes_of_mut(&mut delta))
+            .zip(cluster_mask_arr)
         {
             let (active_mask, inactive_mask) = if CLUSTER {
                 (cluster_mask, !cluster_mask)
@@ -317,13 +356,14 @@ acc_term: {acc_term:b}",
                 (!cluster_mask, cluster_mask)
             };
             let mut inner_single_maybe = *inner_single;
-            *delta = eval_mut_no_assert::<CLUSTER>(&mut inner_single_maybe, *acc_single) & active_mask;
+            *delta =
+                eval_mut_no_assert::<CLUSTER>(&mut inner_single_maybe, *acc_single) & active_mask;
             *inner_single = (*inner_single & inactive_mask) | (inner_single_maybe & active_mask);
         }
         delta
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn eval_mut_simd<const CLUSTER: bool, const LANES: usize>(
         inner_mut: &mut Simd<Inner, LANES>,
         acc: Simd<AccType, LANES>,
@@ -373,20 +413,20 @@ acc_term: {acc_term:b}",
         )
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn mark_in_update_list(inner: &mut Inner) {
         *inner |= FLAG_IN_UPDATE_LIST;
     }
-    #[inline(always)]
+    #[inline]
     pub(crate) fn in_update_list(inner: Inner) -> bool {
         inner & FLAG_IN_UPDATE_LIST != 0
     }
-    #[inline(always)]
+    #[inline]
     pub(crate) fn state(inner: Inner) -> bool {
         inner & FLAG_STATE != 0
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn state_simd<const LANES: usize>(
         inner: Simd<Inner, LANES>,
     ) -> Mask<InnerSigned, LANES>
@@ -408,10 +448,10 @@ acc_term: {acc_term:b}",
         }
         tmp
     }
-    pub(crate) fn pack_single(unpacked: [u8; PACKED_ELEMENTS]) -> Packed {
+    pub(crate) const fn pack_single(unpacked: [u8; PACKED_ELEMENTS]) -> Packed {
         Packed::from_le_bytes(unpacked)
     }
-    pub(crate) fn unpack_single(packed: Packed) -> [u8; PACKED_ELEMENTS] {
+    pub(crate) const fn unpack_single(packed: Packed) -> [u8; PACKED_ELEMENTS] {
         Packed::to_le_bytes(packed)
     }
     pub(crate) fn packed_state(packed: Packed) -> [bool; PACKED_ELEMENTS] {
@@ -543,7 +583,7 @@ impl Gate {
         self.add_inputs(inputs.len() as i32);
         self.inputs.append(inputs);
     }
-    #[inline(always)]
+    #[inline]
     #[cfg(test)]
     const fn evaluate(acc: AccType, kind: RunTimeGateType) -> bool {
         match kind {
@@ -552,7 +592,7 @@ impl Gate {
             RunTimeGateType::XorXnor => acc & (1) == (1),
         }
     }
-    #[inline(always)]
+    #[inline]
     #[cfg(test)]
     const fn evaluate_from_flags(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
         // inverted from perspective of or gate
@@ -563,7 +603,7 @@ impl Gate {
             acc & 1 == 1
         }
     }
-    #[inline(always)]
+    #[inline]
     #[cfg(test)]
     const fn evaluate_branchless(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
         !is_xor && ((acc != 0) != is_inverted) || is_xor && (acc & 1 == 1)
@@ -1045,7 +1085,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     }
 
     //#[inline(always)]
-    #[inline(always)]
+    #[inline]
     fn update_internal(&mut self) {
         self.i.iterations += 1;
         // This somehow improves performance, even when update list is non-zero.
@@ -1059,7 +1099,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         self.cluster_update_list.clear();
     }
     //#[inline(always)]
-    #[inline(always)]
+    #[inline]
     fn update_gates<const CLUSTER: bool>(&mut self) {
         match Self::STRATEGY {
             UpdateStrategy::Simd => {
@@ -1081,7 +1121,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             },
         }
     }
-    #[inline(always)]
+    #[inline]
     fn update_gates_in_list_wrapper<const CLUSTER: bool>(
         inner: &mut CompiledNetworkInner,
         gate_update_list: &mut UpdateList,
@@ -1097,6 +1137,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
     //TODO: Proof of concept, use an update list later
     //TODO: Separation of CLUSTER and non CLUSTER
+    #[inline]
     fn update_gates_scalar<const CLUSTER: bool>(inner: &mut CompiledNetworkInner) {
         // this updates EVERY gate
         // TODO: unchecked reads.
@@ -1109,18 +1150,13 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 [0, 1, 2, 3].map(|x| (inner.kind[actual_ids[x]] == GateType::Cluster) as u8),
             ));
 
-            let (active_mask, inactive_mask) = if CLUSTER {
-                (cluster_mask, !cluster_mask)
-            } else {
-                (!cluster_mask, cluster_mask)
-            };
-
-            let prev_status_p = *status_p;
-            //let delta_p = gate_status::eval_mut_scalar::<CLUSTER>(status_p, *acc_p) & active_mask;
-            let delta_p = gate_status::eval_mut_scalar_slow_working::<CLUSTER>(
-                status_p, *acc_p, is_cluster,
-            ) & active_mask;
-            *status_p = (*status_p & active_mask) | (prev_status_p & inactive_mask);
+            //let delta_p = gate_status::eval_mut_scalar_masked::<CLUSTER>(
+            //    status_p,
+            //    *acc_p,
+            //    [0, 1, 2, 3].map(|x| (inner.kind[actual_ids[x]] == GateType::Cluster)),
+            //);
+            let delta_p =
+                gate_status::eval_mut_scalar_slow_working::<CLUSTER>(status_p, *acc_p, is_cluster);
             for (id_inner, delta) in gate_status::unpack_single(delta_p).into_iter().enumerate() {
                 Self::propagate_delta_to_accs(
                     id_packed * gate_status::PACKED_ELEMENTS + id_inner,
@@ -1136,7 +1172,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
     /// Update all gates in update list.
     /// Appends next update list.
-    #[inline(always)]
+    #[inline]
     fn update_gates_in_list<const CLUSTER: bool>(
         inner: &mut CompiledNetworkInner,
         update_list: &[IndexType],
@@ -1170,7 +1206,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn propagate_delta_to_accs<F: FnMut(IndexType)>(
         id: usize,
         delta: AccTypeInner,
@@ -1192,7 +1228,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn update_gates_in_list_simd_wrapper<const CLUSTER: bool>(
         inner: &mut CompiledNetworkInner,
         gate_update_list: &mut UpdateList,
@@ -1206,7 +1242,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         Self::update_gates_in_list_simd::<CLUSTER>(inner, update_list, next_update_list);
     }
 
-    #[inline(always)]
+    #[inline]
     fn update_gates_in_list_simd<const CLUSTER: bool>(
         inner: &mut CompiledNetworkInner,
         update_list: &[IndexType],
@@ -1466,6 +1502,28 @@ mod tests {
                     assert_eq!(status_delta, expected_status_delta);
                     for delta in status_delta_simd.as_array().iter() {
                         assert_eq!(*delta, expected_status_delta);
+                    }
+                    for delta in gate_status::unpack_single(status_scalar) {
+                        assert_eq!(
+                            delta,
+                            expected_status_delta,
+                            "
+packed scalar has wrong value.
+res: {res:?},
+kind: {kind:?},
+flags: {flags:?},
+acc: {acc},
+acc4: {acc_scalar},
+acc4_u: {:?},
+status_pre: {:?},
+status_scalar: {:?},
+prev state: {state},
+state_vec: {:?}",
+                            gate_status::unpack_single(acc_scalar),
+                            gate_status::unpack_single(status_scalar_pre),
+                            gate_status::unpack_single(status_scalar),
+                            gate_status::packed_state_vec(status_scalar),
+                        );
                     }
                 }
             }
