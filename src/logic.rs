@@ -96,7 +96,7 @@ mod gate_status {
     use super::*;
     pub(crate) type Inner = u8;
     pub(crate) type InnerSigned = i8;
-    pub(crate) type Packed = u32;
+    pub(crate) type Packed = u64;
     pub(crate) const PACKED_ELEMENTS: usize = std::mem::size_of::<Packed>();
     // bit locations
     const STATE: Inner = 0;
@@ -111,12 +111,6 @@ mod gate_status {
 
     const FLAGS_MASK: Inner = FLAG_IS_INVERTED | FLAG_IS_XOR;
     const ANY_MASK: Inner = FLAG_STATE | FLAG_IN_UPDATE_LIST | FLAG_IS_INVERTED | FLAG_IS_XOR;
-    fn check_valid(val: Inner) {
-        debug_assert!(val & !ANY_MASK == 0);
-    }
-    fn check_valid_packed(val: Packed) {
-        debug_assert!(val & !splat_u32(ANY_MASK) == 0);
-    }
 
     //TODO: pub super?
     pub(crate) fn new(in_update_list: bool, state: bool, kind: RunTimeGateType) -> Inner {
@@ -276,10 +270,7 @@ acc_term: {acc_term:b}",
     /// for each byte:
     /// 0 -> 0b0000_0000
     /// 1 -> 0b1111_1111
-    /// # Panics
-    /// In debug if input byte is not 0 or 1.
-    fn mask_if_one(value: Packed) -> Packed {
-        debug_assert_eq!(value & splat_u32(!1), 0);
+    const fn mask_if_one(value: Packed) -> Packed {
         let value = value & splat_u32(1);
         let value = value | (value << 4);
         let value = value | (value << 2);
@@ -291,33 +282,29 @@ acc_term: {acc_term:b}",
         inner_mut: &mut Packed,
         acc: Packed,
     ) -> Packed {
-        check_valid_packed(*inner_mut);
         let inner = *inner_mut;
-        let flag_bits = inner & splat_u32(FLAGS_MASK);
         let state_1 = (inner >> STATE) & splat_u32(1);
 
-        let is_xor = (inner >> IS_XOR) & splat_u32(1);
-        let acc_parity = acc & splat_u32(1);
-        let xor_term = is_xor & acc_parity;
-        let acc_not_zero = or_combine_1(acc) & splat_u32(1);
-        let is_inverted = (inner >> IS_INVERTED) & splat_u32(1);
-        let not_xor = (!is_xor) & splat_u32(1);
+        let is_xor = inner >> IS_XOR;
+        let xor_term = is_xor & acc;
+        let acc_not_zero = or_combine_1(acc);
+        let is_inverted = inner >> IS_INVERTED;
+        let not_xor = !is_xor;
         let acc_term = not_xor & (is_inverted ^ acc_not_zero);
 
         let new_state_1 = (xor_term | acc_term) & splat_u32(1);
-
-        let state_changed_1 = new_state_1 ^ state_1; // bool
+        let state_changed_1 = (new_state_1 ^ state_1) & splat_u32(1);
 
         // automatically sets "in_update_list" bit to zero
-        let new_inner_mut = (new_state_1 << STATE) | flag_bits;
+        let new_inner_mut = (new_state_1 << STATE) | (inner & splat_u32(FLAGS_MASK));
         *inner_mut = new_inner_mut;
-        check_valid_packed(*inner_mut);
         let increment_1 = new_state_1 & state_changed_1;
         let decrement_1 = !new_state_1 & state_changed_1;
         debug_assert_eq!(increment_1 & decrement_1, 0, "{increment_1}, {decrement_1}");
         mask_if_one(decrement_1) | increment_1
     }
 
+    #[inline]
     pub(crate) fn eval_mut_scalar_masked<const CLUSTER: bool>(
         inner_mut: &mut Packed,
         acc: Packed,
@@ -444,6 +431,10 @@ acc_term: {acc_term:b}",
                 iter.next().unwrap_or(0),
                 iter.next().unwrap_or(0),
                 iter.next().unwrap_or(0),
+                iter.next().unwrap_or(0),
+                iter.next().unwrap_or(0),
+                iter.next().unwrap_or(0),
+                iter.next().unwrap_or(0),
             ]));
         }
         tmp
@@ -482,9 +473,9 @@ acc_term: {acc_term:b}",
         use super::*;
         #[test]
         fn pack_unpack_single() {
-            test_pack_single([1, 2, 3, 4]);
-            test_pack_single([255, 2, 254, 4]);
-            test_pack_single([25, 122, 254, 124]);
+            test_pack_single([1, 2, 3, 4, 5, 6, 7, 8]);
+            test_pack_single([255, 2, 254, 4, 23, 34, 4, 3]);
+            test_pack_single([25, 122, 254, 124, 6, 2, 6, 1]);
         }
         fn test_pack_single(t: [u8; PACKED_ELEMENTS]) {
             assert_eq!(t, unpack_single(pack_single(t)));
@@ -998,7 +989,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             .iter()
             .copied()
             .map(gate_status::unpack_single)
-            .collect::<Vec<[u8; 4]>>());
+            .collect::<Vec<[u8; gate_status::PACKED_ELEMENTS]>>());
 
         acc_packed
             .iter()
@@ -1144,19 +1135,11 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         // TODO: case where entire group of deltas is zero
         for (id_packed, status_p) in inner.status_packed.iter_mut().enumerate() {
             let acc_p = &inner.acc_packed[id_packed];
-            let actual_ids = [0, 1, 2, 3].map(|x| x + id_packed * gate_status::PACKED_ELEMENTS);
-            let is_cluster = [0, 1, 2, 3].map(|x| (inner.kind[actual_ids[x]] == GateType::Cluster));
-            let cluster_mask = gate_status::or_combine(gate_status::pack_single(
-                [0, 1, 2, 3].map(|x| (inner.kind[actual_ids[x]] == GateType::Cluster) as u8),
-            ));
+            let actual_ids = [0, 1, 2, 3, 4, 5, 6, 7].map(|x| x + id_packed * gate_status::PACKED_ELEMENTS);
+            let is_cluster = actual_ids.map(|x| (inner.kind[x] == GateType::Cluster));
 
-            //let delta_p = gate_status::eval_mut_scalar_masked::<CLUSTER>(
-            //    status_p,
-            //    *acc_p,
-            //    [0, 1, 2, 3].map(|x| (inner.kind[actual_ids[x]] == GateType::Cluster)),
-            //);
             let delta_p =
-                gate_status::eval_mut_scalar_slow_working::<CLUSTER>(status_p, *acc_p, is_cluster);
+                gate_status::eval_mut_scalar_masked::<CLUSTER>(status_p, *acc_p, is_cluster);
             for (id_inner, delta) in gate_status::unpack_single(delta_p).into_iter().enumerate() {
                 Self::propagate_delta_to_accs(
                     id_packed * gate_status::PACKED_ELEMENTS + id_inner,
