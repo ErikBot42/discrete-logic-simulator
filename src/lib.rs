@@ -3,6 +3,7 @@
 #![feature(portable_simd)]
 #![feature(core_intrinsics)]
 #![feature(generic_arg_infer)]
+#![feature(let_chains)]
 macro_rules! unwrap_or_else {
     ($expression:expr, $block:expr) => {
         match $expression {

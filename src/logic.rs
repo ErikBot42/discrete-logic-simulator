@@ -5,11 +5,12 @@
 
 pub mod gate_status;
 use itertools::Itertools;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::simd::{LaneCount, Mask, Simd, SimdPartialEq, SupportedLaneCount};
 //use std::mem::transmute;
 
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, PartialOrd, Ord, Default)]
 /// A = active inputs
 /// T = total inputs
 pub(crate) enum GateType {
@@ -26,6 +27,7 @@ pub(crate) enum GateType {
     ///A % 2 == 0
     Xnor,
     ///A > 0
+    #[default]
     Cluster, // equivalent to OR
 }
 impl GateType {
@@ -92,10 +94,8 @@ type UpdateList = crate::raw_list::RawList<IndexType>;
 
 type GateKey = (GateType, Vec<IndexType>);
 
-//TODO: this only uses 4 bits, 2 adjacent gates could share their
-//      in_update_list flag and be updated at the same time.
 /// data needed after processing network
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct Gate {
     // constant:
     inputs: Vec<IndexType>,  // list of ids
@@ -106,7 +106,7 @@ pub(crate) struct Gate {
     acc: AccType,
     state: bool,
     in_update_list: bool,
-    //TODO: "do not merge" flag for gates that are "volatile", i.e doing something with IO
+    //TODO: "do not merge" flag for gates that are "volatile", for example handling IO
 }
 impl Gate {
     fn new(kind: GateType, outputs: Vec<IndexType>) -> Self {
@@ -262,7 +262,7 @@ impl Network {
         }
     }
     /// Create input connections for the new gates, given the old gates.
-    /// O(n)
+    /// O(n * k)
     fn create_input_connections(
         new_gates: &mut [Gate],
         old_gates: &[Gate],
@@ -283,6 +283,7 @@ impl Network {
 
     /// Remove connections that exist multiple times while
     /// maintaining the circuit behavior.
+    /// O(n * k)
     fn remove_redundant_input_connections(new_gates: &mut [Gate]) {
         for new_gate in new_gates.iter_mut() {
             new_gate.inputs.sort_unstable();
@@ -306,7 +307,7 @@ impl Network {
         }
     }
     /// Create output connections from current input connections
-    /// O(n)
+    /// O(n * k)
     fn create_output_connections(new_gates: &mut [Gate]) {
         for gate_id in 0..new_gates.len() {
             let gate = &new_gates[gate_id];
@@ -361,6 +362,9 @@ impl Network {
     /// Single network optimization pass. Much like compilers,
     /// some passes make it possible for others or the same
     /// pass to be run again.
+    ///
+    /// Will completely recreate the network.
+    /// O(n * k)
     fn optimization_pass(&self) -> Self {
         // Iterate through all old gates.
         // Add gate if type & original input set is unique.
@@ -387,40 +391,101 @@ impl Network {
             prev_network_gate_count = new_network.gates.len();
         }
     }
+    fn prep_for_scalar(&self) -> Self {
+        self.sorted_by(|a: &Gate, b: &Gate| {
+            let by_kind = a.kind.cmp(&b.kind);
+            let by_output_count = a.outputs.len().cmp(&b.outputs.len());
+            by_output_count.then(by_kind)
+        })
+    }
 
-    /// Change order of gates, might be better for cache.
-    /// TODO: currently seems to have negative effect
-    fn sorted(&self) -> Self {
-        //use rand::prelude::*;
-        let mut gates_with_ids: Vec<(usize, &Gate)> = self.gates.iter().enumerate().collect();
-        //let mut rng = rand::thread_rng();
-        //gates_with_ids.shuffle(&mut rng);
-        gates_with_ids.sort_by(|(_, a), (_, b)| a.kind.cmp(&b.kind));
-        //gates_with_ids.sort_by(|(i, _), (j, _)| i.cmp(&j));
-        //gates_with_ids.sort_by(|(i, _), (j, _)| j.cmp(&i));
-        let (inverse_translation_table, gates): (Vec<usize>, Vec<&Gate>) =
-            gates_with_ids.into_iter().unzip();
+    fn sorted_by<F: FnMut(&Gate, &Gate) -> Ordering>(&self, mut cmp: F) -> Self {
+        self.reordered_by(|mut v| {
+            v.sort_by(|(_, a), (_, b)| cmp(a, b));
+            v.into_iter().map(|(a, b)| Some((a, b.clone()))).collect()
+        })
+    }
+
+    /// List will have each group of `elements` in such that cmp will return false.
+    /// Will also make sure list is a multiple of `elements`
+    /// Order is maybe preserved to some extent.
+    /// This is just a heuristic, solving it without inserting None is sometimes impossible
+    /// Solving it perfectly is probably NP-hard.
+    /// O(n)
+    fn aligned_by<F: Fn(&Gate, &Gate) -> bool>(
+        mut gates: Vec<(usize, &Gate)>,
+        elements: usize,
+        cmp: F,
+    ) -> Vec<Option<(usize, &Gate)>> {
+        let mut current_group: Vec<Option<(usize, &Gate)>> = Vec::new();
+        let mut final_list: Vec<Option<(usize, &Gate)>> = Vec::new();
+        loop {
+            match current_group.len() {
+                0 => current_group.push(Some(unwrap_or_else!(gates.pop(), break))),
+                n if n == elements => final_list.append(&mut current_group),
+                _ => {
+                    let mut index = None;
+                    'o: for (i, gate) in gates.iter().enumerate().rev() {
+                        for cgate in current_group.iter() {
+                            if let Some(cgate) = cgate && cmp(gate.1, cgate.1) {
+                                continue 'o;
+                            }
+                        }
+                        index = Some(i);
+                        break;
+                    }
+                    current_group.push(index.map(|i| gates.remove(i)));
+                },
+            }
+        }
+        final_list
+    }
+
+    /// Change order of gates and update ids afterwards, might be better for cache.
+    ///
+    /// Removing gates is UB, adding None is used to add padding.
+    ///
+    /// O(n * k) + O(reorder(n,k))
+    fn reordered_by<F: FnMut(Vec<(usize, &Gate)>) -> Vec<Option<(usize, Gate)>>>(
+        &self,
+        mut reorder: F,
+    ) -> Network {
+        let gates_with_ids: Vec<(usize, &Gate)> = self.gates.iter().enumerate().collect();
+
+        let gates_with_ids = reorder(gates_with_ids);
+
+        let (inverse_translation_table, gates): (Vec<Option<usize>>, Vec<Option<Gate>>) =
+            gates_with_ids
+                .into_iter()
+                .map(|o| o.map_or((None, None), |(a, b)| (Some(a), Some(b))))
+                .unzip();
         let mut translation_table: Vec<IndexType> = (0..inverse_translation_table.len())
             .map(|_| 0 as IndexType)
             .collect();
         inverse_translation_table
             .iter()
             .enumerate()
-            .for_each(|(index, new)| translation_table[*new] = index as IndexType);
+            .for_each(|(index, new)| {
+                if let Some(new) = new {
+                    translation_table[*new] = index as IndexType
+                }
+            });
         let gates: Vec<Gate> = gates
             .into_iter()
-            .cloned()
-            .map(|mut gate| {
-                gate.outputs
-                    .iter_mut()
-                    .for_each(|output| *output = translation_table[*output as usize] as IndexType);
-                gate.inputs
-                    .iter_mut()
-                    .for_each(|input| *input = translation_table[*input as usize] as IndexType);
-                gate
+            .map(|gate| {
+                if let Some(mut gate) = gate {
+                    gate.outputs.iter_mut().for_each(|output| {
+                        *output = translation_table[*output as usize] as IndexType
+                    });
+                    gate.inputs
+                        .iter_mut()
+                        .for_each(|input| *input = translation_table[*input as usize] as IndexType);
+                    gate
+                } else {
+                    Gate::default() // filler gate.
+                }
             })
             .collect();
-
         Self {
             gates,
             translation_table: Self::create_translation_table(

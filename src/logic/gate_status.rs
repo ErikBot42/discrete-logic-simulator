@@ -1,4 +1,6 @@
 use super::*;
+//TODO: this only uses 4 bits, 2 adjacent gates could share their
+//      in_update_list flag and be updated at the same time.
 pub(crate) type Inner = u8;
 pub(crate) type InnerSigned = i8;
 pub(crate) type Packed = u64;
