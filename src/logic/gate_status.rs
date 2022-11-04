@@ -251,27 +251,52 @@ pub(crate) fn eval_mut_scalar_slow_working<const CLUSTER: bool>(
 }
 
 /// TODO: currently assumes little endian
-fn pack_bit_bitpack(arr: Packed) -> u8 {
+/// lowest bit in byte -> bit
+/// NOTE: byte order is reversed
+/// TODO: could make everything BE.
+fn pack_bit_bitpack_be(arr: Packed) -> u8 {
     // https://stackoverflow.com/questions/14547087/extracting-bits-with-a-single-multiplication
+    const MASK: Packed = 0b00000001_00000001_00000001_00000001_00000001_00000001_00000001_00000001;
     const MAGIC: Packed = 0b10000000_01000000_00100000_00010000_00001000_00000100_00000010_00000001;
-    (arr * MAGIC).to_le_bytes()[0]
+    ((arr & MASK) * MAGIC).to_le_bytes()[7]
 }
 
+/// TODO: currently assumes little endian
 /// lowest bit in byte -> bit
 fn arr_bit_bitpack(arr: [Packed; 8]) -> Packed {
-    u64::from_le_bytes([
-        pack_bit_bitpack(arr[0]),
-        pack_bit_bitpack(arr[1]),
-        pack_bit_bitpack(arr[2]),
-        pack_bit_bitpack(arr[3]),
-        pack_bit_bitpack(arr[4]),
-        pack_bit_bitpack(arr[5]),
-        pack_bit_bitpack(arr[6]),
-        pack_bit_bitpack(arr[7])
-    ])
+    // big endian to flip bit order back
+    u64::from_be_bytes(arr.map(pack_bit_bitpack_be))
 }
 
-fn eval_bitpacked(acc: [Packed; 8], is_xor: Packed, is_inverted: Packed) {}
+/// Evaluator with 1 bit/gate.
+/// u64 fits in single register so this *should* be fast
+/// unlike status, this does not need any bitshifts, and has no wasted bits.
+fn eval_bitpacked(
+    acc: [Packed; 8],
+    old_state: Packed,
+    is_xor: Packed,
+    is_inverted: Packed,
+) -> Packed {
+    let acc_parity = arr_bit_bitpack(acc);
+    let acc_not_zero = arr_bit_bitpack(acc.map(or_combine_1));
+    let acc_term = (!is_xor) & (is_inverted ^ acc_not_zero);
+    let xor_term = is_xor & acc_parity;
+    let new_state = xor_term | acc_term;
+    new_state ^ old_state
+}
+
+fn eval_bitpacked_masked(
+    acc: [Packed; 8],
+    old_state: Packed,
+    is_xor: Packed,
+    is_inverted: Packed,
+    mask: Packed,
+) -> (Packed, Packed) {
+    let state_changed = eval_bitpacked(acc, old_state, is_xor, is_inverted);
+    let state_changed_masked = state_changed & mask;
+    let new_state_masked = old_state ^ state_changed_masked;
+    (state_changed_masked, new_state_masked)
+}
 
 #[inline]
 pub(crate) fn eval_mut_simd<const CLUSTER: bool, const LANES: usize>(
