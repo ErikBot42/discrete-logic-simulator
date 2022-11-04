@@ -46,13 +46,10 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut pre_parsed_simd = black_box(pre_parse_tests::<STRATEGY_SIMD>());
     let mut pre_parsed_scalar = black_box(pre_parse_tests::<STRATEGY_SCALAR>());
 
+    bench_pre_parsed("run_scalar", c, &mut pre_parsed_scalar);
     bench_pre_parsed("run_reference", c, &mut pre_parsed);
     bench_pre_parsed("run_simd", c, &mut pre_parsed_simd);
-    bench_pre_parsed("run_scalar", c, &mut pre_parsed_scalar);
 
-    pre_parsed = black_box(pre_parsed);
-    pre_parsed_simd = black_box(pre_parsed_simd);
-    pre_parsed_scalar = black_box(pre_parsed_scalar);
 }
 
 fn bench_pre_parsed<const STRATEGY: u8>(

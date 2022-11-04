@@ -701,21 +701,28 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         // TODO: case where entire group of deltas is zero
         for (id_packed, status_p) in inner.status_packed.iter_mut().enumerate() {
             let acc_p = &inner.acc_packed[id_packed];
-            let actual_ids = [0, 1, 2, 3, 4, 5, 6, 7].map(|x| x + id_packed * gate_status::PACKED_ELEMENTS);
-            let is_cluster = actual_ids.map(|x| (inner.kind[x] == GateType::Cluster));
+            let is_cluster = [0, 1, 2, 3, 4, 5, 6, 7].map(|x| {
+                inner.kind[x + id_packed * gate_status::PACKED_ELEMENTS] == GateType::Cluster
+            });
+
+            //let is_cluster = [CLUSTER; 8];
 
             let delta_p =
                 gate_status::eval_mut_scalar_masked::<CLUSTER>(status_p, *acc_p, is_cluster);
-            for (id_inner, delta) in gate_status::unpack_single(delta_p).into_iter().enumerate() {
-                Self::propagate_delta_to_accs(
-                    id_packed * gate_status::PACKED_ELEMENTS + id_inner,
-                    delta,
-                    &mut bytemuck::cast_slice_mut(&mut inner.acc_packed),
-                    &inner.packed_output_indexes,
-                    &inner.packed_outputs,
-                    |_| {},
-                );
+            if delta_p == 0 {
+                continue;
             }
+
+            let packed_output_indexes = &inner.packed_output_indexes;
+            let packed_outputs = &inner.packed_outputs;
+            let acc_packed = &mut inner.acc_packed;
+            Self::propagate_delta_to_accs_scalar(
+                delta_p,
+                id_packed,
+                acc_packed,
+                packed_output_indexes,
+                packed_outputs,
+            );
         }
     }
 
@@ -755,26 +762,108 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
     }
 
-    #[inline]
+    fn propagate_delta_to_accs_scalar(
+        delta_p: gate_status::Packed,
+        id_packed: usize,
+        acc_packed: &mut [gate_status::Packed],
+        packed_output_indexes: &[IndexType],
+        packed_outputs: &[IndexType],
+    ) {
+        // NOTE: this assumes that all outputs are non overlapping.
+        // this can be resolved when network is generated
+
+        // TODO: PERF: unchecked reads
+
+        let group_id_offset = id_packed * gate_status::PACKED_ELEMENTS;
+        let acc: &mut [u8] = bytemuck::cast_slice_mut(acc_packed);
+        let deltas = gate_status::unpack_single(delta_p);
+        let deltas_simd: Simd<u8, _> = Simd::from_array(deltas);
+
+        let from_index_simd: Simd<IndexType, { gate_status::PACKED_ELEMENTS }> = Simd::from_slice(
+            &packed_output_indexes[group_id_offset..group_id_offset + gate_status::PACKED_ELEMENTS],
+        );
+        let to_index_simd: Simd<usize, { gate_status::PACKED_ELEMENTS }> = Simd::from_slice(
+            &packed_output_indexes
+                [group_id_offset + 1..group_id_offset + gate_status::PACKED_ELEMENTS + 1],
+        )
+        .cast();
+        let mut output_id_index_simd: Simd<usize, _> = from_index_simd.cast();
+        //TODO: done if delta = 0
+        let mut not_done_mask: Mask<isize, _> = Mask::splat(true);
+        loop {
+            // TODO: test/mask done & break
+
+            //
+            // ... update mask status ...
+            //
+
+            let has_reached_final_index_mask = output_id_index_simd.simd_eq(to_index_simd);
+            not_done_mask &= has_reached_final_index_mask;
+
+            if not_done_mask == Mask::splat(false) {
+                break;
+            }
+
+            let output_id_simd = Simd::gather_select(
+                packed_outputs,
+                not_done_mask,
+                output_id_index_simd,
+                Simd::splat(0),
+            )
+            .cast();
+            let acc_simd = Simd::gather_select(acc, not_done_mask, output_id_simd, Simd::splat(0))
+                + deltas_simd;
+            acc_simd.scatter_select(acc, not_done_mask, output_id_simd);
+            output_id_index_simd += Simd::splat(1);
+        }
+    }
+
+    /// Reference impl
+    fn propagate_delta_to_accs_scalar_ref(
+        delta_p: gate_status::Packed,
+        id_packed: usize,
+        acc_packed: &mut [gate_status::Packed],
+        packed_output_indexes: &[IndexType],
+        packed_outputs: &[IndexType],
+    ) {
+        let group_id_offset = id_packed * gate_status::PACKED_ELEMENTS;
+        let acc = bytemuck::cast_slice_mut(acc_packed);
+        let deltas = gate_status::unpack_single(delta_p);
+
+        for (id_inner, delta) in deltas.into_iter().enumerate() {
+            Self::propagate_delta_to_accs(
+                group_id_offset + id_inner,
+                delta,
+                acc,
+                packed_output_indexes,
+                packed_outputs,
+                |_| {},
+            );
+        }
+    }
+    #[inline(always)]
     fn propagate_delta_to_accs<F: FnMut(IndexType)>(
         id: usize,
         delta: AccTypeInner,
         acc: &mut [AccTypeInner],
         packed_output_indexes: &[IndexType],
         packed_outputs: &[IndexType],
-        mut update_list_handler: F,
+        update_list_handler: F,
     ) {
-        if delta != 0 {
-            let from_index = *unsafe { packed_output_indexes.get_unchecked(id) };
-            let to_index = *unsafe { packed_output_indexes.get_unchecked(id + 1) };
-            for output_id in
-                unsafe { packed_outputs.get_unchecked(from_index as usize..to_index as usize) }
-            {
-                let other_acc = unsafe { acc.get_unchecked_mut(*output_id as usize) };
-                *other_acc = other_acc.wrapping_add(delta);
-                update_list_handler(*output_id);
-            }
+        if delta == 0 {
+            return;
         }
+        let from_index = *unsafe { packed_output_indexes.get_unchecked(id) } as usize;
+        let to_index = *unsafe { packed_output_indexes.get_unchecked(id + 1) } as usize;
+
+        for output_id in unsafe { packed_outputs.get_unchecked(from_index..to_index) } {
+            let other_acc = unsafe { acc.get_unchecked_mut(*output_id as usize) };
+            *other_acc = other_acc.wrapping_add(delta);
+        }
+        unsafe { packed_outputs.get_unchecked(from_index..to_index) }
+            .into_iter()
+            .cloned()
+            .for_each(update_list_handler);
     }
 
     #[inline]

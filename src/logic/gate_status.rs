@@ -175,10 +175,11 @@ const fn or_combine_1(value: Packed) -> Packed {
 /// 0 -> 0b0000_0000
 /// 1 -> 0b1111_1111
 const fn mask_if_one(value: Packed) -> Packed {
-    let value = value & splat_u32(1);
-    let value = value | (value << 4);
-    let value = value | (value << 2);
-    value | (value << 1)
+    //let value = value & splat_u32(1);
+    //let value = value | (value << 4);
+    //let value = value | (value << 2);
+    //value | (value << 1)
+    (value & splat_u32(1)) * 0b1111_1111
 }
 // TODO: save on the 4 unused bits, maybe merge 2 iterations?
 // TODO: relaxed or_combine

@@ -2,7 +2,7 @@
 //#![warn(clippy::all)]
 #![feature(portable_simd)]
 #![feature(core_intrinsics)]
-
+#![feature(generic_arg_infer)]
 macro_rules! unwrap_or_else {
     ($expression:expr, $block:expr) => {
         match $expression {
