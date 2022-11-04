@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 
 pub mod gate_status;
-use itertools::Itertools;
+use itertools::{iproduct, Itertools};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::simd::{LaneCount, Mask, Simd, SimdPartialEq, SupportedLaneCount};
@@ -109,6 +109,9 @@ pub(crate) struct Gate {
     //TODO: "do not merge" flag for gates that are "volatile", for example handling IO
 }
 impl Gate {
+    fn has_overlapping_outputs(&self, other: Gate) -> bool {
+        iproduct!(self.outputs.iter(), other.outputs.iter()).any(|(&a, &b)| a == b)
+    }
     fn new(kind: GateType, outputs: Vec<IndexType>) -> Self {
         let start_acc = match kind {
             GateType::Xnor => 1,
@@ -393,9 +396,10 @@ impl Network {
     }
     fn prep_for_scalar(&self) -> Self {
         self.sorted_by(|a: &Gate, b: &Gate| {
-            let by_kind = a.kind.cmp(&b.kind);
-            let by_output_count = a.outputs.len().cmp(&b.outputs.len());
-            by_output_count.then(by_kind)
+            a.outputs
+                .len()
+                .cmp(&b.outputs.len())
+                .then(a.kind.cmp(&b.kind))
         })
     }
 
@@ -411,8 +415,9 @@ impl Network {
     /// Order is maybe preserved to some extent.
     /// This is just a heuristic, solving it without inserting None is sometimes impossible
     /// Solving it perfectly is probably NP-hard.
+    /// `cmp` has no restrictions.
     /// O(n)
-    fn aligned_by<F: Fn(&Gate, &Gate) -> bool>(
+    fn aligned_by_inner<F: Fn(&Gate, &Gate) -> bool>(
         mut gates: Vec<(usize, &Gate)>,
         elements: usize,
         cmp: F,
@@ -442,10 +447,9 @@ impl Network {
     }
 
     /// Change order of gates and update ids afterwards, might be better for cache.
-    ///
     /// Removing gates is UB, adding None is used to add padding.
     ///
-    /// O(n * k) + O(reorder(n,k))
+    /// O(n * k) + O(reorder(n, k))
     fn reordered_by<F: FnMut(Vec<(usize, &Gate)>) -> Vec<Option<(usize, Gate)>>>(
         &self,
         mut reorder: F,
