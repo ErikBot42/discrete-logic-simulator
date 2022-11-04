@@ -762,7 +762,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
     }
 
-    fn propagate_delta_to_accs_scalar(
+    fn propagate_delta_to_accs_scalar_simd(
         delta_p: gate_status::Packed,
         id_packed: usize,
         acc_packed: &mut [gate_status::Packed],
@@ -771,6 +771,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     ) {
         // NOTE: this assumes that all outputs are non overlapping.
         // this can be resolved when network is generated
+        // TODO: debug_assert this property
 
         // TODO: PERF: unchecked reads
 
@@ -819,7 +820,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     }
 
     /// Reference impl
-    fn propagate_delta_to_accs_scalar_ref(
+    fn propagate_delta_to_accs_scalar(
         delta_p: gate_status::Packed,
         id_packed: usize,
         acc_packed: &mut [gate_status::Packed],

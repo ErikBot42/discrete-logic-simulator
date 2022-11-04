@@ -148,8 +148,10 @@ mod tests {
         reference: &VcbBoard<STRATEGY_REF>,
         other: &VcbBoard<STRATEGY_OTHER>,
     ) {
-        let optimized_state = reference.make_inner_state_vec();
-        let optimized_state_scalar = other.make_inner_state_vec();
+        let acc_reference = reference.compiled_network.get_acc_test();
+        let acc_other = other.compiled_network.get_acc_test();
+        let state_reference = reference.make_inner_state_vec();
+        let state_other = other.make_inner_state_vec();
         //let diff_ids_acc: Vec<(usize, (u8, u8))> = optimized
         //    .compiled_network
         //    .get_acc_test()
@@ -157,25 +159,35 @@ mod tests {
         //    .enumerate()
         //    .filter(|(_, (a, b))| a != b)
         //    .collect();
-        let diff_ids: Vec<usize> = optimized_state
+        let diff: Vec<_> = state_reference
             .into_iter()
-            .zip(optimized_state_scalar)
+            .zip(state_other)
+            .zip(acc_reference.zip(acc_other))
             .enumerate()
-            .filter(|(_, (optim_bool, optim_bool_simd))| optim_bool != optim_bool_simd)
-            .map(|(j, (_, _))| j)
+            .filter(|(_, ((bool_a, bool_b), (acc_a, acc_b)))| bool_a != bool_b || acc_a != acc_b)
             .collect();
+        println!("--------------------------------------");
+        println!("OTHER:");
         other.print();
+        println!("REFERENCE:");
         reference.print();
-        if diff_ids.len() != 0
+        if diff.len() != 0
         /* || diff_ids_acc.len() != 0*/
         {
-            println!("got");
-            other.print();
-            println!("expected:");
-            reference.print();
+            
+            //println!("got");
+            //other.print();
+            //println!("expected:");
+            //reference.print();
             //optimized.print_marked(&diff_ids);
             //scalar/non scalar mismatch for test {name}, in iteration {i} at nodes
-            panic!("{diff_ids:?}");
+
+            panic!(
+                "diff ids: \n{}",
+                diff.iter()
+                    .map(|(i, ((ba, bb), (aa, ab)))| format!("{i}: {ba} {bb}, {aa} {ab}"))
+                    .collect::<Vec<_>>().join("\n"),
+            );
             //\n{diff_ids_acc:?}
             //correct = false;
             //break;
