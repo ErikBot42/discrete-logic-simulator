@@ -937,7 +937,10 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         let deltas = gate_status::unpack_single(delta_p);
         let deltas_simd = Simd::from_array(deltas);
         let deltas_mm: __m256i = {
-            let t: Simd<i32, _> = deltas_simd.cast();
+            let t: Simd<u32, _> = deltas_simd.cast();
+            for e in t.as_array() {
+                debug_assert_eq!(e & (!0b1111_1111), 0);
+            }
             t.into()
         };
 
@@ -987,7 +990,14 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 break;
             }
             let output_id_mm = unsafe {
-                Self::gather_select_unchecked_u32(packed_outputs, not_done_mm, output_id_index_mm)
+                const SCALE: i32 = std::mem::size_of::<u32>() as i32;
+                //TODO: try unconditional gather.
+                _mm256_mask_i32gather_epi32::<SCALE>(
+                    _mm256_setzero_si256(),
+                    transmute(packed_outputs.as_ptr()),
+                    output_id_index_mm,
+                    not_done_mm,
+                )
             };
             let output_id_simd = {
                 let t: Simd<u32, 8> = output_id_mm.into();
@@ -1008,34 +1018,25 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     not_done_mm,
                 )
             };
-            let acc_incremented_mm = unsafe { _mm256_add_epi32(acc_mm, deltas_mm) };
-            let first_byte_mm = unsafe { _mm256_set1_epi32(0b1111_1111) };
-            let acc_masked_mm = unsafe { _mm256_and_si256(first_byte_mm, acc_incremented_mm) };
-            let acc_kept_bits_mm = unsafe { _mm256_andnot_si256(first_byte_mm, acc_mm) };
-            let acc_new = unsafe { _mm256_or_si256(acc_masked_mm, acc_kept_bits_mm) };
+            // There is no scatter on avx2, it therefore has to be done using scalars.
+            // NOTE: acc is 8 bit
+            let acc_incremented_mm = unsafe { _mm256_add_epi8(acc_mm, deltas_mm) };
 
-            //_mm256_mask_i32scatter_epi32();
-            //
-            //unsafe {
-            //    //std::arch::asm!(
-            //    //    "popcnt {popcnt}, {v}",
-            //    //    "2:",
-            //    //    "blsi rax, {v}",
-            //    //    "jz 1f",
-            //    //    "xor {v}, rax",
-            //    //    "tzcnt rax, rax",
-            //    //    "stosb",
-            //    //    "jmp 2b",
-            //    //    "1:",
-            //    //    v = inout(reg) value => _,
-            //    //    popcnt = out(reg) popcnt,
-            //    //    out("rax") _, // scratch
-            //    //    inout("rdi") bits.as_mut_ptr() => _,
-            //    //);
-            //    std::arch::asm!(
-            //        "",
-            //    );
-            //}
+            // NOTE: it is possible to left pack and conditionally write valid elements of vector.
+            // https://deplinenoise.files.wordpress.com/2015/03/gdc2015_afredriksson_simd.pdf
+            let acc_and_filler: [[u8; 4]; 8] = bytemuck::cast(acc_incremented_mm);
+            let accs = acc_and_filler.map(|a| a[0]);
+            let output_ids: [u32; 8] = bytemuck::cast(output_id_index_mm);
+            let not_done: [i32; 8] = bytemuck::cast(not_done_mm);
+
+            for ((index, this_acc), _) in output_ids
+                .into_iter()
+                .zip(accs)
+                .zip(not_done.into_iter())
+                .filter(|(_, x)| *x == -1)
+            {
+                //acc[index as usize] = this_acc;
+            }
 
             let acc_simd = unsafe {
                 Simd::gather_select_unchecked(
@@ -1050,26 +1051,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             };
             output_id_index_mm =
                 unsafe { _mm256_add_epi32(output_id_index_mm, _mm256_set1_epi32(1)) };
-        }
-    }
-
-    unsafe fn gather_select_unchecked_u32(
-        slice: &[u32],
-        enable: __m256i,
-        idxs: __m256i,
-    ) -> __m256i {
-        const SCALE: i32 = std::mem::size_of::<u32>() as i32;
-        //TODO: try unconditional gather.
-        unsafe {
-            _mm256_mask_i32gather_epi32::<SCALE>(
-                _mm256_setzero_si256(),
-                transmute(slice.as_ptr()),
-                idxs,
-                //transmute::<Simd<u32, _>, Simd<i32, _>>(idxs).into(),
-                //transmute::<Mask<i32, _>, __m256i>(enable),
-                enable,
-            )
-            //.into()
         }
     }
 
@@ -1212,6 +1193,9 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             }
         }
     }
+}
+struct AlignedArray {
+    a: [u32; 8],
 }
 
 #[derive(Debug, Default, Clone)]
