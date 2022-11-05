@@ -936,17 +936,15 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         let from_index_simd = Simd::from_slice(unsafe {
             packed_output_indexes
                 .get_unchecked(group_id_offset..group_id_offset + gate_status::PACKED_ELEMENTS)
-        })
-        .cast();
+        });
         let to_index_simd = Simd::from_slice(unsafe {
             packed_output_indexes.get_unchecked(
                 group_id_offset + 1..group_id_offset + gate_status::PACKED_ELEMENTS + 1,
             )
-        })
-        .cast();
+        });
 
-        let mut output_id_index_simd: Simd<usize, _> = from_index_simd;
-        let mut not_done_mask: Mask<isize, _> = deltas_simd.simd_ne(Simd::splat(0)).into();
+        let mut output_id_index_simd: Simd<u32, _> = from_index_simd;
+        let mut not_done_mask: Mask<i32, _> = deltas_simd.simd_ne(Simd::splat(0)).into();
         //let mut not_done_mask: Mask<isize, _> = Mask::splat(true);
         loop {
             not_done_mask &= output_id_index_simd.simd_ne(to_index_simd);
@@ -956,26 +954,25 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             }
 
             let output_id_simd = unsafe {
-                Simd::gather_select_unchecked(
+                Self::gather_select_unchecked_u32(
                     packed_outputs,
                     not_done_mask,
                     output_id_index_simd,
-                    Simd::splat(0),
                 )
             };
             let output_id_simd = output_id_simd.cast();
 
             let acc_simd = unsafe {
-                Simd::gather_select_unchecked(acc, not_done_mask, output_id_simd, Simd::splat(0))
+                Simd::gather_select_unchecked(acc, not_done_mask.cast(), output_id_simd, Simd::splat(0))
             } + deltas_simd;
-            unsafe { acc_simd.scatter_select_unchecked(acc, not_done_mask, output_id_simd) };
+            unsafe { acc_simd.scatter_select_unchecked(acc, not_done_mask.cast(), output_id_simd) };
             output_id_index_simd += Simd::splat(1);
         }
     }
 
     unsafe fn gather_select_unchecked_u32(
         slice: &[u32],
-        enable: Mask<isize, 8>,
+        enable: Mask<i32, 8>,
         idxs: Simd<u32, 8>,
     ) -> Simd<u32, 8> {
         const SCALE: i32 = std::mem::size_of::<u32>() as i32;
