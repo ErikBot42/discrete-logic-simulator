@@ -119,6 +119,12 @@ impl Gate {
             .zip(other.outputs.iter())
             .any(|(&a, &b)| a == b)
     }
+    fn has_overlapping_outputs_at_same_index_with_alignment_8(&self, other: &Gate) -> bool {
+        self.outputs
+            .iter()
+            .zip(other.outputs.iter())
+            .any(|(&a, &b)| (a as i32 - b as i32).abs() <= 8)
+    }
     fn new(kind: GateType, outputs: Vec<IndexType>) -> Self {
         let start_acc = match kind {
             GateType::Xnor => 1,
@@ -424,7 +430,7 @@ impl Network {
             Self::aligned_by_inner(
                 v,
                 gate_status::PACKED_ELEMENTS,
-                Gate::has_overlapping_outputs_at_same_index,
+                Gate::has_overlapping_outputs_at_same_index_with_alignment_8,
             )
         })
     }
@@ -803,8 +809,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 inner.kind[x + id_packed * gate_status::PACKED_ELEMENTS] == GateType::Cluster
             });
 
-            //let is_cluster = [CLUSTER; 8];
-
             let delta_p =
                 gate_status::eval_mut_scalar_masked::<CLUSTER>(status_p, *acc_p, is_cluster);
             if delta_p == 0 {
@@ -944,7 +948,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     .offset(group_id_offset as isize),
             ))
         };
-        let from_index_simd: Simd<u32, 8> = from_index_mm.into();
         let to_index_mm = unsafe {
             _mm256_loadu_si256(transmute(
                 packed_output_indexes
@@ -952,10 +955,8 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     .offset(group_id_offset as isize + 1),
             ))
         };
-        let to_index_simd: Simd<u32, 8> = to_index_mm.into();
-
-        let mut output_id_index_simd: Simd<u32, _> = from_index_simd;
-        //let mut not_done_mask: Mask<i32, _> = deltas_simd.simd_ne(Simd::splat(0)).into();
+        //let mut output_id_index_simd: Simd<u32, _> = from_index_mm.into();
+        let mut output_id_index_mm = from_index_mm;
 
         let zero_mm = unsafe { _mm256_setzero_si256() };
         let ones_mm = unsafe { _mm256_set1_epi32(-1) };
@@ -977,45 +978,45 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             // bitwise and: _mm256_and_si256
             // bitwise andnot: _mm256_andnot_si256
             let is_index_at_end =
-                unsafe { _mm256_cmpeq_epi32(output_id_index_simd.into(), to_index_simd.into()) };
+                unsafe { _mm256_cmpeq_epi32(output_id_index_mm, to_index_mm) };
             not_done_mm = unsafe { _mm256_andnot_si256(is_index_at_end, not_done_mm) };
-            //not_done_mask &= output_id_index_simd.simd_ne(to_index_simd);
 
             // check if mask is zero
             if -1 == unsafe { _mm256_movemask_epi8(_mm256_cmpeq_epi32(not_done_mm, zero_mm)) } {
                 break;
             }
-
+            let output_id_simd = unsafe {
+                Self::gather_select_unchecked_u32(packed_outputs, not_done_mm, output_id_index_mm)
+            };
             let converted_not_done_mask = {
                 let t: Simd<i32, 8> = not_done_mm.into();
                 t.simd_eq(Simd::splat(-1)).into()
             };
-
-            let output_id_simd = unsafe {
-                Self::gather_select_unchecked_u32(packed_outputs, not_done_mm, output_id_index_simd)
-            };
-            let output_id_simd = output_id_simd.cast();
-
             let acc_simd = unsafe {
                 Simd::gather_select_unchecked(
                     acc,
-                    //not_done_mask.cast(),
                     converted_not_done_mask,
-                    output_id_simd,
+                    output_id_simd.cast(),
                     Simd::splat(0),
                 )
             } + deltas_simd;
             unsafe {
-                acc_simd.scatter_select_unchecked(acc, converted_not_done_mask, output_id_simd)
+                acc_simd.scatter_select_unchecked(
+                    acc,
+                    converted_not_done_mask,
+                    output_id_simd.cast(),
+                )
             };
-            output_id_index_simd += increment_simd;
+            output_id_index_mm =
+                unsafe { _mm256_add_epi32(output_id_index_mm, _mm256_set1_epi32(1)) };
+            //output_id_index_simd += increment_simd;
         }
     }
 
     unsafe fn gather_select_unchecked_u32(
         slice: &[u32],
         enable: __m256i,
-        idxs: Simd<u32, 8>,
+        idxs: __m256i,
     ) -> Simd<u32, 8> {
         const SCALE: i32 = std::mem::size_of::<u32>() as i32;
         //TODO: try unconditional gather.
@@ -1023,7 +1024,8 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             _mm256_mask_i32gather_epi32::<SCALE>(
                 _mm256_setzero_si256(),
                 transmute(slice.as_ptr()),
-                transmute::<Simd<u32, _>, Simd<i32, _>>(idxs).into(),
+                idxs,
+                //transmute::<Simd<u32, _>, Simd<i32, _>>(idxs).into(),
                 //transmute::<Mask<i32, _>, __m256i>(enable),
                 enable,
             )
