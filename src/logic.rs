@@ -959,7 +959,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
         let zero_mm = unsafe { _mm256_setzero_si256() };
         let ones_mm = unsafe { _mm256_set1_epi32(-1) };
-        
+
         //TODO: PERF: there is another intrinsic for this.
         let mut not_done_mm = unsafe {
             _mm256_andnot_si256(
@@ -981,16 +981,17 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             not_done_mm = unsafe { _mm256_andnot_si256(is_index_at_end, not_done_mm) };
             not_done_mask &= output_id_index_simd.simd_ne(to_index_simd);
 
-            if not_done_mask == Mask::splat(false) {
+            // check if mask is zero
+            if -1 == unsafe { _mm256_movemask_epi8(_mm256_cmpeq_epi32(not_done_mm, zero_mm)) } {
                 break;
             }
 
+            //if not_done_mask == Mask::splat(false) {
+            //    break;
+            //}
+
             let output_id_simd = unsafe {
-                Self::gather_select_unchecked_u32(
-                    packed_outputs,
-                    not_done_mm,
-                    output_id_index_simd,
-                )
+                Self::gather_select_unchecked_u32(packed_outputs, not_done_mm, output_id_index_simd)
             };
             let output_id_simd = output_id_simd.cast();
 
