@@ -955,7 +955,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         let to_index_simd: Simd<u32, 8> = to_index_mm.into();
 
         let mut output_id_index_simd: Simd<u32, _> = from_index_simd;
-        let mut not_done_mask: Mask<i32, _> = deltas_simd.simd_ne(Simd::splat(0)).into();
+        //let mut not_done_mask: Mask<i32, _> = deltas_simd.simd_ne(Simd::splat(0)).into();
 
         let zero_mm = unsafe { _mm256_setzero_si256() };
         let ones_mm = unsafe { _mm256_set1_epi32(-1) };
@@ -979,16 +979,17 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             let is_index_at_end =
                 unsafe { _mm256_cmpeq_epi32(output_id_index_simd.into(), to_index_simd.into()) };
             not_done_mm = unsafe { _mm256_andnot_si256(is_index_at_end, not_done_mm) };
-            not_done_mask &= output_id_index_simd.simd_ne(to_index_simd);
+            //not_done_mask &= output_id_index_simd.simd_ne(to_index_simd);
 
             // check if mask is zero
             if -1 == unsafe { _mm256_movemask_epi8(_mm256_cmpeq_epi32(not_done_mm, zero_mm)) } {
                 break;
             }
 
-            //if not_done_mask == Mask::splat(false) {
-            //    break;
-            //}
+            let converted_not_done_mask = {
+                let t: Simd<i32, 8> = not_done_mm.into();
+                t.simd_eq(Simd::splat(-1)).into()
+            };
 
             let output_id_simd = unsafe {
                 Self::gather_select_unchecked_u32(packed_outputs, not_done_mm, output_id_index_simd)
@@ -998,12 +999,15 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             let acc_simd = unsafe {
                 Simd::gather_select_unchecked(
                     acc,
-                    not_done_mask.cast(),
+                    //not_done_mask.cast(),
+                    converted_not_done_mask,
                     output_id_simd,
                     Simd::splat(0),
                 )
             } + deltas_simd;
-            unsafe { acc_simd.scatter_select_unchecked(acc, not_done_mask.cast(), output_id_simd) };
+            unsafe {
+                acc_simd.scatter_select_unchecked(acc, converted_not_done_mask, output_id_simd)
+            };
             output_id_index_simd += increment_simd;
         }
     }
