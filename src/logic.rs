@@ -955,7 +955,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     .offset(group_id_offset as isize + 1),
             ))
         };
-        //let mut output_id_index_simd: Simd<u32, _> = from_index_mm.into();
         let mut output_id_index_mm = from_index_mm;
 
         let zero_mm = unsafe { _mm256_setzero_si256() };
@@ -972,7 +971,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         // hopefully the compiler understands that these are constant.
         // using `gather_u32`, I can still use indexes
 
-        let increment_simd: Simd<u32, 8> = Simd::splat(1);
         loop {
             // check equality: _mm256_cmpeq_epi32
             // bitwise and: _mm256_and_si256
@@ -1009,7 +1007,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             };
             output_id_index_mm =
                 unsafe { _mm256_add_epi32(output_id_index_mm, _mm256_set1_epi32(1)) };
-            //output_id_index_simd += increment_simd;
         }
     }
 
