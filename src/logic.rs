@@ -708,7 +708,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     #[must_use]
     pub(crate) fn get_state(&self, gate_id: usize) -> bool {
         let gate_id = self.i.translation_table[gate_id];
-        //self.state[gate_id as usize] != 0
         match Self::STRATEGY {
             UpdateStrategy::ScalarSimd => {
                 gate_status::get_state_from_packed_slice(&self.i.status_packed, gate_id as usize)
@@ -814,7 +813,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             let packed_output_indexes = &inner.packed_output_indexes;
             let packed_outputs = &inner.packed_outputs;
             let acc_packed = &mut inner.acc_packed;
-            Self::propagate_delta_to_accs_scalar(
+            Self::propagate_delta_to_accs_scalar_simd(
                 delta_p,
                 id_packed,
                 acc_packed,
