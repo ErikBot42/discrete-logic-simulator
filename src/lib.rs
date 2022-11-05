@@ -87,7 +87,7 @@ mod tests {
                 for ((name, mut unoptimized), (_, mut optimized)) in
                     unoptimized.into_iter().zip(optimized.into_iter())
                 {
-                    for i in 0..100 {
+                    for i in 0..30 {
                         assert_eq!(
                             unoptimized.make_state_vec(),
                             optimized.make_state_vec(),
@@ -222,10 +222,10 @@ mod tests {
     fn scalar_regression_test_unoptimized() {
         assert!(scalar_test(false));
     }
-    //#[test]
-    //fn scalar_regression_test_optimized() {
-    //    assert!(scalar_test(true));
-    //}
+    #[test]
+    fn scalar_regression_test_optimized() {
+        assert!(scalar_test(true));
+    }
 
     #[test]
     fn simd_regression_test_unoptimized() {

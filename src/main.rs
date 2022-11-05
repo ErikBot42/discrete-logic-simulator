@@ -13,7 +13,7 @@ fn main() {
     //let string = include_str!("../test_files/invalid_base64.blueprint");
     //let string = include_str!("../test_files/invalid_zstd.blueprint");
 
-    let mut board: VcbBoard<0> = Parser::parse(string, true);
+    let mut board: VcbBoard<1> = Parser::parse(string, true);
 
     let args: Vec<String> = std::env::args().collect();
 

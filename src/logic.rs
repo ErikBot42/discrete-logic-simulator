@@ -4,9 +4,10 @@
 #![allow(dead_code)]
 
 pub mod gate_status;
+use core::arch::x86_64::*;
 use itertools::{iproduct, Itertools};
-use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::mem::transmute;
 use std::simd::{LaneCount, Mask, Simd, SimdPartialEq, SupportedLaneCount};
 //use std::mem::transmute;
 
@@ -111,6 +112,12 @@ pub(crate) struct Gate {
 impl Gate {
     fn has_overlapping_outputs(&self, other: &Gate) -> bool {
         iproduct!(self.outputs.iter(), other.outputs.iter()).any(|(&a, &b)| a == b)
+    }
+    fn has_overlapping_outputs_at_same_index(&self, other: &Gate) -> bool {
+        self.outputs
+            .iter()
+            .zip(other.outputs.iter())
+            .any(|(&a, &b)| a == b)
     }
     fn new(kind: GateType, outputs: Vec<IndexType>) -> Self {
         let start_acc = match kind {
@@ -411,22 +418,16 @@ impl Network {
                 .cmp(&b.outputs.len())
                 .then(a.kind.cmp(&b.kind))
         };
+        // TODO: PERF: reorder outputs to try and fit more outputs in single group
         self.reordered_by(|mut v| {
             v.sort_by(|(_, a), (_, b)| sort(a, b));
             Self::aligned_by_inner(
                 v,
                 gate_status::PACKED_ELEMENTS,
-                Gate::has_overlapping_outputs,
+                Gate::has_overlapping_outputs_at_same_index,
             )
         })
     }
-
-    //fn sorted_by<F: FnMut(&Gate, &Gate) -> Ordering>(&self, mut cmp: F) -> Self {
-    //    self.reordered_by(|mut v| {
-    //        v.sort_by(|(_, a), (_, b)| cmp(a, b));
-    //        v.into_iter().map(|(a, b)| Some((a, b.clone()))).collect()
-    //    })
-    //}
 
     /// List will have each group of `elements` in such that cmp will return false.
     /// Will also make sure list is a multiple of `elements`
@@ -825,7 +826,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
     /// Update all gates in update list.
     /// Appends next update list.
-    #[inline]
+    #[inline(never)]
     fn update_gates_in_list<const CLUSTER: bool>(
         inner: &mut CompiledNetworkInner,
         update_list: &[IndexType],
@@ -859,6 +860,67 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
     }
 
+    /// NOTE: this assumes that all outputs are non overlapping.
+    /// this HAS to be resolved when network is compiled
+    /// TODO: `debug_assert` this property
+    /// TODO: PERF: unchecked reads
+    #[inline(never)]
+    fn propagate_delta_to_accs_scalar_simd_ref(
+        delta_p: gate_status::Packed,
+        id_packed: usize,
+        acc_packed: &mut [gate_status::Packed],
+        packed_output_indexes: &[IndexType],
+        packed_outputs: &[IndexType],
+    ) {
+        let group_id_offset = id_packed * gate_status::PACKED_ELEMENTS;
+        let acc: &mut [u8] = bytemuck::cast_slice_mut(acc_packed);
+        let deltas = gate_status::unpack_single(delta_p);
+        let deltas_simd = Simd::from_array(deltas);
+
+        let from_index_simd = Simd::from_slice(unsafe {
+            packed_output_indexes
+                .get_unchecked(group_id_offset..group_id_offset + gate_status::PACKED_ELEMENTS)
+        })
+        .cast();
+        let to_index_simd = Simd::from_slice(unsafe {
+            packed_output_indexes.get_unchecked(
+                group_id_offset + 1..group_id_offset + gate_status::PACKED_ELEMENTS + 1,
+            )
+        })
+        .cast();
+
+        let mut output_id_index_simd: Simd<usize, _> = from_index_simd;
+        //TODO: done if delta = 0
+        let mut not_done_mask: Mask<isize, _> = deltas_simd.simd_ne(Simd::splat(0)).into();
+        //let mut not_done_mask: Mask<isize, _> = Mask::splat(true);
+        loop {
+            not_done_mask &= output_id_index_simd.simd_ne(to_index_simd);
+
+            if not_done_mask == Mask::splat(false) {
+                break;
+            }
+
+            let output_id_simd = unsafe {
+                Simd::gather_select_unchecked(
+                    packed_outputs,
+                    not_done_mask,
+                    output_id_index_simd,
+                    Simd::splat(0),
+                )
+            };
+            let output_id_simd = output_id_simd.cast();
+
+            let acc_simd = unsafe {
+                Simd::gather_select_unchecked(acc, not_done_mask, output_id_simd, Simd::splat(0))
+            } + deltas_simd;
+            unsafe { acc_simd.scatter_select_unchecked(acc, not_done_mask, output_id_simd) };
+            output_id_index_simd += Simd::splat(1);
+
+            //TODO: "add to update list" functionality
+        }
+    }
+    // This uses direct intrinsics instead.
+    #[inline(never)]
     fn propagate_delta_to_accs_scalar_simd(
         delta_p: gate_status::Packed,
         id_packed: usize,
@@ -866,53 +928,70 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         packed_output_indexes: &[IndexType],
         packed_outputs: &[IndexType],
     ) {
-        // NOTE: this assumes that all outputs are non overlapping.
-        // this can be resolved when network is generated
-        // TODO: debug_assert this property
+        let group_id_offset = id_packed * gate_status::PACKED_ELEMENTS;
+        let acc: &mut [u8] = bytemuck::cast_slice_mut(acc_packed);
+        let deltas = gate_status::unpack_single(delta_p);
+        let deltas_simd = Simd::from_array(deltas);
 
-        // TODO: PERF: unchecked reads
-
-        let group_id_offset = dbg!(id_packed * gate_status::PACKED_ELEMENTS);
-        let acc: &mut [u8] = dbg!(bytemuck::cast_slice_mut(acc_packed));
-        let deltas = dbg!(gate_status::unpack_single(delta_p));
-        let deltas_simd: Simd<u8, _> = dbg!(Simd::from_array(deltas));
-
-        let from_index_simd: Simd<IndexType, { gate_status::PACKED_ELEMENTS }> = Simd::from_slice(
-            &packed_output_indexes[group_id_offset..group_id_offset + gate_status::PACKED_ELEMENTS],
-        );
-        let to_index_simd: Simd<usize, { gate_status::PACKED_ELEMENTS }> = Simd::from_slice(
-            &packed_output_indexes
-                [group_id_offset + 1..group_id_offset + gate_status::PACKED_ELEMENTS + 1],
-        )
+        let from_index_simd = Simd::from_slice(unsafe {
+            packed_output_indexes
+                .get_unchecked(group_id_offset..group_id_offset + gate_status::PACKED_ELEMENTS)
+        })
+        .cast();
+        let to_index_simd = Simd::from_slice(unsafe {
+            packed_output_indexes.get_unchecked(
+                group_id_offset + 1..group_id_offset + gate_status::PACKED_ELEMENTS + 1,
+            )
+        })
         .cast();
 
-        let mut output_id_index_simd: Simd<usize, _> = from_index_simd.cast();
-        //TODO: done if delta = 0
-        let mut not_done_mask: Mask<isize, _> = Mask::splat(true);
+        let mut output_id_index_simd: Simd<usize, _> = from_index_simd;
+        let mut not_done_mask: Mask<isize, _> = deltas_simd.simd_ne(Simd::splat(0)).into();
+        //let mut not_done_mask: Mask<isize, _> = Mask::splat(true);
         loop {
+            not_done_mask &= output_id_index_simd.simd_ne(to_index_simd);
 
-            let has_not_reached_final_index_mask = output_id_index_simd.simd_ne(to_index_simd);
-            not_done_mask &= has_not_reached_final_index_mask;
-
-            if dbg!(not_done_mask) == Mask::splat(false) {
+            if not_done_mask == Mask::splat(false) {
                 break;
             }
 
-            let output_id_simd = Simd::gather_select(
-                packed_outputs,
-                not_done_mask,
-                output_id_index_simd,
-                Simd::splat(0),
-            )
-            .cast();
-            let acc_simd = Simd::gather_select(acc, not_done_mask, output_id_simd, Simd::splat(0))
-                + deltas_simd;
-            acc_simd.scatter_select(acc, not_done_mask, output_id_simd);
+            let output_id_simd = unsafe {
+                Simd::gather_select_unchecked(
+                    packed_outputs,
+                    not_done_mask,
+                    output_id_index_simd,
+                    Simd::splat(0),
+                )
+            };
+            let output_id_simd = output_id_simd.cast();
+
+            let acc_simd = unsafe {
+                Simd::gather_select_unchecked(acc, not_done_mask, output_id_simd, Simd::splat(0))
+            } + deltas_simd;
+            unsafe { acc_simd.scatter_select_unchecked(acc, not_done_mask, output_id_simd) };
             output_id_index_simd += Simd::splat(1);
         }
     }
 
+    unsafe fn gather_select_unchecked_u32(
+        slice: &[u32],
+        enable: Mask<isize, 8>,
+        idxs: Simd<u32, 8>,
+    ) -> Simd<u32, 8> {
+        const SCALE: i32 = std::mem::size_of::<u32>() as i32;
+        unsafe {
+            _mm256_mask_i32gather_epi32::<SCALE>(
+                _mm256_setzero_si256(),
+                transmute(slice.as_ptr()),
+                transmute::<Simd<u32, _>, Simd<i32, _>>(idxs).into(),
+                transmute::<Mask<i32, _>, __m256i>(enable.into()),
+            )
+            .into()
+        }
+    }
+
     /// Reference impl
+    #[inline(never)]
     fn propagate_delta_to_accs_scalar(
         delta_p: gate_status::Packed,
         id_packed: usize,

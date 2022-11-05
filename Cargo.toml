@@ -28,6 +28,7 @@ autotests = true
 debug = true
 
 [rust]
+rustflags = ["-C", "target-cpu=native"]
 debuginfo-level = 2
 opt-level = 0
 
