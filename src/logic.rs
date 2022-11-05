@@ -872,10 +872,10 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
         // TODO: PERF: unchecked reads
 
-        let group_id_offset = id_packed * gate_status::PACKED_ELEMENTS;
-        let acc: &mut [u8] = bytemuck::cast_slice_mut(acc_packed);
-        let deltas = gate_status::unpack_single(delta_p);
-        let deltas_simd: Simd<u8, _> = Simd::from_array(deltas);
+        let group_id_offset = dbg!(id_packed * gate_status::PACKED_ELEMENTS);
+        let acc: &mut [u8] = dbg!(bytemuck::cast_slice_mut(acc_packed));
+        let deltas = dbg!(gate_status::unpack_single(delta_p));
+        let deltas_simd: Simd<u8, _> = dbg!(Simd::from_array(deltas));
 
         let from_index_simd: Simd<IndexType, { gate_status::PACKED_ELEMENTS }> = Simd::from_slice(
             &packed_output_indexes[group_id_offset..group_id_offset + gate_status::PACKED_ELEMENTS],
@@ -885,20 +885,16 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 [group_id_offset + 1..group_id_offset + gate_status::PACKED_ELEMENTS + 1],
         )
         .cast();
+
         let mut output_id_index_simd: Simd<usize, _> = from_index_simd.cast();
         //TODO: done if delta = 0
         let mut not_done_mask: Mask<isize, _> = Mask::splat(true);
         loop {
-            // TODO: test/mask done & break
 
-            //
-            // ... update mask status ...
-            //
+            let has_not_reached_final_index_mask = output_id_index_simd.simd_ne(to_index_simd);
+            not_done_mask &= has_not_reached_final_index_mask;
 
-            let has_reached_final_index_mask = output_id_index_simd.simd_eq(to_index_simd);
-            not_done_mask &= has_reached_final_index_mask;
-
-            if not_done_mask == Mask::splat(false) {
+            if dbg!(not_done_mask) == Mask::splat(false) {
                 break;
             }
 
