@@ -936,6 +936,10 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         let acc: &mut [u8] = bytemuck::cast_slice_mut(acc_packed);
         let deltas = gate_status::unpack_single(delta_p);
         let deltas_simd = Simd::from_array(deltas);
+        let deltas_mm: __m256i = {
+            let t: Simd<i32, _> = deltas_simd.cast();
+            t.into()
+        };
 
         // TODO: These reads need to be 256-bit (32 byte) aligned to work with _mm256_load_si256
         // _mm256_loadu_si256 has no alignment requirements
@@ -994,7 +998,44 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 t.simd_eq(Simd::splat(-1)).into()
             };
 
-            //unsafe { _mm256_mask_i32gather_epi32::<{ std::mem::size_of::<u8>() }>(zero_mm, acc, output_id_index_mm) };
+            //TODO: PERF: this only needs align(4)
+            // Increment acc, but only one byte is relevant, so it is masked out.
+            let acc_mm = unsafe {
+                _mm256_mask_i32gather_epi32::<{ std::mem::size_of::<u8>() as i32 }>(
+                    zero_mm,
+                    transmute(acc.as_ptr()),
+                    output_id_index_mm,
+                    not_done_mm,
+                )
+            };
+            let acc_incremented_mm = unsafe { _mm256_add_epi32(acc_mm, deltas_mm) };
+            let first_byte_mm = unsafe { _mm256_set1_epi32(0b1111_1111) };
+            let acc_masked_mm = unsafe { _mm256_and_si256(first_byte_mm, acc_incremented_mm) };
+            let acc_kept_bits_mm = unsafe { _mm256_andnot_si256(first_byte_mm, acc_mm) };
+            let acc_new = unsafe { _mm256_or_si256(acc_masked_mm, acc_kept_bits_mm) };
+
+            //_mm256_mask_i32scatter_epi32();
+            //
+            //unsafe {
+            //    //std::arch::asm!(
+            //    //    "popcnt {popcnt}, {v}",
+            //    //    "2:",
+            //    //    "blsi rax, {v}",
+            //    //    "jz 1f",
+            //    //    "xor {v}, rax",
+            //    //    "tzcnt rax, rax",
+            //    //    "stosb",
+            //    //    "jmp 2b",
+            //    //    "1:",
+            //    //    v = inout(reg) value => _,
+            //    //    popcnt = out(reg) popcnt,
+            //    //    out("rax") _, // scratch
+            //    //    inout("rdi") bits.as_mut_ptr() => _,
+            //    //);
+            //    std::arch::asm!(
+            //        "",
+            //    );
+            //}
 
             let acc_simd = unsafe {
                 Simd::gather_select_unchecked(
