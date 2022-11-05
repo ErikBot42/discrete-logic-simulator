@@ -975,35 +975,37 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             // check equality: _mm256_cmpeq_epi32
             // bitwise and: _mm256_and_si256
             // bitwise andnot: _mm256_andnot_si256
-            let is_index_at_end =
-                unsafe { _mm256_cmpeq_epi32(output_id_index_mm, to_index_mm) };
+            let is_index_at_end = unsafe { _mm256_cmpeq_epi32(output_id_index_mm, to_index_mm) };
             not_done_mm = unsafe { _mm256_andnot_si256(is_index_at_end, not_done_mm) };
 
             // check if mask is zero
             if -1 == unsafe { _mm256_movemask_epi8(_mm256_cmpeq_epi32(not_done_mm, zero_mm)) } {
                 break;
             }
-            let output_id_simd = unsafe {
+            let output_id_mm = unsafe {
                 Self::gather_select_unchecked_u32(packed_outputs, not_done_mm, output_id_index_mm)
+            };
+            let output_id_simd = {
+                let t: Simd<u32, 8> = output_id_mm.into();
+                t.cast()
             };
             let converted_not_done_mask = {
                 let t: Simd<i32, 8> = not_done_mm.into();
                 t.simd_eq(Simd::splat(-1)).into()
             };
+
+            //unsafe { _mm256_mask_i32gather_epi32::<{ std::mem::size_of::<u8>() }>(zero_mm, acc, output_id_index_mm) };
+
             let acc_simd = unsafe {
                 Simd::gather_select_unchecked(
                     acc,
                     converted_not_done_mask,
-                    output_id_simd.cast(),
+                    output_id_simd,
                     Simd::splat(0),
                 )
             } + deltas_simd;
             unsafe {
-                acc_simd.scatter_select_unchecked(
-                    acc,
-                    converted_not_done_mask,
-                    output_id_simd.cast(),
-                )
+                acc_simd.scatter_select_unchecked(acc, converted_not_done_mask, output_id_simd)
             };
             output_id_index_mm =
                 unsafe { _mm256_add_epi32(output_id_index_mm, _mm256_set1_epi32(1)) };
@@ -1014,7 +1016,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         slice: &[u32],
         enable: __m256i,
         idxs: __m256i,
-    ) -> Simd<u32, 8> {
+    ) -> __m256i {
         const SCALE: i32 = std::mem::size_of::<u32>() as i32;
         //TODO: try unconditional gather.
         unsafe {
@@ -1026,7 +1028,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 //transmute::<Mask<i32, _>, __m256i>(enable),
                 enable,
             )
-            .into()
+            //.into()
         }
     }
 
