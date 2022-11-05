@@ -999,14 +999,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     not_done_mm,
                 )
             };
-            let output_id_simd = {
-                let t: Simd<u32, 8> = output_id_mm.into();
-                t.cast()
-            };
-            let converted_not_done_mask = {
-                let t: Simd<i32, 8> = not_done_mm.into();
-                t.simd_eq(Simd::splat(-1)).into()
-            };
 
             //TODO: PERF: this only needs align(4)
             // Increment acc, but only one byte is relevant, so it is masked out.
@@ -1038,30 +1030,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 acc[index as usize] = this_acc;
             }
 
-            let acc_simd = unsafe {
-                Simd::gather_select_unchecked(
-                    acc,
-                    converted_not_done_mask,
-                    output_id_simd,
-                    Simd::splat(0),
-                )
-            };
-            let acc_simd = acc_simd + deltas_simd;
-            //assert_eq!(
-            //    *acc_simd.as_array(),
-            //    bytemuck::cast::<_, [[u8; 4]; 8]>(acc_mm).map(|x| x[0]),
-            //    "acc_mm: {:?}, ",
-            //    bytemuck::cast::<_, [[u8; 4]; 8]>(acc_mm)
-            //);
-            //acc_simd
-            //    .as_array()
-            //    .iter()
-            //    .zip(accs)
-            //    .enumerate()
-            //    .for_each(|(i, (&a, b))| assert_eq!(a, b,"{i}, {accs:?}, {acc_incremented_mm:?}, {deltas_simd:?} {not_done_mm:?}"));
-            unsafe {
-                //acc_simd.scatter_select_unchecked(acc, converted_not_done_mask, output_id_simd)
-            };
             output_id_index_mm =
                 unsafe { _mm256_add_epi32(output_id_index_mm, _mm256_set1_epi32(1)) };
         }
