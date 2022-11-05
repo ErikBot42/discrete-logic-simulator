@@ -933,8 +933,10 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         let deltas = gate_status::unpack_single(delta_p);
         let deltas_simd = Simd::from_array(deltas);
 
-        //TODO: These reads need to be 256-bit (32 byte) aligned to work with _mm256_load_si256
+        // TODO: These reads need to be 256-bit (32 byte) aligned to work with _mm256_load_si256
         // _mm256_loadu_si256 has no alignment requirements
+        // TODO: Both of these could be using the aligned variant easily,
+        // iff both where separate _mm256 lists
         let from_index_mm = unsafe {
             _mm256_loadu_si256(transmute(
                 packed_output_indexes
@@ -954,8 +956,29 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
         let mut output_id_index_simd: Simd<u32, _> = from_index_simd;
         let mut not_done_mask: Mask<i32, _> = deltas_simd.simd_ne(Simd::splat(0)).into();
-        //let mut not_done_mask: Mask<isize, _> = Mask::splat(true);
+
+        let zero_mm = unsafe { _mm256_setzero_si256() };
+        let ones_mm = unsafe { _mm256_set1_epi32(-1) };
+        
+        //TODO: PERF: there is another intrinsic for this.
+        let mut not_done_mm = unsafe {
+            _mm256_andnot_si256(
+                _mm256_cmpeq_epi32(deltas_simd.cast::<u32>().into(), zero_mm),
+                ones_mm,
+            )
+        };
+        // NOTE: this will be diffrent when using intrinsics
+        // hopefully the compiler understands that these are constant.
+        // using `gather_u32`, I can still use indexes
+
+        let increment_simd: Simd<u32, 8> = Simd::splat(1);
         loop {
+            // check equality: _mm256_cmpeq_epi32
+            // bitwise and: _mm256_and_si256
+            // bitwise andnot: _mm256_andnot_si256
+            let is_index_at_end =
+                unsafe { _mm256_cmpeq_epi32(output_id_index_simd.into(), to_index_simd.into()) };
+            not_done_mm = unsafe { _mm256_andnot_si256(is_index_at_end, not_done_mm) };
             not_done_mask &= output_id_index_simd.simd_ne(to_index_simd);
 
             if not_done_mask == Mask::splat(false) {
@@ -965,7 +988,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             let output_id_simd = unsafe {
                 Self::gather_select_unchecked_u32(
                     packed_outputs,
-                    not_done_mask,
+                    not_done_mm,
                     output_id_index_simd,
                 )
             };
@@ -980,22 +1003,24 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 )
             } + deltas_simd;
             unsafe { acc_simd.scatter_select_unchecked(acc, not_done_mask.cast(), output_id_simd) };
-            output_id_index_simd += Simd::splat(1);
+            output_id_index_simd += increment_simd;
         }
     }
 
     unsafe fn gather_select_unchecked_u32(
         slice: &[u32],
-        enable: Mask<i32, 8>,
+        enable: __m256i,
         idxs: Simd<u32, 8>,
     ) -> Simd<u32, 8> {
         const SCALE: i32 = std::mem::size_of::<u32>() as i32;
+        //TODO: try unconditional gather.
         unsafe {
             _mm256_mask_i32gather_epi32::<SCALE>(
                 _mm256_setzero_si256(),
                 transmute(slice.as_ptr()),
                 transmute::<Simd<u32, _>, Simd<i32, _>>(idxs).into(),
-                transmute::<Mask<i32, _>, __m256i>(enable.into()),
+                //transmute::<Mask<i32, _>, __m256i>(enable),
+                enable,
             )
             .into()
         }
