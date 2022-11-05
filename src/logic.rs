@@ -1014,7 +1014,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 _mm256_mask_i32gather_epi32::<{ std::mem::size_of::<u8>() as i32 }>(
                     zero_mm,
                     transmute(acc.as_ptr()),
-                    output_id_index_mm,
+                    output_id_mm,
                     not_done_mm,
                 )
             };
@@ -1025,17 +1025,17 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             // NOTE: it is possible to left pack and conditionally write valid elements of vector.
             // https://deplinenoise.files.wordpress.com/2015/03/gdc2015_afredriksson_simd.pdf
             let acc_and_filler: [[u8; 4]; 8] = bytemuck::cast(acc_incremented_mm);
-            let accs = acc_and_filler.map(|a| a[0]);
-            let output_ids: [u32; 8] = bytemuck::cast(output_id_index_mm);
+            let acc_new = acc_and_filler.map(|a| a[0]);
+            let output_ids: [u32; 8] = bytemuck::cast(output_id_mm);
             let not_done: [i32; 8] = bytemuck::cast(not_done_mm);
 
             for ((index, this_acc), _) in output_ids
                 .into_iter()
-                .zip(accs)
+                .zip(acc_new)
                 .zip(not_done.into_iter())
                 .filter(|(_, x)| *x == -1)
             {
-                //acc[index as usize] = this_acc;
+                acc[index as usize] = this_acc;
             }
 
             let acc_simd = unsafe {
@@ -1045,9 +1045,22 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     output_id_simd,
                     Simd::splat(0),
                 )
-            } + deltas_simd;
+            };
+            let acc_simd = acc_simd + deltas_simd;
+            //assert_eq!(
+            //    *acc_simd.as_array(),
+            //    bytemuck::cast::<_, [[u8; 4]; 8]>(acc_mm).map(|x| x[0]),
+            //    "acc_mm: {:?}, ",
+            //    bytemuck::cast::<_, [[u8; 4]; 8]>(acc_mm)
+            //);
+            //acc_simd
+            //    .as_array()
+            //    .iter()
+            //    .zip(accs)
+            //    .enumerate()
+            //    .for_each(|(i, (&a, b))| assert_eq!(a, b,"{i}, {accs:?}, {acc_incremented_mm:?}, {deltas_simd:?} {not_done_mm:?}"));
             unsafe {
-                acc_simd.scatter_select_unchecked(acc, converted_not_done_mask, output_id_simd)
+                //acc_simd.scatter_select_unchecked(acc, converted_not_done_mask, output_id_simd)
             };
             output_id_index_mm =
                 unsafe { _mm256_add_epi32(output_id_index_mm, _mm256_set1_epi32(1)) };
