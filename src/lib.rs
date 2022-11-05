@@ -12,6 +12,30 @@ macro_rules! unwrap_or_else {
         }
     };
 }
+macro_rules! assert_ge {
+    ($first:expr, $second:expr) => {
+        let a = $first;
+        let b = $second;
+        assert!(a >= b, "{a} < {b}");
+    };
+}
+macro_rules! assert_le {
+    ($first:expr, $second:expr) => {
+        let a = $first;
+        let b = $second;
+        assert!(a <= b, "{a} > {b}");
+    };
+}
+macro_rules! assert_le_len {
+    ($first:expr, $second:expr) => {
+        assert_le!($first.len(), $second.len());
+    };
+}
+macro_rules! assert_eq_len {
+    ($first:expr, $second:expr) => {
+        assert_eq!($first.len(), $second.len());
+    };
+}
 
 ///// Assume in release, assert in debug.
 //macro_rules! assume_debug_assert {
@@ -175,7 +199,6 @@ mod tests {
         if diff.len() != 0
         /* || diff_ids_acc.len() != 0*/
         {
-            
             //println!("got");
             //other.print();
             //println!("expected:");
@@ -187,7 +210,8 @@ mod tests {
                 "diff ids: \n{}",
                 diff.iter()
                     .map(|(i, ((ba, bb), (aa, ab)))| format!("{i}: {ba} {bb}, {aa} {ab}"))
-                    .collect::<Vec<_>>().join("\n"),
+                    .collect::<Vec<_>>()
+                    .join("\n"),
             );
             //\n{diff_ids_acc:?}
             //correct = false;

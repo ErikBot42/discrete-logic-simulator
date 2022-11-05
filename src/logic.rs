@@ -109,7 +109,7 @@ pub(crate) struct Gate {
     //TODO: "do not merge" flag for gates that are "volatile", for example handling IO
 }
 impl Gate {
-    fn has_overlapping_outputs(&self, other: Gate) -> bool {
+    fn has_overlapping_outputs(&self, other: &Gate) -> bool {
         iproduct!(self.outputs.iter(), other.outputs.iter()).any(|(&a, &b)| a == b)
     }
     fn new(kind: GateType, outputs: Vec<IndexType>) -> Self {
@@ -357,10 +357,20 @@ impl Network {
         old_translation_table: &[IndexType],
         old_to_new_id: &[IndexType],
     ) -> Vec<IndexType> {
-        old_translation_table
+        Self::create_translation_table_min_len(old_translation_table, old_to_new_id, 0)
+    }
+    fn create_translation_table_min_len(
+        old_translation_table: &[IndexType],
+        old_to_new_id: &[IndexType],
+        min_len: usize,
+    ) -> Vec<IndexType> {
+        let v: Vec<_> = old_translation_table
             .iter()
             .map(|x| old_to_new_id[*x as usize])
-            .collect()
+            .chain(old_translation_table.len() as IndexType..min_len as IndexType)
+            .collect();
+        assert_ge!(v.len(), min_len);
+        v
     }
     /// Single network optimization pass. Much like compilers,
     /// some passes make it possible for others or the same
@@ -394,21 +404,29 @@ impl Network {
             prev_network_gate_count = new_network.gates.len();
         }
     }
-    fn prep_for_scalar(&self) -> Self {
-        self.sorted_by(|a: &Gate, b: &Gate| {
+    fn optimize_for_scalar(&self) -> Self {
+        let sort = |a: &Gate, b: &Gate| {
             a.outputs
                 .len()
                 .cmp(&b.outputs.len())
                 .then(a.kind.cmp(&b.kind))
+        };
+        self.reordered_by(|mut v| {
+            v.sort_by(|(_, a), (_, b)| sort(a, b));
+            Self::aligned_by_inner(
+                v,
+                gate_status::PACKED_ELEMENTS,
+                Gate::has_overlapping_outputs,
+            )
         })
     }
 
-    fn sorted_by<F: FnMut(&Gate, &Gate) -> Ordering>(&self, mut cmp: F) -> Self {
-        self.reordered_by(|mut v| {
-            v.sort_by(|(_, a), (_, b)| cmp(a, b));
-            v.into_iter().map(|(a, b)| Some((a, b.clone()))).collect()
-        })
-    }
+    //fn sorted_by<F: FnMut(&Gate, &Gate) -> Ordering>(&self, mut cmp: F) -> Self {
+    //    self.reordered_by(|mut v| {
+    //        v.sort_by(|(_, a), (_, b)| cmp(a, b));
+    //        v.into_iter().map(|(a, b)| Some((a, b.clone()))).collect()
+    //    })
+    //}
 
     /// List will have each group of `elements` in such that cmp will return false.
     /// Will also make sure list is a multiple of `elements`
@@ -443,6 +461,7 @@ impl Network {
                 },
             }
         }
+        assert_eq!(current_group.len(), 0);
         final_list
     }
 
@@ -450,7 +469,7 @@ impl Network {
     /// Removing gates is UB, adding None is used to add padding.
     ///
     /// O(n * k) + O(reorder(n, k))
-    fn reordered_by<F: FnMut(Vec<(usize, &Gate)>) -> Vec<Option<(usize, Gate)>>>(
+    fn reordered_by<F: FnMut(Vec<(usize, &Gate)>) -> Vec<Option<(usize, &Gate)>>>(
         &self,
         mut reorder: F,
     ) -> Network {
@@ -458,14 +477,16 @@ impl Network {
 
         let gates_with_ids = reorder(gates_with_ids);
 
-        let (inverse_translation_table, gates): (Vec<Option<usize>>, Vec<Option<Gate>>) =
+        let (inverse_translation_table, gates): (Vec<Option<usize>>, Vec<Option<&Gate>>) =
             gates_with_ids
                 .into_iter()
                 .map(|o| o.map_or((None, None), |(a, b)| (Some(a), Some(b))))
                 .unzip();
+        assert_eq_len!(gates, inverse_translation_table);
         let mut translation_table: Vec<IndexType> = (0..inverse_translation_table.len())
             .map(|_| 0 as IndexType)
             .collect();
+        assert_eq_len!(gates, translation_table);
         inverse_translation_table
             .iter()
             .enumerate()
@@ -477,7 +498,8 @@ impl Network {
         let gates: Vec<Gate> = gates
             .into_iter()
             .map(|gate| {
-                if let Some(mut gate) = gate {
+                if let Some(gate) = gate {
+                    let mut gate = gate.clone();
                     gate.outputs.iter_mut().for_each(|output| {
                         *output = translation_table[*output as usize] as IndexType
                     });
@@ -490,12 +512,16 @@ impl Network {
                 }
             })
             .collect();
+        assert_eq_len!(gates, translation_table);
+        //assert_le_len!(self.translation_table, translation_table);
+        let translation_table =
+            Self::create_translation_table(&self.translation_table, &translation_table);
+        for t in translation_table.iter() {
+            assert_le!(*t as usize, gates.len());
+        }
         Self {
             gates,
-            translation_table: Self::create_translation_table(
-                &self.translation_table,
-                &translation_table,
-            ),
+            translation_table,
         }
     }
 }
@@ -521,7 +547,7 @@ pub(crate) struct CompiledNetworkInner {
     number_of_gates: usize,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum UpdateStrategy {
     #[default]
@@ -585,6 +611,9 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     }
     fn create(network: &Network, optimize: bool) -> Self {
         let mut network = network.initialized(optimize);
+        network = network.optimize_for_scalar();
+        //if Self::STRATEGY == UpdateStrategy::ScalarSimd {
+        //}
 
         let number_of_gates = network.gates.len();
         let update_list = UpdateList::collect_size(
@@ -690,7 +719,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
     }
     pub(crate) fn get_state_vec(&self) -> Vec<bool> {
-        (0..self.i.number_of_gates)
+        (0..self.i.translation_table.len())
             .map(|i| self.get_state(i))
             .collect()
     }
