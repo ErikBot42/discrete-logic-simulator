@@ -933,15 +933,24 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         let deltas = gate_status::unpack_single(delta_p);
         let deltas_simd = Simd::from_array(deltas);
 
-        let from_index_simd = Simd::from_slice(unsafe {
-            packed_output_indexes
-                .get_unchecked(group_id_offset..group_id_offset + gate_status::PACKED_ELEMENTS)
-        });
-        let to_index_simd = Simd::from_slice(unsafe {
-            packed_output_indexes.get_unchecked(
-                group_id_offset + 1..group_id_offset + gate_status::PACKED_ELEMENTS + 1,
-            )
-        });
+        //TODO: These reads need to be 256-bit (32 byte) aligned to work with _mm256_load_si256
+        // _mm256_loadu_si256 has no alignment requirements
+        let from_index_mm = unsafe {
+            _mm256_loadu_si256(transmute(
+                packed_output_indexes
+                    .as_ptr()
+                    .offset(group_id_offset as isize),
+            ))
+        };
+        let from_index_simd: Simd<u32, 8> = from_index_mm.into();
+        let to_index_mm = unsafe {
+            _mm256_loadu_si256(transmute(
+                packed_output_indexes
+                    .as_ptr()
+                    .offset(group_id_offset as isize + 1),
+            ))
+        };
+        let to_index_simd: Simd<u32, 8> = to_index_mm.into();
 
         let mut output_id_index_simd: Simd<u32, _> = from_index_simd;
         let mut not_done_mask: Mask<i32, _> = deltas_simd.simd_ne(Simd::splat(0)).into();
@@ -963,7 +972,12 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             let output_id_simd = output_id_simd.cast();
 
             let acc_simd = unsafe {
-                Simd::gather_select_unchecked(acc, not_done_mask.cast(), output_id_simd, Simd::splat(0))
+                Simd::gather_select_unchecked(
+                    acc,
+                    not_done_mask.cast(),
+                    output_id_simd,
+                    Simd::splat(0),
+                )
             } + deltas_simd;
             unsafe { acc_simd.scatter_select_unchecked(acc, not_done_mask.cast(), output_id_simd) };
             output_id_index_simd += Simd::splat(1);
