@@ -923,6 +923,16 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             //TODO: "add to update list" functionality
         }
     }
+    #[cfg(target_feature = "avx2")]
+    #[inline(always)]
+    fn assert_avx2() {}
+    #[cfg(not(target_feature = "avx2"))]
+    #[inline(always)]
+    fn assert_avx2() {
+        #[cfg(not(debug_assertions))]
+        panic!("This program was compiled without avx2, which is needed")
+    }
+
     // This uses direct intrinsics instead.
     #[inline(always)]
     fn propagate_delta_to_accs_scalar_simd(
@@ -932,6 +942,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         packed_output_indexes: &[IndexType],
         packed_outputs: &[IndexType],
     ) {
+        Self::assert_avx2();
         let zero_mm = unsafe { _mm256_setzero_si256() };
         let ones_mm = unsafe { _mm256_set1_epi32(-1) };
         let group_id_offset = id_packed * gate_status::PACKED_ELEMENTS;
@@ -974,7 +985,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             let is_index_at_end = unsafe { _mm256_cmpeq_epi32(output_id_index_mm, to_index_mm) };
             not_done_mm = unsafe { _mm256_andnot_si256(is_index_at_end, not_done_mm) };
 
-            //deltas_mm = unsafe { _mm256_and_si256(deltas_mm, not_done_mm) };
 
             //not_done_mm =
             //    unsafe { _mm256_andnot_si256(_mm256_cmpeq_epi32(deltas_mm, zero_mm), ones_mm) };
@@ -986,7 +996,10 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             // Could use masked gather, but that does not seem to be faster.
             let output_id_mm = unsafe {
                 const SCALE: i32 = std::mem::size_of::<u32>() as i32;
-                _mm256_i32gather_epi32::<SCALE>(transmute(packed_outputs.as_ptr()), output_id_index_mm)
+                _mm256_i32gather_epi32::<SCALE>(
+                    transmute(packed_outputs.as_ptr()),
+                    output_id_index_mm,
+                )
             };
 
             //TODO: PERF: this only needs align(4)
@@ -996,28 +1009,25 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 _mm256_i32gather_epi32::<SCALE>(transmute(acc.as_ptr()), output_id_mm)
             };
             // NOTE: acc is 8 bit
-            let acc_incremented_mm = unsafe { _mm256_add_epi8(acc_mm, deltas_mm) };
+            deltas_mm = unsafe { _mm256_and_si256(deltas_mm, not_done_mm) };
+            let acc_incremented_mm = unsafe { _mm256_add_epi32(acc_mm, deltas_mm) };
 
             // There is no scatter on avx2, it therefore has to be done using scalars.
 
             // NOTE: it is possible to left pack and conditionally write valid elements of vector.
             // https://deplinenoise.files.wordpress.com/2015/03/gdc2015_afredriksson_simd.pdf
             let acc_and_filler: [[u8; 4]; 8] = bytemuck::cast(acc_incremented_mm);
+            let acc_prev: [[u8; 4]; 8] = bytemuck::cast(acc_mm);
             let output_ids: [u32; 8] = bytemuck::cast(output_id_mm);
             let not_done: [i32; 8] = bytemuck::cast(not_done_mm);
+            let deltas: [i32; 8] = bytemuck::cast(deltas_mm);
 
-            //for ((index, this_acc), _) in output_ids
-            //    .into_iter()
-            //    .zip(acc_and_filler.into_iter().map(|a| a[0]))
-            //    .zip(not_done.into_iter())
-            //    .filter(|(_, x)| *x == -1)
-            //{
-            //    unsafe {
-            //        *acc.get_unchecked_mut(index as usize) = this_acc;
-            //    }
-            //}
             for i in 0..8 {
                 if not_done[i] == 0 {
+                    assert_eq!(deltas[i],0);
+                    let prev_acc = acc_prev[i][0];
+                    let acc_maybe_incremented = acc_and_filler[i][0];
+                    assert_eq!(prev_acc, acc_maybe_incremented);
                     continue;
                 };
                 unsafe {
