@@ -253,9 +253,11 @@ impl Network {
             .map(|x| x as IndexType)
             .collect();
         assert_ne!(network.gates.len(), 0, "no gates where added.");
+        println!("Network before optimization:");
         self.print_info();
         if optimize {
             network = network.optimized();
+            println!("Network after optimization:");
             self.print_info();
         }
         assert_ne!(network.gates.len(), 0, "optimization removed all gates");
@@ -554,12 +556,15 @@ pub(crate) struct CompiledNetworkInner {
     number_of_gates: usize,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
 #[repr(u8)]
 pub enum UpdateStrategy {
     #[default]
+    /// Used to compare performance and check correctness.
     Reference = 0,
+    /// Pack values inside single register instead of simd
     ScalarSimd = 1,
+    /// Update gates with simd
     Simd = 2,
 }
 
@@ -645,7 +650,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         let state: Vec<u8> = gates.iter().map(|gate| gate.state as u8).collect();
 
         let acc: Vec<u8> = gates.iter().map(|gate| gate.acc).collect();
-        dbg!(gates.iter().map(|gate| gate.acc as i8).collect::<Vec<i8>>());
+        //bg!(gates.iter().map(|gate| gate.acc as i8).collect::<Vec<i8>>());
 
         let status: Vec<gate_status::Inner> = in_update_list
             .iter()
@@ -656,11 +661,11 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
         let status_packed = gate_status::pack(status.iter().copied());
         let acc_packed = gate_status::pack(acc.iter().copied());
-        dbg!(acc_packed
-            .iter()
-            .copied()
-            .map(gate_status::unpack_single)
-            .collect::<Vec<[u8; gate_status::PACKED_ELEMENTS]>>());
+        //bg!(acc_packed
+        //    .iter()
+        //    .copied()
+        //    .map(gate_status::unpack_single)
+        //    .collect::<Vec<[u8; gate_status::PACKED_ELEMENTS]>>());
 
         acc_packed
             .iter()

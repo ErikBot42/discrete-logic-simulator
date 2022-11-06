@@ -1,5 +1,6 @@
 use clap::{Parser, ValueEnum};
 use logic_simulator::blueprint::{VcbBoard, VcbParser};
+use logic_simulator::logic::UpdateStrategy;
 use std::fs::read_to_string;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -19,8 +20,9 @@ enum RunMode {
     author,
     version,
     about,
-    long_about = "Logic simulator, currently the old VCB blueprints are implemented."
+    long_about = None,
 )]
+/// Logic simulator, currently the old VCB blueprints are implemented.
 struct Args {
     /// Filepath to (old) VCB blueprint string
     #[arg(long, group = "blueprint")]
@@ -34,6 +36,10 @@ struct Args {
     #[arg(value_enum, requires = "blueprint")]
     mode: RunMode,
 
+    /// What implementation to use
+    #[arg(value_enum, requires = "blueprint", default_value_t = UpdateStrategy::default())]
+    implementation: UpdateStrategy,
+
     /// Iterations to run in bench
     #[arg(short, long, default_value_t = 10_000_000)]
     iterations: usize,
@@ -46,9 +52,9 @@ fn main() {
     println!("String {:?}!", args.blueprint_string);
     println!("Mode {:?}!", args.mode);
 
-    let string: String = match args.blueprint_string {
+    let string: String = match args.blueprint_string.clone() {
         Some(s) => s,
-        None => read_to_string(args.blueprint_file.unwrap()).expect("File should exist"),
+        None => read_to_string(args.blueprint_file.clone().unwrap()).expect("File should exist"),
     };
 
     //let string = include_str!("../test_files/big_decoder.blueprint");
@@ -60,10 +66,29 @@ fn main() {
     //let string = include_str!("../test_files/invalid_base64.blueprint");
     //let string = include_str!("../test_files/invalid_zstd.blueprint");
 
-    let mut board: VcbBoard<1> = VcbParser::parse(&string, true);
+    // branch to specific type here to remove overhead later.
+    match args.implementation {
+        UpdateStrategy::ScalarSimd => handle_board(
+            args,
+            VcbParser::<{ UpdateStrategy::ScalarSimd as u8 }>::parse(&string, true),
+        ),
+        UpdateStrategy::Reference => handle_board(
+            args,
+            VcbParser::<{ UpdateStrategy::ScalarSimd as u8 }>::parse(&string, true),
+        ),
+        UpdateStrategy::Simd => handle_board(
+            args,
+            VcbParser::<{ UpdateStrategy::ScalarSimd as u8 }>::parse(&string, true),
+        ),
+    }
+}
 
+fn handle_board<const STRATEGY: u8>(args: Args, mut board: VcbBoard<STRATEGY>) {
     match args.mode {
-        RunMode::Print => board.print(),
+        RunMode::Print => {
+            board.update();
+            board.print()
+        },
         RunMode::Run => loop {
             board.print();
             board.update();
