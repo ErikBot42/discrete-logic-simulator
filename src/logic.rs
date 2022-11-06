@@ -983,33 +983,22 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             if -1 == unsafe { _mm256_movemask_epi8(_mm256_cmpeq_epi32(not_done_mm, zero_mm)) } {
                 break;
             }
-            //if -1 == unsafe { _mm256_movemask_epi8(_mm256_cmpeq_epi32(not_done_mm, zero_mm)) } {
-            //    break;
-            //}
+            // Could use masked gather, but that does not seem to be faster.
             let output_id_mm = unsafe {
                 const SCALE: i32 = std::mem::size_of::<u32>() as i32;
-                //TODO: try unconditional gather.
-                _mm256_mask_i32gather_epi32::<SCALE>(
-                    _mm256_setzero_si256(),
-                    transmute(packed_outputs.as_ptr()),
-                    output_id_index_mm,
-                    not_done_mm,
-                )
+                _mm256_i32gather_epi32::<SCALE>(transmute(packed_outputs.as_ptr()), output_id_index_mm)
             };
 
             //TODO: PERF: this only needs align(4)
             // Increment acc, but only one byte is relevant, so it is masked out.
             let acc_mm = unsafe {
-                _mm256_mask_i32gather_epi32::<{ std::mem::size_of::<u8>() as i32 }>(
-                    zero_mm,
-                    transmute(acc.as_ptr()),
-                    output_id_mm,
-                    not_done_mm,
-                )
+                const SCALE: i32 = std::mem::size_of::<u8>() as i32;
+                _mm256_i32gather_epi32::<SCALE>(transmute(acc.as_ptr()), output_id_mm)
             };
-            // There is no scatter on avx2, it therefore has to be done using scalars.
             // NOTE: acc is 8 bit
             let acc_incremented_mm = unsafe { _mm256_add_epi8(acc_mm, deltas_mm) };
+
+            // There is no scatter on avx2, it therefore has to be done using scalars.
 
             // NOTE: it is possible to left pack and conditionally write valid elements of vector.
             // https://deplinenoise.files.wordpress.com/2015/03/gdc2015_afredriksson_simd.pdf
