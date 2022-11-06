@@ -1051,7 +1051,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     assert_eq!(prev_acc, new_acc); 
                     
                     let acc_in_memory_now = acc[output_ids[i] as usize];
-                    assert_eq!(prev_acc, acc_in_memory_now); 
+                    //assert_eq!(prev_acc, acc_in_memory_now); 
 
 
                     continue;
