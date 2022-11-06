@@ -2,6 +2,9 @@
 # discrete-logic-simulator
 Logic simulator for tick based games such as VCB
 
+## Running
+Requires the nightly rustc compiler.
+
 | file | description |
 | --- | --- |
 | `src/logic.rs` | main simulation (the interesting stuff) |
