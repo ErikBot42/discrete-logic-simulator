@@ -1,11 +1,8 @@
-//extern crate base64;
-//extern crate zstd;
-//extern crate colored;
 use clap::{Parser, ValueEnum};
 use logic_simulator::blueprint::{VcbBoard, VcbParser};
 use std::fs::read_to_string;
 use std::path::PathBuf;
-use std::string;
+use std::time::Duration;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 enum RunMode {
@@ -68,13 +65,9 @@ fn main() {
     match args.mode {
         RunMode::Print => board.print(),
         RunMode::Run => loop {
-            board.update();
             board.print();
-            let mut child = std::process::Command::new("sleep")
-                .arg("0.5")
-                .spawn()
-                .unwrap();
-            child.wait().unwrap();
+            board.update();
+            std::thread::sleep(Duration::from_millis(500));
         },
         RunMode::Bench => {
             let iterations = args.iterations;
