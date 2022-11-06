@@ -830,7 +830,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
     /// Update all gates in update list.
     /// Appends next update list.
-    #[inline(never)]
+    #[inline]
     fn update_gates_in_list<const CLUSTER: bool>(
         inner: &mut CompiledNetworkInner,
         update_list: &[IndexType],
@@ -868,7 +868,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     /// this HAS to be resolved when network is compiled
     /// TODO: `debug_assert` this property
     /// TODO: PERF: unchecked reads
-    #[inline(never)]
+    #[inline]
     fn propagate_delta_to_accs_scalar_simd_ref(
         delta_p: gate_status::Packed,
         id_packed: usize,
@@ -924,7 +924,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
     }
     // This uses direct intrinsics instead.
-    #[inline(never)]
+    #[inline(always)]
     fn propagate_delta_to_accs_scalar_simd(
         delta_p: gate_status::Packed,
         id_packed: usize,
@@ -932,17 +932,10 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         packed_output_indexes: &[IndexType],
         packed_outputs: &[IndexType],
     ) {
+        let zero_mm = unsafe { _mm256_setzero_si256() };
+        let ones_mm = unsafe { _mm256_set1_epi32(-1) };
         let group_id_offset = id_packed * gate_status::PACKED_ELEMENTS;
         let acc: &mut [u8] = bytemuck::cast_slice_mut(acc_packed);
-        let deltas = gate_status::unpack_single(delta_p);
-        let deltas_simd = Simd::from_array(deltas);
-        let deltas_mm: __m256i = {
-            let t: Simd<u32, _> = deltas_simd.cast();
-            for e in t.as_array() {
-                debug_assert_eq!(e & (!0b1111_1111), 0);
-            }
-            t.into()
-        };
 
         // TODO: These reads need to be 256-bit (32 byte) aligned to work with _mm256_load_si256
         // _mm256_loadu_si256 has no alignment requirements
@@ -962,18 +955,14 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     .offset(group_id_offset as isize + 1),
             ))
         };
+        let mut deltas_mm: __m256i = Simd::from_array(gate_status::unpack_single(delta_p))
+            .cast::<u32>()
+            .into();
         let mut output_id_index_mm = from_index_mm;
 
-        let zero_mm = unsafe { _mm256_setzero_si256() };
-        let ones_mm = unsafe { _mm256_set1_epi32(-1) };
-
         //TODO: PERF: there is another intrinsic for this.
-        let mut not_done_mm = unsafe {
-            _mm256_andnot_si256(
-                _mm256_cmpeq_epi32(deltas_simd.cast::<u32>().into(), zero_mm),
-                ones_mm,
-            )
-        };
+        let mut not_done_mm =
+            unsafe { _mm256_andnot_si256(_mm256_cmpeq_epi32(deltas_mm, zero_mm), ones_mm) };
         // NOTE: this will be diffrent when using intrinsics
         // hopefully the compiler understands that these are constant.
         // using `gather_u32`, I can still use indexes
@@ -985,10 +974,18 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             let is_index_at_end = unsafe { _mm256_cmpeq_epi32(output_id_index_mm, to_index_mm) };
             not_done_mm = unsafe { _mm256_andnot_si256(is_index_at_end, not_done_mm) };
 
+            //deltas_mm = unsafe { _mm256_and_si256(deltas_mm, not_done_mm) };
+
+            //not_done_mm =
+            //    unsafe { _mm256_andnot_si256(_mm256_cmpeq_epi32(deltas_mm, zero_mm), ones_mm) };
+
             // check if mask is zero
             if -1 == unsafe { _mm256_movemask_epi8(_mm256_cmpeq_epi32(not_done_mm, zero_mm)) } {
                 break;
             }
+            //if -1 == unsafe { _mm256_movemask_epi8(_mm256_cmpeq_epi32(not_done_mm, zero_mm)) } {
+            //    break;
+            //}
             let output_id_mm = unsafe {
                 const SCALE: i32 = std::mem::size_of::<u32>() as i32;
                 //TODO: try unconditional gather.
@@ -1017,17 +1014,26 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             // NOTE: it is possible to left pack and conditionally write valid elements of vector.
             // https://deplinenoise.files.wordpress.com/2015/03/gdc2015_afredriksson_simd.pdf
             let acc_and_filler: [[u8; 4]; 8] = bytemuck::cast(acc_incremented_mm);
-            let acc_new = acc_and_filler.map(|a| a[0]);
             let output_ids: [u32; 8] = bytemuck::cast(output_id_mm);
             let not_done: [i32; 8] = bytemuck::cast(not_done_mm);
 
-            for ((index, this_acc), _) in output_ids
-                .into_iter()
-                .zip(acc_new)
-                .zip(not_done.into_iter())
-                .filter(|(_, x)| *x == -1)
-            {
-                acc[index as usize] = this_acc;
+            //for ((index, this_acc), _) in output_ids
+            //    .into_iter()
+            //    .zip(acc_and_filler.into_iter().map(|a| a[0]))
+            //    .zip(not_done.into_iter())
+            //    .filter(|(_, x)| *x == -1)
+            //{
+            //    unsafe {
+            //        *acc.get_unchecked_mut(index as usize) = this_acc;
+            //    }
+            //}
+            for i in 0..8 {
+                if not_done[i] == 0 {
+                    continue;
+                };
+                unsafe {
+                    *acc.get_unchecked_mut(output_ids[i] as usize) = acc_and_filler[i][0];
+                }
             }
 
             output_id_index_mm =
@@ -1036,7 +1042,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     }
 
     /// Reference impl
-    #[inline(never)]
+    #[inline]
     fn propagate_delta_to_accs_scalar(
         delta_p: gate_status::Packed,
         id_packed: usize,

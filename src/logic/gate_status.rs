@@ -214,7 +214,9 @@ pub(crate) fn eval_mut_scalar_masked<const CLUSTER: bool>(
     acc: Packed,
     cluster_mask: [bool; PACKED_ELEMENTS],
 ) -> Packed {
-    let cluster_mask = or_combine(pack_single(cluster_mask.map(u8::from)));
+    let cluster_mask = or_combine(pack_single(
+        unsafe { transmute(cluster_mask) }, /*.map(u8::from)*/
+    ));
     let (active_mask, inactive_mask) = if CLUSTER {
         (cluster_mask, !cluster_mask)
     } else {
@@ -388,9 +390,11 @@ pub(crate) fn pack(mut iter: impl Iterator<Item = u8>) -> Vec<Packed> {
     }
     tmp
 }
+#[inline(always)]
 pub(crate) const fn pack_single(unpacked: [u8; PACKED_ELEMENTS]) -> Packed {
     Packed::from_le_bytes(unpacked)
 }
+#[inline(always)]
 pub(crate) const fn unpack_single(packed: Packed) -> [u8; PACKED_ELEMENTS] {
     Packed::to_le_bytes(packed)
 }

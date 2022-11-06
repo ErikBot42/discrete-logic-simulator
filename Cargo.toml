@@ -16,9 +16,9 @@ autotests = true
 
 # Very expensive, but makes 
 # code a tiny bit faster:
-#lto = true
-#codegen-units = 1
-#panic = "abort"
+lto = true
+codegen-units = 1
+panic = "abort"
 
 
 #opt-level = 3
@@ -28,7 +28,7 @@ autotests = true
 debug = true
 
 [rust]
-rustflags = ["-C", "target-cpu=native"]
+#rustflags = ["-C", "target-cpu=native"]
 debuginfo-level = 2
 opt-level = 0
 
