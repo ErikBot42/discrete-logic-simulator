@@ -985,6 +985,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             let is_index_at_end = unsafe { _mm256_cmpeq_epi32(output_id_index_mm, to_index_mm) };
             not_done_mm = unsafe { _mm256_andnot_si256(is_index_at_end, not_done_mm) };
 
+
             //not_done_mm =
             //    unsafe { _mm256_andnot_si256(_mm256_cmpeq_epi32(deltas_mm, zero_mm), ones_mm) };
 
@@ -1007,16 +1008,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 const SCALE: i32 = std::mem::size_of::<u8>() as i32;
                 _mm256_i32gather_epi32::<SCALE>(transmute(acc.as_ptr()), output_id_mm)
             };
-            {
-                let read_values: [[u8; 4]; 8] = bytemuck::cast(acc_mm);
-                for i in 0..8 {
-                    let output_ids: [u32; 8] = dbg!(bytemuck::cast(output_id_mm));
-                    assert_eq!(
-                        read_values[i][0], acc[output_ids[i] as usize],
-                        "i: {i}, output_ids: {output_ids:?}"
-                    );
-                }
-            }
             // NOTE: acc is 8 bit
             deltas_mm = unsafe { _mm256_and_si256(deltas_mm, not_done_mm) };
             let acc_incremented_mm = unsafe { _mm256_add_epi32(acc_mm, deltas_mm) };
@@ -1033,11 +1024,10 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
             for i in 0..8 {
                 if not_done[i] == 0 {
-                    assert_eq!(deltas[i], 0);
+                    assert_eq!(deltas[i],0);
                     let prev_acc = acc_prev[i][0];
-                    let acc_maybe_incremented = acc_and_filler[i][0];
-                    assert_eq!(prev_acc, acc_maybe_incremented);
-                    //assert_eq!(prev_acc, acc[output_ids[i] as usize], "i: {i}");
+                    let new_acc = acc_and_filler[i][0];
+                    assert_eq!(prev_acc, new_acc);
                     continue;
                 };
                 unsafe {
