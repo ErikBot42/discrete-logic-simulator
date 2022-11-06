@@ -15,7 +15,8 @@ autotests = true
 [profile.release]
 
 # Very expensive, but makes 
-# code a tiny bit faster:
+# code a tiny bit faster
+# Makes SIMD significantly faster
 lto = true
 codegen-units = 1
 panic = "abort"

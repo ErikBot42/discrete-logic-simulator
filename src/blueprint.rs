@@ -493,8 +493,8 @@ impl Footer {
     const SIZE: usize = 32; // 8*4 bytes
 }
 #[derive(Default)]
-pub struct Parser<const STRATEGY: u8> {}
-impl<const STRATEGY: u8> Parser<STRATEGY> {
+pub struct VcbParser<const STRATEGY: u8> {}
+impl<const STRATEGY: u8> VcbParser<STRATEGY> {
     /// # Panics
     /// invalid base64 string, invalid zstd, invalid colors
     #[must_use]

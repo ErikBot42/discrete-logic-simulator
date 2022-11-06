@@ -27,7 +27,7 @@ fn pre_parse_tests<const STRATEGY: u8>() -> Vec<(&'static str, VcbBoard<STRATEGY
             .clone()
             .into_iter()
             //.map(|x| (x.0, black_box(Parser::parse(x.1, true))))
-            .map(|x| (x.0, black_box(Parser::parse(x.1, false))))
+            .map(|x| (x.0, black_box(VcbParser::parse(x.1, false))))
             .collect();
         pre_parsed
     };
