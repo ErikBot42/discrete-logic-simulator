@@ -990,7 +990,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             let is_index_at_end = unsafe { _mm256_cmpeq_epi32(output_id_index_mm, to_index_mm) };
             not_done_mm = unsafe { _mm256_andnot_si256(is_index_at_end, not_done_mm) };
 
-
             //not_done_mm =
             //    unsafe { _mm256_andnot_si256(_mm256_cmpeq_epi32(deltas_mm, zero_mm), ones_mm) };
 
@@ -1013,7 +1012,20 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 const SCALE: i32 = std::mem::size_of::<u8>() as i32;
                 _mm256_i32gather_epi32::<SCALE>(transmute(acc.as_ptr()), output_id_mm)
             };
+            {
+                let acc_read_using_simd: [[u8; 4]; 8] = bytemuck::cast(acc_mm);
+                let output_id_from_simd: [u32; 8] = bytemuck::cast(output_id_mm);
+                for i in 0..8 {
+                    let acc_read_using_simd = acc_read_using_simd[i][0];
+                    let output_id = output_id_from_simd[i];
+                    let acc_read_from_scalar = acc[output_id as usize];
+                    assert_eq!(acc_read_using_simd, acc_read_from_scalar);
+                }
+            }
+
             // NOTE: acc is 8 bit
+
+            // TODO: Masking the deltas is now needed for some reason, oops...
             deltas_mm = unsafe { _mm256_and_si256(deltas_mm, not_done_mm) };
             let acc_incremented_mm = unsafe { _mm256_add_epi32(acc_mm, deltas_mm) };
 
@@ -1021,22 +1033,31 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
             // NOTE: it is possible to left pack and conditionally write valid elements of vector.
             // https://deplinenoise.files.wordpress.com/2015/03/gdc2015_afredriksson_simd.pdf
-            let acc_and_filler: [[u8; 4]; 8] = bytemuck::cast(acc_incremented_mm);
-            let acc_prev: [[u8; 4]; 8] = bytemuck::cast(acc_mm);
+            let acc_incremented_cast: [[u8; 4]; 8] = bytemuck::cast(acc_incremented_mm);
+            let acc_read_using_simd: [[u8; 4]; 8] = bytemuck::cast(acc_mm);
             let output_ids: [u32; 8] = bytemuck::cast(output_id_mm);
             let not_done: [i32; 8] = bytemuck::cast(not_done_mm);
             let deltas: [i32; 8] = bytemuck::cast(deltas_mm);
 
             for i in 0..8 {
                 if not_done[i] == 0 {
-                    assert_eq!(deltas[i],0);
-                    let prev_acc = acc_prev[i][0];
-                    let new_acc = acc_and_filler[i][0];
-                    assert_eq!(prev_acc, new_acc);
+                    // delta is zero here
+                    assert_eq!(deltas[i], 0);
+                    let prev_acc = acc_read_using_simd[i][0];
+                    let new_acc = acc_incremented_cast[i][0];
+
+
+                    // delta = 0 => acc is constant.
+                    assert_eq!(prev_acc, new_acc); 
+                    
+                    let acc_in_memory_now = acc[output_ids[i] as usize];
+                    assert_eq!(prev_acc, acc_in_memory_now); 
+
+
                     continue;
                 };
                 unsafe {
-                    *acc.get_unchecked_mut(output_ids[i] as usize) = acc_and_filler[i][0];
+                    *acc.get_unchecked_mut(output_ids[i] as usize) = acc_incremented_cast[i][0];
                 }
             }
 

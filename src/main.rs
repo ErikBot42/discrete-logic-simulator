@@ -74,11 +74,11 @@ fn main() {
         ),
         UpdateStrategy::Reference => handle_board(
             args,
-            VcbParser::<{ UpdateStrategy::ScalarSimd as u8 }>::parse(&string, true),
+            VcbParser::<{ UpdateStrategy::Reference as u8 }>::parse(&string, true),
         ),
         UpdateStrategy::Simd => handle_board(
             args,
-            VcbParser::<{ UpdateStrategy::ScalarSimd as u8 }>::parse(&string, true),
+            VcbParser::<{ UpdateStrategy::Simd as u8 }>::parse(&string, true),
         ),
     }
 }
