@@ -541,7 +541,7 @@ pub(crate) struct CompiledNetworkInner {
     packed_output_indexes: Vec<IndexType>,
 
     //state: Vec<u8>,
-    //in_update_list: Vec<bool>,
+    in_update_list: Vec<bool>,
     //runtime_gate_kind: Vec<RunTimeGateType>,
     acc_packed: Vec<gate_status::Packed>,
     acc: Vec<AccType>,
@@ -681,6 +681,8 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         kind.push(GateType::Or);
         kind.push(GateType::Or);
 
+        let in_update_list: Vec<bool> = (0..acc_packed.len()).map(|x| false).collect();
+
         Self {
             i: CompiledNetworkInner {
                 acc_packed,
@@ -688,7 +690,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 packed_outputs,
                 packed_output_indexes,
                 //state,
-                //in_update_list,
+                in_update_list,
                 //runtime_gate_kind,
                 status,
                 status_packed,
@@ -783,7 +785,11 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 );
             },
             UpdateStrategy::ScalarSimd => {
-                Self::update_gates_scalar::<CLUSTER>(&mut self.i);
+                Self::update_gates_scalar::<CLUSTER>(
+                    &mut self.i,
+                    &mut self.update_list,
+                    &mut self.cluster_update_list,
+                );
             },
         }
     }
@@ -804,7 +810,16 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     //TODO: Proof of concept, use an update list later
     //TODO: Separation of CLUSTER and non CLUSTER
     #[inline]
-    fn update_gates_scalar<const CLUSTER: bool>(inner: &mut CompiledNetworkInner) {
+    fn update_gates_scalar<const CLUSTER: bool>(
+        inner: &mut CompiledNetworkInner,
+        gate_update_list: &mut UpdateList,
+        cluster_update_list: &mut UpdateList,
+    ) {
+        let (update_list, next_update_list) = if CLUSTER {
+            (unsafe { cluster_update_list.get_slice() }, gate_update_list)
+        } else {
+            (unsafe { gate_update_list.get_slice() }, cluster_update_list)
+        };
         // this updates EVERY gate
         // TODO: unchecked reads.
         // TODO: case where entire group of deltas is zero
@@ -819,17 +834,53 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             if delta_p == 0 {
                 continue;
             }
+            let update_list_handler = |id: IndexType| {
+                Self::update_list_handler(
+                    id / gate_status::PACKED_ELEMENTS as u32,
+                    &mut inner.in_update_list,
+                    next_update_list,
+                )
+                //unsafe {
+                //    if !*inner.in_update_list.get_unchecked(id_p) {
+                //        next_update_list.push(id_p_32);
+                //        *inner.in_update_list.get_unchecked_mut(id_p) = true;
+                //    }
+                //}
+            };
+            //in_update_list
+            //let update_list_handler = |id: IndexType| {
+            //    Self::update_list_handler(
+            //        id / gate_status::PACKED_ELEMENTS as u32,
+            //        &mut inner.in_update_list,
+            //        next_update_list,
+            //    )
+            //};
 
             let packed_output_indexes = &inner.packed_output_indexes;
             let packed_outputs = &inner.packed_outputs;
             let acc_packed = &mut inner.acc_packed;
-            Self::propagate_delta_to_accs_scalar_simd(
+            Self::propagate_delta_to_accs_scalar(
                 delta_p,
                 id_packed,
                 acc_packed,
                 packed_output_indexes,
                 packed_outputs,
+                update_list_handler,
             );
+        }
+    }
+
+    fn update_list_handler(
+        id: IndexType,
+        in_update_list: &mut [bool],
+        next_update_list: &mut UpdateList,
+    ) {
+        let id_usize = id as usize;
+        unsafe {
+            if !*in_update_list.get_unchecked(id_usize) {
+                next_update_list.push(id);
+                *in_update_list.get_unchecked_mut(id_usize) = true;
+            }
         }
     }
 
@@ -873,7 +924,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     /// this HAS to be resolved when network is compiled
     /// TODO: `debug_assert` this property
     /// TODO: PERF: unchecked reads
-    #[inline]
+    #[inline(always)]
     fn propagate_delta_to_accs_scalar_simd_ref(
         delta_p: gate_status::Packed,
         id_packed: usize,
@@ -1012,7 +1063,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 const SCALE: i32 = std::mem::size_of::<u8>() as i32;
                 _mm256_i32gather_epi32::<SCALE>(transmute(acc.as_ptr()), output_id_mm)
             };
-            {
+            /*{
                 let acc_read_using_simd: [[u8; 4]; 8] = bytemuck::cast(acc_mm);
                 let output_id_from_simd: [u32; 8] = bytemuck::cast(output_id_mm);
                 for i in 0..8 {
@@ -1021,7 +1072,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     let acc_read_from_scalar = acc[output_id as usize];
                     assert_eq!(acc_read_using_simd, acc_read_from_scalar);
                 }
-            }
+            }*/
 
             // NOTE: acc is 8 bit
 
@@ -1039,21 +1090,52 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             let not_done: [i32; 8] = bytemuck::cast(not_done_mm);
             let deltas: [i32; 8] = bytemuck::cast(deltas_mm);
 
+            /*{
+                let acc_read_using_simd: [[u8; 4]; 8] = bytemuck::cast(acc_mm);
+                let output_id_from_simd: [u32; 8] = bytemuck::cast(output_id_mm);
+                for i in 0..8 {
+                    let acc_read_using_simd = acc_read_using_simd[i][0];
+                    let output_id = output_id_from_simd[i];
+                    let acc_read_from_scalar = acc[output_id as usize];
+                    assert_eq!(acc_read_using_simd, acc_read_from_scalar);
+                }
+            }*/
+            /*{
+                let output_range: [i32; 8] =
+                    bytemuck::cast(unsafe { _mm256_sub_epi32(to_index_mm, from_index_mm) });
+                let output_ids: [u32; 8] = bytemuck::cast(output_id_mm);
+                let deltas: [i32; 8] = bytemuck::cast(deltas_mm);
+                let a = output_ids.clone();
+                let mut a_sorted = a;
+                a_sorted.sort();
+                assert_eq!(
+                    a.into_iter().dedup().count(),
+                    8,
+                    "{a:?} output_ids: {output_ids:?}, deltas: {deltas:?}, output_range: {output_range:?}"
+                );
+            }*/
+
+            //TODO: problem is caused by shared ids overlapping in the packed array, adding dummy
+            // outputs is a potential fix, but may cause memory issues.
+
+            // delta is zero here
+            //assert_eq!(deltas[i], 0);
+            //let prev_acc = acc_read_using_simd[i][0];
+            //let new_acc = acc_incremented_cast[i][0];
+
+            //// delta = 0 => acc is constant.
+            //assert_eq!(prev_acc, new_acc);
+            //let output_range: [i32; 8] =
+            //    bytemuck::cast(unsafe { _mm256_sub_epi32(to_index_mm, from_index_mm) });
+
+            //let acc_in_memory_now = acc[output_ids[i] as usize];
+            //assert_eq!(prev_acc, acc_in_memory_now, "output_range: {output_range:?}, {acc_read_using_simd:?}");
             for i in 0..8 {
-                if not_done[i] == 0 {
-                    // delta is zero here
-                    assert_eq!(deltas[i], 0);
-                    let prev_acc = acc_read_using_simd[i][0];
-                    let new_acc = acc_incremented_cast[i][0];
-
-
-                    // delta = 0 => acc is constant.
-                    assert_eq!(prev_acc, new_acc); 
-                    
-                    let acc_in_memory_now = acc[output_ids[i] as usize];
-                    //assert_eq!(prev_acc, acc_in_memory_now); 
-
-
+                let not_done = not_done[i];
+                unsafe {
+                    std::intrinsics::assume(not_done == 0 || not_done == -1);
+                }
+                if not_done == 0 {
                     continue;
                 };
                 unsafe {
@@ -1067,13 +1149,14 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     }
 
     /// Reference impl
-    #[inline]
-    fn propagate_delta_to_accs_scalar(
+    #[inline(never)]
+    fn propagate_delta_to_accs_scalar<F: FnMut(IndexType)>(
         delta_p: gate_status::Packed,
         id_packed: usize,
         acc_packed: &mut [gate_status::Packed],
         packed_output_indexes: &[IndexType],
         packed_outputs: &[IndexType],
+        update_list_handler: F,
     ) {
         let group_id_offset = id_packed * gate_status::PACKED_ELEMENTS;
         let acc = bytemuck::cast_slice_mut(acc_packed);
