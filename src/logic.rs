@@ -54,6 +54,9 @@ impl GateType {
             GateType::Xor | GateType::Xnor => false,
         }
     }
+    fn is_cluster(self) -> bool {
+        matches!(self, GateType::Cluster)
+    }
 }
 
 /// the only cases that matter at the hot code sections
@@ -124,6 +127,9 @@ impl Gate {
             .iter()
             .zip(other.outputs.iter())
             .any(|(&a, &b)| (a as i32 - b as i32).abs() <= 8)
+    }
+    fn is_cluster_a_xor_is_cluster_b(&self, other: &Gate) -> bool {
+        (self.kind == GateType::Cluster) != (other.kind == GateType::Cluster)
     }
     fn new(kind: GateType, outputs: Vec<IndexType>) -> Self {
         let start_acc = match kind {
@@ -420,19 +426,20 @@ impl Network {
         }
     }
     fn optimize_for_scalar(&self) -> Self {
-        let sort = |a: &Gate, b: &Gate| {
-            a.outputs
-                .len()
-                .cmp(&b.outputs.len())
-                .then(a.kind.cmp(&b.kind))
-        };
+        //let sort = |a: &Gate, b: &Gate| {
+        //    //let by_number_of_outputs = a.outputs.len().cmp(&b.outputs.len());
+        //    //let by_kind = a.kind.cmp(&b.kind);
+
+        //    //by_number_of_outputs.then(by_kind)
+        //};
         // TODO: PERF: reorder outputs to try and fit more outputs in single group
-        self.reordered_by(|mut v| {
-            v.sort_by(|(_, a), (_, b)| sort(a, b));
+        self.reordered_by(|v| {
+            //v.sort_by(|(_, a), (_, b)| sort(a, b));
             Self::aligned_by_inner(
                 v,
                 gate_status::PACKED_ELEMENTS,
-                Gate::has_overlapping_outputs_at_same_index_with_alignment_8,
+                Gate::is_cluster_a_xor_is_cluster_b,
+                //Gate::has_overlapping_outputs_at_same_index_with_alignment_8,
             )
         })
     }
@@ -834,14 +841,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             if delta_p == 0 {
                 continue;
             }
-            let update_list_handler = |id: IndexType| {
-                Self::update_list_handler(
-                    id / gate_status::PACKED_ELEMENTS as u32,
-                    &mut inner.in_update_list,
-                    next_update_list,
-                )
-            };
-
             let packed_output_indexes = &inner.packed_output_indexes;
             let packed_outputs = &inner.packed_outputs;
             let acc_packed = &mut inner.acc_packed;
@@ -851,22 +850,17 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 acc_packed,
                 packed_output_indexes,
                 packed_outputs,
-                update_list_handler,
+                |id: IndexType| {
+                    let id = id / gate_status::PACKED_ELEMENTS as u32;
+                    let id_usize = id as usize;
+                    unsafe {
+                        if !*(inner.in_update_list).get_unchecked(id_usize) {
+                            next_update_list.push(id);
+                            *(inner.in_update_list).get_unchecked_mut(id_usize) = true;
+                        }
+                    }
+                },
             );
-        }
-    }
-
-    fn update_list_handler(
-        id: IndexType,
-        in_update_list: &mut [bool],
-        next_update_list: &mut UpdateList,
-    ) {
-        let id_usize = id as usize;
-        unsafe {
-            if !*in_update_list.get_unchecked(id_usize) {
-                next_update_list.push(id);
-                *in_update_list.get_unchecked_mut(id_usize) = true;
-            }
         }
     }
 
