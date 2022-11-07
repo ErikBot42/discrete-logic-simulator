@@ -840,21 +840,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     &mut inner.in_update_list,
                     next_update_list,
                 )
-                //unsafe {
-                //    if !*inner.in_update_list.get_unchecked(id_p) {
-                //        next_update_list.push(id_p_32);
-                //        *inner.in_update_list.get_unchecked_mut(id_p) = true;
-                //    }
-                //}
             };
-            //in_update_list
-            //let update_list_handler = |id: IndexType| {
-            //    Self::update_list_handler(
-            //        id / gate_status::PACKED_ELEMENTS as u32,
-            //        &mut inner.in_update_list,
-            //        next_update_list,
-            //    )
-            //};
 
             let packed_output_indexes = &inner.packed_output_indexes;
             let packed_outputs = &inner.packed_outputs;
