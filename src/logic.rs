@@ -1,4 +1,4 @@
-//! logic.rs: contains the simulaion engine itself.
+//! logic.rs: Contains the simulaion engine itself.
 
 #![allow(clippy::inline_always)]
 #![allow(dead_code)]
