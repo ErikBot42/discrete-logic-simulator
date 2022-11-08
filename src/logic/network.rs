@@ -40,46 +40,38 @@ pub(crate) struct InitializedNetwork {
     pub(crate) gates: Vec<Gate>,
     pub(crate) translation_table: Vec<IndexType>,
 }
-impl From<EditableNetwork> for InitializedNetwork {
-    fn from(network: EditableNetwork) -> Self {
-        Self {
-            translation_table: network.translation_table, /*(0..network.gates.len())
-                .into_iter()
-                .map(|x| x as IndexType)
-                .collect(),*/
-            gates: network.gates,
-        }
-    }
-}
-
-/// Contains gate graph in order to do network optimization
-/// This network has no gaps in it's layout.
-/// This network can be edited from client code.
-/// Nodes cannot be removed.
-#[derive(Debug, Default, Clone)]
-pub(crate) struct EditableNetwork {
-    pub(crate) gates: Vec<Gate>,
-    pub(crate) translation_table: Vec<IndexType>,
-}
-impl EditableNetwork {
-    /// TODO: typestate here.
-    pub(crate) fn initialized(&self, optimize: bool) -> InitializedNetwork {
-        let mut network = self.clone();
+//impl From<EditableNetwork> for InitializedNetwork {
+//    fn from(network: EditableNetwork) -> Self {
+//
+//    }
+//}
+impl InitializedNetwork {
+    fn new(network: EditableNetwork, optimize: bool) -> Self {
+        let mut network = network.clone();
         network.translation_table = (0..network.gates.len())
             .into_iter()
             .map(|x| x as IndexType)
             .collect();
         assert_ne!(network.gates.len(), 0, "no gates where added.");
         println!("Network before optimization:");
-        self.print_info();
+        network.print_info();
         if optimize {
-            network = network.optimized();
+            //network = network.optimized();
             println!("Network after optimization:");
-            self.print_info();
+            network.print_info();
         }
         assert_ne!(network.gates.len(), 0, "optimization removed all gates");
-        network.into()
+        //network.into()
+
+        Self {
+            translation_table: network.translation_table, /*(0..network.gates.len())
+                                                          .into_iter()
+                                                          .map(|x| x as IndexType)
+                                                          .collect(),*/
+            gates: network.gates,
+        }
     }
+
     /// Create input connections for the new gates, given the old gates.
     /// O(n * k)
     fn create_input_connections(
@@ -205,7 +197,7 @@ impl EditableNetwork {
         let old_translation_table = &self.translation_table;
         let new_translation_table =
             Self::create_translation_table(old_translation_table, &old_to_new_id);
-        EditableNetwork {
+        Self {
             gates: new_gates,
             translation_table: new_translation_table,
         }
@@ -283,7 +275,7 @@ impl EditableNetwork {
     fn reordered_by<F: FnMut(Vec<(usize, &Gate)>) -> Vec<Option<(usize, &Gate)>>>(
         &self,
         mut reorder: F,
-    ) -> EditableNetwork {
+    ) -> Self {
         let gates_with_ids: Vec<(usize, &Gate)> = self.gates.iter().enumerate().collect();
 
         let gates_with_ids = reorder(gates_with_ids);
@@ -334,5 +326,20 @@ impl EditableNetwork {
             gates,
             translation_table,
         }
+    }
+}
+
+/// Contains gate graph in order to do network optimization
+/// This network has no gaps in it's layout.
+/// This network can be edited from client code.
+/// Nodes cannot be removed.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct EditableNetwork {
+    pub(crate) gates: Vec<Gate>,
+    pub(crate) translation_table: Vec<IndexType>,
+}
+impl EditableNetwork {
+    pub(crate) fn initialized(&self, optimize: bool) -> InitializedNetwork {
+        InitializedNetwork::new(self.clone(), optimize)
     }
 }
