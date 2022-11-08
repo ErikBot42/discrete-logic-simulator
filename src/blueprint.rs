@@ -508,7 +508,7 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             std::mem::transmute::<[u8; Footer::SIZE], Footer>(footer_bytes)
         });
         assert!(footer.layer == Layer::Logic);
-        let data = zstd::bulk::decompress(data_bytes, 1 << 32).unwrap();
+        let data = zstd::bulk::decompress(data_bytes, 1 << 27).unwrap();
         assert!(!data.is_empty());
         assert!(data.len() == footer.count * 4);
         VcbBoard::new(&data, footer.width, footer.height, optimize)
