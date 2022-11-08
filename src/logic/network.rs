@@ -28,6 +28,11 @@ impl NetworkInfo for EditableNetwork {
         self.gates.iter().map(|x| x.outputs.len()).collect()
     }
 }
+impl NetworkInfo for InitializedNetwork {
+    fn output_counts(&self) -> Vec<usize> {
+        self.gates.iter().map(|x| x.outputs.len()).collect()
+    }
+}
 
 /// Contains translation table and can no longer be edited by client.
 /// Can be edited for optimizations.
@@ -45,6 +50,9 @@ impl From<EditableNetwork> for InitializedNetwork {
             gates: network.gates,
         }
     }
+}
+impl InitializedNetwork {
+
 }
 
 /// Contains gate graph in order to do network optimization

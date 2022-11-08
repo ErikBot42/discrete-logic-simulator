@@ -1,7 +1,7 @@
 //! logic.rs: Contains the simulaion engine itself.
 
 #![allow(clippy::inline_always)]
-#![allow(dead_code)]
+//#![allow(dead_code)]
 
 pub mod gate_status;
 pub mod network;
@@ -692,18 +692,18 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         // TODO: Both of these could be using the aligned variant easily,
         // iff both where separate _mm256 lists
         let from_index_mm = unsafe {
-            _mm256_loadu_si256(
+            _mm256_loadu_si256(transmute(
                 packed_output_indexes
                     .as_ptr()
-                    .offset(group_id_offset as isize) as *const __m256i,
-            )
+                    .add(group_id_offset),
+            ))
         };
         let to_index_mm = unsafe {
-            _mm256_loadu_si256(
+            _mm256_loadu_si256(transmute(
                 packed_output_indexes
                     .as_ptr()
-                    .offset(group_id_offset as isize + 1) as *const __m256i,
-            )
+                    .add(group_id_offset + 1),
+            ))
         };
         let mut deltas_mm: __m256i = Simd::from_array(gate_status::unpack_single(delta_p))
             .cast::<u32>()
@@ -876,8 +876,8 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             *other_acc = other_acc.wrapping_add(delta);
         }
         unsafe { packed_outputs.get_unchecked(from_index..to_index) }
-            .into_iter()
-            .cloned()
+            .iter()
+            .copied()
             .for_each(update_list_handler);
     }
 
