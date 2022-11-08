@@ -1,5 +1,6 @@
 //! network.rs: Manage and optimize the network while preserving behaviour.
-use crate::logic::{gate_status, Gate, GateKey, IndexType, Itertools};
+use crate::logic::{gate_status, CompiledNetwork, Gate, GateKey, GateType, IndexType};
+use itertools::Itertools;
 use std::collections::HashMap;
 
 /// Iterate through all gates, skipping any
@@ -55,21 +56,21 @@ impl InitializedNetwork {
         assert_ne!(network.gates.len(), 0, "no gates where added.");
         println!("Network before optimization:");
         network.print_info();
-        if optimize {
-            //network = network.optimized();
-            println!("Network after optimization:");
-            network.print_info();
-        }
-        assert_ne!(network.gates.len(), 0, "optimization removed all gates");
-        //network.into()
-
-        Self {
+        let mut new_network = Self {
             translation_table: network.translation_table, /*(0..network.gates.len())
                                                           .into_iter()
                                                           .map(|x| x as IndexType)
                                                           .collect(),*/
             gates: network.gates,
+        };
+        if optimize {
+            new_network = new_network.optimized();
+            println!("Network after optimization:");
+            new_network.print_info();
         }
+        assert_ne!(new_network.gates.len(), 0, "optimization removed all gates");
+        //network.into()
+        new_network
     }
 
     /// Create input connections for the new gates, given the old gates.
@@ -341,5 +342,66 @@ pub(crate) struct EditableNetwork {
 impl EditableNetwork {
     pub(crate) fn initialized(&self, optimize: bool) -> InitializedNetwork {
         InitializedNetwork::new(self.clone(), optimize)
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub(crate) struct GateNetwork<const STRATEGY: u8> {
+    network: EditableNetwork,
+}
+impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
+    /// Internally creates a vertex.
+    /// Returns vertex id
+    /// ids of gates are guaranteed to be unique
+    /// # Panics
+    /// If more than `IndexType::MAX` are added, or after initialized
+    pub(crate) fn add_vertex(&mut self, kind: GateType) -> usize {
+        let next_id = self.network.gates.len();
+        self.network.gates.push(Gate::from_gate_type(kind));
+        assert!(self.network.gates.len() < IndexType::MAX as usize);
+        next_id
+    }
+
+    /// Add inputs to `gate_id` from `inputs`.
+    /// Connection must be between cluster and a non cluster gate
+    /// and a connection can only be made once for a given pair of gates.
+    /// # Panics
+    /// if precondition is not held.
+    pub(crate) fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
+        let gate = &mut self.network.gates[gate_id];
+        gate.add_inputs(inputs.len().try_into().unwrap());
+        let mut in2 = Vec::new();
+        for input in &inputs {
+            in2.push((*input).try_into().unwrap());
+        }
+        gate.inputs.append(&mut in2);
+        gate.inputs.sort_unstable();
+        gate.inputs.dedup();
+        for input_id in inputs {
+            assert!(
+                input_id < self.network.gates.len(),
+                "Invalid input index {input_id}"
+            );
+            assert_ne!(
+                (kind == GateType::Cluster),
+                (self.network.gates[input_id].kind == GateType::Cluster),
+                "Connection was made between cluster and non cluster for gate {gate_id}"
+            );
+            // panics if it cannot fit in IndexType
+            self.network.gates[input_id]
+                .outputs
+                .push(gate_id.try_into().unwrap());
+            self.network.gates[input_id].outputs.sort_unstable();
+            self.network.gates[input_id].outputs.dedup();
+        }
+    }
+
+    /// Adds all gates to update list and performs initialization
+    /// Currently cannot be modified after initialization.
+    /// # Panics
+    /// Already initialized
+    #[must_use]
+    pub(crate) fn compiled(&self, optimize: bool) -> CompiledNetwork<{ STRATEGY }> {
+        CompiledNetwork::create(&self.network, optimize)
     }
 }

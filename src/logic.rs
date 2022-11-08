@@ -5,6 +5,8 @@
 
 pub mod gate_status;
 pub mod network;
+pub(crate) use crate::logic::network::GateNetwork;
+
 use crate::logic::network::*;
 use itertools::{iproduct, Itertools};
 use std::mem::transmute;
@@ -976,66 +978,6 @@ struct AlignedArray {
     a: [u32; 8],
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct GateNetwork<const STRATEGY: u8> {
-    network: EditableNetwork,
-}
-impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
-    /// Internally creates a vertex.
-    /// Returns vertex id
-    /// ids of gates are guaranteed to be unique
-    /// # Panics
-    /// If more than `IndexType::MAX` are added, or after initialized
-    pub(crate) fn add_vertex(&mut self, kind: GateType) -> usize {
-        let next_id = self.network.gates.len();
-        self.network.gates.push(Gate::from_gate_type(kind));
-        assert!(self.network.gates.len() < IndexType::MAX as usize);
-        next_id
-    }
-
-    /// Add inputs to `gate_id` from `inputs`.
-    /// Connection must be between cluster and a non cluster gate
-    /// and a connection can only be made once for a given pair of gates.
-    /// # Panics
-    /// if precondition is not held.
-    pub(crate) fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
-        let gate = &mut self.network.gates[gate_id];
-        gate.add_inputs(inputs.len().try_into().unwrap());
-        let mut in2 = Vec::new();
-        for input in &inputs {
-            in2.push((*input).try_into().unwrap());
-        }
-        gate.inputs.append(&mut in2);
-        gate.inputs.sort_unstable();
-        gate.inputs.dedup();
-        for input_id in inputs {
-            assert!(
-                input_id < self.network.gates.len(),
-                "Invalid input index {input_id}"
-            );
-            assert_ne!(
-                (kind == GateType::Cluster),
-                (self.network.gates[input_id].kind == GateType::Cluster),
-                "Connection was made between cluster and non cluster for gate {gate_id}"
-            );
-            // panics if it cannot fit in IndexType
-            self.network.gates[input_id]
-                .outputs
-                .push(gate_id.try_into().unwrap());
-            self.network.gates[input_id].outputs.sort_unstable();
-            self.network.gates[input_id].outputs.dedup();
-        }
-    }
-
-    /// Adds all gates to update list and performs initialization
-    /// Currently cannot be modified after initialization.
-    /// # Panics
-    /// Already initialized
-    #[must_use]
-    pub(crate) fn compiled(&self, optimize: bool) -> CompiledNetwork<{ STRATEGY }> {
-        CompiledNetwork::create(&self.network, optimize)
-    }
-}
 
 #[cfg(test)]
 mod tests {
