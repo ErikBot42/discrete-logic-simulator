@@ -6,7 +6,6 @@
 pub mod gate_status;
 pub mod network;
 use crate::logic::network::*;
-use core::arch::x86_64::*;
 use itertools::{iproduct, Itertools};
 use std::mem::transmute;
 use std::simd::{LaneCount, Mask, Simd, SimdPartialEq, SupportedLaneCount};
@@ -681,6 +680,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         packed_output_indexes: &[IndexType],
         packed_outputs: &[IndexType],
     ) {
+        use core::arch::x86_64::*;
         Self::assert_avx2();
         let zero_mm = unsafe { _mm256_setzero_si256() };
         let ones_mm = unsafe { _mm256_set1_epi32(-1) };
