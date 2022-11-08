@@ -332,7 +332,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     }
     fn create(network: &EditableNetwork, optimize: bool) -> Self {
         let mut network = network.initialized(optimize);
-        network = network.optimize_for_scalar();
+        //network = network.optimize_for_scalar();
         //if Self::STRATEGY == UpdateStrategy::ScalarSimd {
         //}
 

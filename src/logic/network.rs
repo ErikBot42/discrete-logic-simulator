@@ -36,23 +36,20 @@ impl NetworkInfo for InitializedNetwork {
 
 /// Contains translation table and can no longer be edited by client.
 /// Can be edited for optimizations.
-struct InitializedNetwork {
+pub(crate) struct InitializedNetwork {
     pub(crate) gates: Vec<Gate>,
     pub(crate) translation_table: Vec<IndexType>,
 }
 impl From<EditableNetwork> for InitializedNetwork {
     fn from(network: EditableNetwork) -> Self {
         Self {
-            translation_table: (0..network.gates.len())
+            translation_table: network.translation_table, /*(0..network.gates.len())
                 .into_iter()
                 .map(|x| x as IndexType)
-                .collect(),
+                .collect(),*/
             gates: network.gates,
         }
     }
-}
-impl InitializedNetwork {
-
 }
 
 /// Contains gate graph in order to do network optimization
@@ -66,7 +63,7 @@ pub(crate) struct EditableNetwork {
 }
 impl EditableNetwork {
     /// TODO: typestate here.
-    pub(crate) fn initialized(&self, optimize: bool) -> Self {
+    pub(crate) fn initialized(&self, optimize: bool) -> InitializedNetwork {
         let mut network = self.clone();
         network.translation_table = (0..network.gates.len())
             .into_iter()
@@ -81,7 +78,7 @@ impl EditableNetwork {
             self.print_info();
         }
         assert_ne!(network.gates.len(), 0, "optimization removed all gates");
-        network
+        network.into()
     }
     /// Create input connections for the new gates, given the old gates.
     /// O(n * k)
