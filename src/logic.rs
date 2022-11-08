@@ -330,7 +330,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         );
         assert_eq!(self.cluster_update_list.len(), 0);
     }
-    fn create(network: &Network, optimize: bool) -> Self {
+    fn create(network: &EditableNetwork, optimize: bool) -> Self {
         let mut network = network.initialized(optimize);
         network = network.optimize_for_scalar();
         //if Self::STRATEGY == UpdateStrategy::ScalarSimd {
@@ -978,7 +978,7 @@ struct AlignedArray {
 
 #[derive(Debug, Default, Clone)]
 pub struct GateNetwork<const STRATEGY: u8> {
-    network: Network,
+    network: EditableNetwork,
 }
 impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
     /// Internally creates a vertex.

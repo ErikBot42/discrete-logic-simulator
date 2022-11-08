@@ -3,14 +3,41 @@
 use crate::logic::*;
 use std::collections::HashMap;
 
+/// Iterate through all gates, skipping any
+/// placeholder gates.
+trait NetworkInfo {
+    fn output_counts(&self) -> Vec<usize>;
+    fn print_info(&self) {
+        let mut counts_vec: Vec<(usize, usize)> = self
+            .output_counts()
+            .into_iter()
+            .counts()
+            .into_iter()
+            .collect();
+        counts_vec.sort();
+        let total_output_connections: usize = counts_vec.iter().map(|(_, count)| count).sum();
+        println!("Network info: ");
+        println!("Output counts total: {total_output_connections}");
+        println!("Number of outputs: gates with this number of outputs");
+        for (value, count) in counts_vec {
+            println!("{value}: {count}");
+        }
+    }
+}
+impl NetworkInfo for EditableNetwork {
+    fn output_counts(&self) -> Vec<usize> {
+        self.gates.iter().map(|x| x.outputs.len()).collect()
+    }
+}
+
 /// Contains gate graph in order to do network optimization
 /// This network has no gaps in it's layout.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct Network {
+pub(crate) struct EditableNetwork {
     pub(crate) gates: Vec<Gate>,
     pub(crate) translation_table: Vec<IndexType>,
 }
-impl Network {
+impl EditableNetwork {
     /// TODO: typestate here.
     pub(crate) fn initialized(&self, optimize: bool) -> Self {
         let mut network = self.clone();
@@ -28,22 +55,6 @@ impl Network {
         }
         assert_ne!(network.gates.len(), 0, "optimization removed all gates");
         network
-    }
-    fn print_info(&self) {
-        let counts_iter = self
-            .gates
-            .iter()
-            .map(|x| x.outputs.len())
-            .counts()
-            .into_iter();
-        let mut counts_vec: Vec<(usize, usize)> = counts_iter.collect();
-        counts_vec.sort();
-        let total_output_connections = counts_vec.iter().map(|(_, count)| count).sum::<usize>();
-        println!("output counts total: {total_output_connections}");
-        println!("number of outputs: gates with this number of outputs");
-        for (value, count) in counts_vec {
-            println!("{value}: {count}");
-        }
     }
     /// Create input connections for the new gates, given the old gates.
     /// O(n * k)
@@ -170,7 +181,7 @@ impl Network {
         let old_translation_table = &self.translation_table;
         let new_translation_table =
             Self::create_translation_table(old_translation_table, &old_to_new_id);
-        Network {
+        EditableNetwork {
             gates: new_gates,
             translation_table: new_translation_table,
         }
@@ -248,7 +259,7 @@ impl Network {
     fn reordered_by<F: FnMut(Vec<(usize, &Gate)>) -> Vec<Option<(usize, &Gate)>>>(
         &self,
         mut reorder: F,
-    ) -> Network {
+    ) -> EditableNetwork {
         let gates_with_ids: Vec<(usize, &Gate)> = self.gates.iter().enumerate().collect();
 
         let gates_with_ids = reorder(gates_with_ids);
