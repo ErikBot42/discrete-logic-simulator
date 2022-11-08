@@ -1,6 +1,5 @@
 //! network.rs: Manage and optimize the network while preserving behaviour.
-
-use crate::logic::*;
+use crate::logic::{gate_status, Gate, GateKey, IndexType, Itertools};
 use std::collections::HashMap;
 
 /// Iterate through all gates, skipping any
@@ -14,7 +13,7 @@ trait NetworkInfo {
             .counts()
             .into_iter()
             .collect();
-        counts_vec.sort();
+        counts_vec.sort_unstable();
         let total_output_connections: usize = counts_vec.iter().map(|(_, count)| count).sum();
         println!("Network info: ");
         println!("Output counts total: {total_output_connections}");
@@ -30,8 +29,28 @@ impl NetworkInfo for EditableNetwork {
     }
 }
 
+/// Contains translation table and can no longer be edited by client.
+/// Can be edited for optimizations.
+struct InitializedNetwork {
+    pub(crate) gates: Vec<Gate>,
+    pub(crate) translation_table: Vec<IndexType>,
+}
+impl From<EditableNetwork> for InitializedNetwork {
+    fn from(network: EditableNetwork) -> Self {
+        Self {
+            translation_table: (0..network.gates.len())
+                .into_iter()
+                .map(|x| x as IndexType)
+                .collect(),
+            gates: network.gates,
+        }
+    }
+}
+
 /// Contains gate graph in order to do network optimization
 /// This network has no gaps in it's layout.
+/// This network can be edited from client code.
+/// Nodes cannot be removed.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct EditableNetwork {
     pub(crate) gates: Vec<Gate>,
@@ -236,7 +255,7 @@ impl EditableNetwork {
                 _ => {
                     let mut index = None;
                     'o: for (i, gate) in gates.iter().enumerate().rev() {
-                        for cgate in current_group.iter() {
+                        for cgate in &current_group {
                             if let Some(cgate) = cgate && cmp(gate.1, cgate.1) {
                                 continue 'o;
                             }
@@ -279,7 +298,7 @@ impl EditableNetwork {
             .enumerate()
             .for_each(|(index, new)| {
                 if let Some(new) = new {
-                    translation_table[*new] = index as IndexType
+                    translation_table[*new] = index as IndexType;
                 }
             });
         let gates: Vec<Gate> = gates
@@ -288,7 +307,7 @@ impl EditableNetwork {
                 if let Some(gate) = gate {
                     let mut gate = gate.clone();
                     gate.outputs.iter_mut().for_each(|output| {
-                        *output = translation_table[*output as usize] as IndexType
+                        *output = translation_table[*output as usize] as IndexType;
                     });
                     gate.inputs
                         .iter_mut()
@@ -303,7 +322,7 @@ impl EditableNetwork {
         //assert_le_len!(self.translation_table, translation_table);
         let translation_table =
             Self::create_translation_table(&self.translation_table, &translation_table);
-        for t in translation_table.iter() {
+        for t in &translation_table {
             assert_le!(*t as usize, gates.len());
         }
         Self {

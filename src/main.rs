@@ -17,9 +17,9 @@ enum RunMode {
 
 #[derive(Parser, Debug)]
 #[command(
-    author,
-    version,
-    about,
+//    author,
+//    version,
+//    about,
     long_about = None,
 )]
 /// Logic simulator, currently the old VCB blueprints are implemented.
@@ -69,25 +69,25 @@ fn main() {
     // branch to specific type here to remove overhead later.
     match args.implementation {
         UpdateStrategy::ScalarSimd => handle_board(
-            args,
+            &args,
             VcbParser::<{ UpdateStrategy::ScalarSimd as u8 }>::parse(&string, true),
         ),
         UpdateStrategy::Reference => handle_board(
-            args,
+            &args,
             VcbParser::<{ UpdateStrategy::Reference as u8 }>::parse(&string, true),
         ),
         UpdateStrategy::Simd => handle_board(
-            args,
+            &args,
             VcbParser::<{ UpdateStrategy::Simd as u8 }>::parse(&string, true),
         ),
     }
 }
 
-fn handle_board<const STRATEGY: u8>(args: Args, mut board: VcbBoard<STRATEGY>) {
+fn handle_board<const STRATEGY: u8>(args: &Args, mut board: VcbBoard<STRATEGY>) {
     match args.mode {
         RunMode::Print => {
             board.update();
-            board.print()
+            board.print();
         },
         RunMode::Run => loop {
             board.print();

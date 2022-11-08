@@ -150,7 +150,7 @@ impl Gate {
     /// Change number of inputs to handle logic correctly
     /// Can be called multiple times for *different* inputs
     fn add_inputs(&mut self, inputs: i32) {
-        let diff: AccType = inputs as AccTypeInner;
+        let diff: AccType = inputs.try_into().unwrap();
         match self.kind {
             GateType::And | GateType::Nand => self.acc = self.acc.wrapping_sub(diff),
             GateType::Or | GateType::Nor | GateType::Xor | GateType::Xnor | GateType::Cluster => (),
@@ -356,7 +356,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             .map(|gate| RunTimeGateType::new(gate.kind))
             .collect();
         let in_update_list: Vec<bool> = gates.iter().map(|gate| gate.in_update_list).collect();
-        let state: Vec<u8> = gates.iter().map(|gate| gate.state as u8).collect();
+        let state: Vec<u8> = gates.iter().map(|gate| u8::from(gate.state)).collect();
 
         let acc: Vec<u8> = gates.iter().map(|gate| gate.acc).collect();
         //bg!(gates.iter().map(|gate| gate.acc as i8).collect::<Vec<i8>>());
@@ -378,7 +378,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
         acc_packed
             .iter()
-            .cloned()
+            .copied()
             .flat_map(gate_status::unpack_single)
             .zip(acc.iter().copied())
             .enumerate()
@@ -390,7 +390,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         kind.push(GateType::Or);
         kind.push(GateType::Or);
 
-        let in_update_list: Vec<bool> = (0..acc_packed.len()).map(|x| false).collect();
+        let in_update_list: Vec<bool> = (0..acc_packed.len()).map(|_| false).collect();
 
         Self {
             i: CompiledNetworkInner {
@@ -692,18 +692,18 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         // TODO: Both of these could be using the aligned variant easily,
         // iff both where separate _mm256 lists
         let from_index_mm = unsafe {
-            _mm256_loadu_si256(transmute(
+            _mm256_loadu_si256(
                 packed_output_indexes
                     .as_ptr()
-                    .offset(group_id_offset as isize),
-            ))
+                    .offset(group_id_offset as isize) as *const __m256i,
+            )
         };
         let to_index_mm = unsafe {
-            _mm256_loadu_si256(transmute(
+            _mm256_loadu_si256(
                 packed_output_indexes
                     .as_ptr()
-                    .offset(group_id_offset as isize + 1),
-            ))
+                    .offset(group_id_offset as isize + 1) as *const __m256i,
+            )
         };
         let mut deltas_mm: __m256i = Simd::from_array(gate_status::unpack_single(delta_p))
             .cast::<u32>()
