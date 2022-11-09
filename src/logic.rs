@@ -1,16 +1,15 @@
 //! logic.rs: Contains the simulaion engine itself.
 
 #![allow(clippy::inline_always)]
-//#![allow(dead_code)]
 
 pub mod gate_status;
 pub mod network;
 pub(crate) use crate::logic::network::GateNetwork;
 
 use crate::logic::network::*;
-use itertools::{iproduct, Itertools};
+use itertools::iproduct;
 use std::mem::transmute;
-use std::simd::{LaneCount, Mask, Simd, SimdPartialEq, SupportedLaneCount};
+use std::simd::{Mask, Simd, SimdPartialEq};
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, PartialOrd, Ord, Default)]
 /// A = active inputs
@@ -199,7 +198,7 @@ impl Gate {
         old_state: Simd<SimdLogicType, LANES>,
     ) -> (Simd<SimdLogicType, LANES>, Simd<SimdLogicType, LANES>)
     where
-        LaneCount<LANES>: SupportedLaneCount,
+        std::simd::LaneCount<LANES>: std::simd::SupportedLaneCount,
     {
         let acc_logic = acc.cast::<SimdLogicType>();
         let acc_not_zero = acc_logic
@@ -695,16 +694,12 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         // iff both where separate _mm256 lists
         let from_index_mm = unsafe {
             _mm256_loadu_si256(transmute(
-                packed_output_indexes
-                    .as_ptr()
-                    .add(group_id_offset),
+                packed_output_indexes.as_ptr().add(group_id_offset),
             ))
         };
         let to_index_mm = unsafe {
             _mm256_loadu_si256(transmute(
-                packed_output_indexes
-                    .as_ptr()
-                    .add(group_id_offset + 1),
+                packed_output_indexes.as_ptr().add(group_id_offset + 1),
             ))
         };
         let mut deltas_mm: __m256i = Simd::from_array(gate_status::unpack_single(delta_p))
@@ -977,7 +972,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 struct AlignedArray {
     a: [u32; 8],
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -3,6 +3,7 @@ use crate::logic::{gate_status, CompiledNetwork, Gate, GateKey, GateType, IndexT
 use itertools::Itertools;
 use std::collections::HashMap;
 
+
 /// Iterate through all gates, skipping any
 /// placeholder gates.
 trait NetworkInfo {
@@ -371,8 +372,8 @@ impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
                 "Invalid input index {input_id}"
             );
             assert_ne!(
-                (kind == GateType::Cluster),
-                (self.network.gates[input_id].kind == GateType::Cluster),
+                kind == GateType::Cluster,
+                self.network.gates[input_id].kind == GateType::Cluster,
                 "Connection was made between cluster and non cluster for gate {gate_id}"
             );
             // panics if it cannot fit in IndexType
