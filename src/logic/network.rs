@@ -3,7 +3,6 @@ use crate::logic::{gate_status, CompiledNetwork, Gate, GateKey, GateType, IndexT
 use itertools::Itertools;
 use std::collections::HashMap;
 
-
 /// Iterate through all gates, skipping any
 /// placeholder gates.
 trait NetworkInfo {
@@ -35,6 +34,22 @@ impl NetworkInfo for InitializedNetwork {
         self.gates.iter().map(|x| x.outputs.len()).collect()
     }
 }
+// TODO: review visibility.
+
+/// Network that contains empty gate slots used for alignment
+/// Needed to separate cluster and non cluster in packed forms.
+pub(crate) struct NetworkWithGaps {
+    pub(crate) gates: Vec<Option<Gate>>,
+    pub(crate) translation_table: Vec<IndexType>,
+}
+impl NetworkWithGaps {
+    fn create_from(network: InitializedNetwork) -> Self {
+        Self {
+            gates: network.gates.into_iter().map(|x| Some(x)).collect(),
+            translation_table: network.translation_table,
+        }
+    }
+}
 
 /// Contains translation table and can no longer be edited by client.
 /// Can be edited for optimizations.
@@ -43,11 +58,14 @@ pub(crate) struct InitializedNetwork {
     pub(crate) translation_table: Vec<IndexType>,
 }
 impl InitializedNetwork {
-    fn new(network: EditableNetwork, optimize: bool) -> Self {
+    pub(crate) fn with_gaps(self) -> NetworkWithGaps {
+        NetworkWithGaps::create_from(self)
+    }
+    fn create_from(network: EditableNetwork, optimize: bool) -> Self {
         assert_ne!(network.gates.len(), 0, "no gates where added.");
         network.print_info();
 
-        let mut new_network = Self {
+        let mut new_network = InitializedNetwork {
             translation_table: (0..network.gates.len())
                 .into_iter()
                 .map(|x| x as IndexType)
@@ -202,7 +220,7 @@ impl InitializedNetwork {
         }
     }
 
-    pub(crate) fn optimize_for_scalar(&self) -> Self {
+    pub(crate) fn optimize_for_scalar(&self) -> NetworkWithGaps {
         //let sort = |a: &Gate, b: &Gate| {
         //    //let by_number_of_outputs = a.outputs.len().cmp(&b.outputs.len());
         //    //let by_kind = a.kind.cmp(&b.kind);
@@ -265,7 +283,7 @@ impl InitializedNetwork {
     fn reordered_by<F: FnMut(Vec<(usize, &Gate)>) -> Vec<Option<(usize, &Gate)>>>(
         &self,
         mut reorder: F,
-    ) -> Self {
+    ) -> NetworkWithGaps {
         let gates_with_ids: Vec<(usize, &Gate)> = self.gates.iter().enumerate().collect();
 
         let gates_with_ids = reorder(gates_with_ids);
@@ -288,10 +306,10 @@ impl InitializedNetwork {
                     translation_table[*new] = index as IndexType;
                 }
             });
-        let gates: Vec<Gate> = gates
+        let gates: Vec<Option<Gate>> = gates
             .into_iter()
             .map(|gate| {
-                if let Some(gate) = gate {
+                gate.map(|gate| {
                     let mut gate = gate.clone();
                     gate.outputs.iter_mut().for_each(|output| {
                         *output = translation_table[*output as usize] as IndexType;
@@ -300,9 +318,7 @@ impl InitializedNetwork {
                         .iter_mut()
                         .for_each(|input| *input = translation_table[*input as usize] as IndexType);
                     gate
-                } else {
-                    Gate::default() // filler gate.
-                }
+                })
             })
             .collect();
         assert_eq_len!(gates, translation_table);
@@ -312,7 +328,7 @@ impl InitializedNetwork {
         for t in &translation_table {
             assert_le!(*t as usize, gates.len());
         }
-        Self {
+        NetworkWithGaps {
             gates,
             translation_table,
         }
@@ -326,11 +342,10 @@ impl InitializedNetwork {
 #[derive(Debug, Default, Clone)]
 pub(crate) struct EditableNetwork {
     pub(crate) gates: Vec<Gate>,
-    //pub(crate) translation_table: Vec<IndexType>,
 }
 impl EditableNetwork {
     pub(crate) fn initialized(&self, optimize: bool) -> InitializedNetwork {
-        InitializedNetwork::new(self.clone(), optimize)
+        InitializedNetwork::create_from(self.clone(), optimize)
     }
 }
 
@@ -392,5 +407,8 @@ impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
     #[must_use]
     pub(crate) fn compiled(&self, optimize: bool) -> CompiledNetwork<{ STRATEGY }> {
         CompiledNetwork::create(&self.network, optimize)
+    }
+    fn initialized(self, optimize: bool) -> InitializedNetwork {
+        InitializedNetwork::create_from(self.network, optimize)
     }
 }

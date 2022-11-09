@@ -332,7 +332,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         assert_eq!(self.cluster_update_list.len(), 0);
     }
     fn create(network: &EditableNetwork, optimize: bool) -> Self {
-        let mut network = network.initialized(optimize);
+        let mut network = network.initialized(optimize).with_gaps();
         //network = network.optimize_for_scalar();
         //if Self::STRATEGY == UpdateStrategy::ScalarSimd {
         //}
@@ -343,10 +343,16 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 .gates
                 .iter_mut()
                 .enumerate()
-                .filter(|(_, gate)| gate.kind.will_update_at_start())
-                .map(|(gate_id, gate)| {
-                    gate.in_update_list = true;
-                    gate_id as IndexType
+                .filter(|(_, gate)| {
+                    gate.as_ref()
+                        .map(|gate| gate.kind.will_update_at_start())
+                        .unwrap_or_default()
+                })
+                .filter_map(|(gate_id, gate)| {
+                    gate.as_mut().map(|g| {
+                        g.in_update_list = true;
+                        gate_id as IndexType
+                    })
                 }),
             number_of_gates,
         );
@@ -354,14 +360,20 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         let (packed_output_indexes, packed_outputs) = Self::pack_outputs(gates);
         let runtime_gate_kind: Vec<RunTimeGateType> = gates
             .iter()
-            .map(|gate| RunTimeGateType::new(gate.kind))
+            .map(|gate| RunTimeGateType::new(gate.as_ref().map(|g| g.kind).unwrap_or_default()))
             .collect();
-        let in_update_list: Vec<bool> = gates.iter().map(|gate| gate.in_update_list).collect();
-        let state: Vec<u8> = gates.iter().map(|gate| u8::from(gate.state)).collect();
-
-        let acc: Vec<u8> = gates.iter().map(|gate| gate.acc).collect();
-        //bg!(gates.iter().map(|gate| gate.acc as i8).collect::<Vec<i8>>());
-
+        let in_update_list: Vec<bool> = gates
+            .iter()
+            .map(|gate| gate.as_ref().map(|g| g.in_update_list).unwrap_or_default())
+            .collect();
+        let state: Vec<u8> = gates
+            .iter()
+            .map(|gate| u8::from(gate.as_ref().map(|g| g.state).unwrap_or_default()))
+            .collect();
+        let acc: Vec<u8> = gates
+            .iter()
+            .map(|gate| gate.as_ref().map(|g| g.acc).unwrap_or_default())
+            .collect();
         let status: Vec<gate_status::Inner> = in_update_list
             .iter()
             .zip(state.iter())
@@ -371,12 +383,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
         let status_packed = gate_status::pack(status.iter().copied());
         let acc_packed = gate_status::pack(acc.iter().copied());
-        //bg!(acc_packed
-        //    .iter()
-        //    .copied()
-        //    .map(gate_status::unpack_single)
-        //    .collect::<Vec<[u8; gate_status::PACKED_ELEMENTS]>>());
-
         acc_packed
             .iter()
             .copied()
@@ -385,7 +391,10 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             .enumerate()
             .for_each(|(i, (a, b))| debug_assert_eq!(a, b, "{a}, {b}, {i}"));
 
-        let mut kind: Vec<GateType> = gates.iter().map(|g| g.kind).collect();
+        let mut kind: Vec<GateType> = gates
+            .iter()
+            .map(|g| g.as_ref().map(|g| g.kind).unwrap_or_default())
+            .collect();
         kind.push(GateType::Or);
         kind.push(GateType::Or);
         kind.push(GateType::Or);
@@ -414,7 +423,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             cluster_update_list: UpdateList::new(number_of_gates),
         } //.clone()
     }
-    fn pack_outputs(gates: &[Gate]) -> (Vec<IndexType>, Vec<IndexType>) {
+    fn pack_outputs(gates: &[Option<Gate>]) -> (Vec<IndexType>, Vec<IndexType>) {
         // TODO: potentially optimized overlapping outputs/indexes
         // (requires 2 pointers/gate)
         // TODO: pack into single array
@@ -422,7 +431,9 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         let mut packed_outputs: Vec<IndexType> = Vec::new();
         for gate in gates.iter() {
             packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
-            packed_outputs.append(&mut gate.outputs.clone());
+            if let Some(gate) = gate {
+                packed_outputs.append(&mut gate.outputs.clone());
+            }
         }
         packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
         (packed_output_indexes, packed_outputs)
