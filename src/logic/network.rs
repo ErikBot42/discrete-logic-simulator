@@ -165,6 +165,7 @@ impl InitializedNetwork {
             v
         }
     }
+
     /// Single network optimization pass. Much like compilers,
     /// some passes make it possible for others or the same
     /// pass to be run again.
@@ -187,6 +188,8 @@ impl InitializedNetwork {
             translation_table: new_translation_table,
         }
     }
+
+    /// Perform repeated optimization passes.
     fn optimized(&self) -> Self {
         let mut prev_network_gate_count = self.gates.len();
         loop {
@@ -197,6 +200,7 @@ impl InitializedNetwork {
             prev_network_gate_count = new_network.gates.len();
         }
     }
+
     pub(crate) fn optimize_for_scalar(&self) -> Self {
         //let sort = |a: &Gate, b: &Gate| {
         //    //let by_number_of_outputs = a.outputs.len().cmp(&b.outputs.len());
@@ -341,10 +345,9 @@ impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
     /// # Panics
     /// If more than `IndexType::MAX` are added, or after initialized
     pub(crate) fn add_vertex(&mut self, kind: GateType) -> usize {
-        let next_id = self.network.gates.len();
         self.network.gates.push(Gate::from_gate_type(kind));
-        assert!(self.network.gates.len() < IndexType::MAX as usize);
-        next_id
+        let next_id: IndexType = self.network.gates.len().try_into().unwrap();
+        next_id.try_into().unwrap()
     }
 
     /// Add inputs to `gate_id` from `inputs`.
