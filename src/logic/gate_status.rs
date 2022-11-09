@@ -264,8 +264,10 @@ pub(crate) fn eval_mut_scalar_slow_working<const CLUSTER: bool>(
 /// TODO: could make everything BE.
 fn pack_bit_bitpack_be(arr: Packed) -> u8 {
     // https://stackoverflow.com/questions/14547087/extracting-bits-with-a-single-multiplication
-    const MASK: Packed = 0b00000001_00000001_00000001_00000001_00000001_00000001_00000001_00000001;
-    const MAGIC: Packed = 0b10000000_01000000_00100000_00010000_00001000_00000100_00000010_00000001;
+    const MASK: Packed =
+        0b0000_0001_0000_0001_0000_0001_0000_0001_0000_0001_0000_0001_0000_0001_0000_0001;
+    const MAGIC: Packed =
+        0b1000_0000_0100_0000_0010_0000_0001_0000_0000_1000_0000_0100_0000_0010_0000_0001;
     ((arr & MASK) * MAGIC).to_le_bytes()[7]
 }
 

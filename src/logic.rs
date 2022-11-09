@@ -1,6 +1,7 @@
 //! logic.rs: Contains the simulaion engine itself.
 
 #![allow(clippy::inline_always)]
+#![allow(dead_code)]
 
 pub mod gate_status;
 pub mod network;
@@ -754,16 +755,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 const SCALE: i32 = std::mem::size_of::<u8>() as i32;
                 _mm256_i32gather_epi32::<SCALE>(transmute(acc.as_ptr()), output_id_mm)
             };
-            /*{
-                let acc_read_using_simd: [[u8; 4]; 8] = bytemuck::cast(acc_mm);
-                let output_id_from_simd: [u32; 8] = bytemuck::cast(output_id_mm);
-                for i in 0..8 {
-                    let acc_read_using_simd = acc_read_using_simd[i][0];
-                    let output_id = output_id_from_simd[i];
-                    let acc_read_from_scalar = acc[output_id as usize];
-                    assert_eq!(acc_read_using_simd, acc_read_from_scalar);
-                }
-            }*/
 
             // NOTE: acc is 8 bit
 
@@ -776,35 +767,8 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             // NOTE: it is possible to left pack and conditionally write valid elements of vector.
             // https://deplinenoise.files.wordpress.com/2015/03/gdc2015_afredriksson_simd.pdf
             let acc_incremented_cast: [[u8; 4]; 8] = bytemuck::cast(acc_incremented_mm);
-            let acc_read_using_simd: [[u8; 4]; 8] = bytemuck::cast(acc_mm);
             let output_ids: [u32; 8] = bytemuck::cast(output_id_mm);
             let not_done: [i32; 8] = bytemuck::cast(not_done_mm);
-            let deltas: [i32; 8] = bytemuck::cast(deltas_mm);
-
-            /*{
-                let acc_read_using_simd: [[u8; 4]; 8] = bytemuck::cast(acc_mm);
-                let output_id_from_simd: [u32; 8] = bytemuck::cast(output_id_mm);
-                for i in 0..8 {
-                    let acc_read_using_simd = acc_read_using_simd[i][0];
-                    let output_id = output_id_from_simd[i];
-                    let acc_read_from_scalar = acc[output_id as usize];
-                    assert_eq!(acc_read_using_simd, acc_read_from_scalar);
-                }
-            }*/
-            /*{
-                let output_range: [i32; 8] =
-                    bytemuck::cast(unsafe { _mm256_sub_epi32(to_index_mm, from_index_mm) });
-                let output_ids: [u32; 8] = bytemuck::cast(output_id_mm);
-                let deltas: [i32; 8] = bytemuck::cast(deltas_mm);
-                let a = output_ids.clone();
-                let mut a_sorted = a;
-                a_sorted.sort();
-                assert_eq!(
-                    a.into_iter().dedup().count(),
-                    8,
-                    "{a:?} output_ids: {output_ids:?}, deltas: {deltas:?}, output_range: {output_range:?}"
-                );
-            }*/
 
             //TODO: problem is caused by shared ids overlapping in the packed array, adding dummy
             // outputs is a potential fix, but may cause memory issues.
@@ -825,12 +789,9 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 let not_done = not_done[i];
                 unsafe {
                     std::intrinsics::assume(not_done == 0 || not_done == -1);
-                }
-                if not_done == 0 {
-                    continue;
-                };
-                unsafe {
-                    *acc.get_unchecked_mut(output_ids[i] as usize) = acc_incremented_cast[i][0];
+                    if not_done != 0 {
+                        *acc.get_unchecked_mut(output_ids[i] as usize) = acc_incremented_cast[i][0];
+                    };
                 }
             }
 
@@ -847,7 +808,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         acc_packed: &mut [gate_status::Packed],
         packed_output_indexes: &[IndexType],
         packed_outputs: &[IndexType],
-        update_list_handler: F,
+        mut update_list_handler: F,
     ) {
         let group_id_offset = id_packed * gate_status::PACKED_ELEMENTS;
         let acc = bytemuck::cast_slice_mut(acc_packed);
@@ -860,7 +821,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 acc,
                 packed_output_indexes,
                 packed_outputs,
-                |_| {},
+                &mut update_list_handler,
             );
         }
     }

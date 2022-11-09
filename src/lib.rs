@@ -12,13 +12,6 @@ macro_rules! unwrap_or_else {
         }
     };
 }
-macro_rules! assert_ge {
-    ($first:expr, $second:expr) => {
-        let a = $first;
-        let b = $second;
-        assert!(a >= b, "{a} < {b}");
-    };
-}
 macro_rules! assert_le {
     ($first:expr, $second:expr) => {
         let a = $first;
@@ -26,24 +19,11 @@ macro_rules! assert_le {
         assert!(a <= b, "{a} > {b}");
     };
 }
-macro_rules! assert_le_len {
-    ($first:expr, $second:expr) => {
-        assert_le!($first.len(), $second.len());
-    };
-}
 macro_rules! assert_eq_len {
     ($first:expr, $second:expr) => {
         assert_eq!($first.len(), $second.len());
     };
 }
-
-///// Assume in release, assert in debug.
-//macro_rules! assume_debug_assert {
-//    ($expression:expr) => {
-//        debug_assert!($expression);
-//        unsafe { std::intrinsics::assume($expression) };
-//    };
-//}
 
 pub mod blueprint;
 pub mod logic;

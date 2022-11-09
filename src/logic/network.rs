@@ -46,7 +46,7 @@ pub(crate) struct NetworkWithGaps {
 impl NetworkWithGaps {
     fn create_from(network: InitializedNetwork) -> Self {
         Self {
-            gates: network.gates.into_iter().map(|x| Some(x)).collect(),
+            gates: network.gates.into_iter().map(Some).collect(),
             translation_table: network.translation_table,
         }
     }
