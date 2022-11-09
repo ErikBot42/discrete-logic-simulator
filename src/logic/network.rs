@@ -41,11 +41,6 @@ pub(crate) struct InitializedNetwork {
     pub(crate) gates: Vec<Gate>,
     pub(crate) translation_table: Vec<IndexType>,
 }
-//impl From<EditableNetwork> for InitializedNetwork {
-//    fn from(network: EditableNetwork) -> Self {
-//
-//    }
-//}
 impl InitializedNetwork {
     fn new(network: EditableNetwork, optimize: bool) -> Self {
         let mut network = network.clone();
@@ -345,6 +340,8 @@ impl EditableNetwork {
     }
 }
 
+
+/// The API for creating a gate network.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct GateNetwork<const STRATEGY: u8> {
     network: EditableNetwork,
@@ -366,7 +363,7 @@ impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
     /// Connection must be between cluster and a non cluster gate
     /// and a connection can only be made once for a given pair of gates.
     /// # Panics
-    /// if precondition is not held.
+    /// If precondition is not held.
     pub(crate) fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
         let gate = &mut self.network.gates[gate_id];
         gate.add_inputs(inputs.len().try_into().unwrap());
@@ -399,7 +396,7 @@ impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
     /// Adds all gates to update list and performs initialization
     /// Currently cannot be modified after initialization.
     /// # Panics
-    /// Already initialized
+    /// Should not panic.
     #[must_use]
     pub(crate) fn compiled(&self, optimize: bool) -> CompiledNetwork<{ STRATEGY }> {
         CompiledNetwork::create(&self.network, optimize)
