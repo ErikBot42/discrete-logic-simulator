@@ -38,6 +38,7 @@ impl NetworkInfo for InitializedNetwork {
 
 /// Network that contains empty gate slots used for alignment
 /// Needed to separate cluster and non cluster in packed forms.
+#[derive(Debug)]
 pub(crate) struct NetworkWithGaps {
     pub(crate) gates: Vec<Option<Gate>>,
     pub(crate) translation_table: Vec<IndexType>,
@@ -54,12 +55,13 @@ impl NetworkWithGaps {
 /// Contains translation table and can no longer be edited by client.
 /// Can be edited for optimizations.
 pub(crate) struct InitializedNetwork {
-    pub(crate) gates: Vec<Gate>,
-    pub(crate) translation_table: Vec<IndexType>,
+    gates: Vec<Gate>,
+    translation_table: Vec<IndexType>,
 }
 impl InitializedNetwork {
     pub(crate) fn with_gaps(self) -> NetworkWithGaps {
-        NetworkWithGaps::create_from(self)
+        //NetworkWithGaps::create_from(self)
+        Self::optimize_for_scalar(&self) // <- this works too :)
     }
     fn create_from(network: EditableNetwork, optimize: bool) -> Self {
         assert_ne!(network.gates.len(), 0, "no gates where added.");
@@ -220,7 +222,7 @@ impl InitializedNetwork {
         }
     }
 
-    pub(crate) fn optimize_for_scalar(&self) -> NetworkWithGaps {
+    fn optimize_for_scalar(&self) -> NetworkWithGaps {
         //let sort = |a: &Gate, b: &Gate| {
         //    //let by_number_of_outputs = a.outputs.len().cmp(&b.outputs.len());
         //    //let by_kind = a.kind.cmp(&b.kind);
