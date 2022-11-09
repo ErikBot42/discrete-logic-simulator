@@ -43,28 +43,21 @@ pub(crate) struct InitializedNetwork {
 }
 impl InitializedNetwork {
     fn new(network: EditableNetwork, optimize: bool) -> Self {
-        let mut network = network.clone();
-        network.translation_table = (0..network.gates.len())
-            .into_iter()
-            .map(|x| x as IndexType)
-            .collect();
         assert_ne!(network.gates.len(), 0, "no gates where added.");
-        println!("Network before optimization:");
         network.print_info();
+
         let mut new_network = Self {
-            translation_table: network.translation_table, /*(0..network.gates.len())
-                                                          .into_iter()
-                                                          .map(|x| x as IndexType)
-                                                          .collect(),*/
+            translation_table: (0..network.gates.len())
+                .into_iter()
+                .map(|x| x as IndexType)
+                .collect(),
             gates: network.gates,
         };
         if optimize {
             new_network = new_network.optimized();
-            println!("Network after optimization:");
             new_network.print_info();
         }
         assert_ne!(new_network.gates.len(), 0, "optimization removed all gates");
-        //network.into()
         new_network
     }
 
@@ -113,6 +106,7 @@ impl InitializedNetwork {
             new_gate.add_inputs_vec(&mut deduped_inputs.clone());
         }
     }
+
     /// Create output connections from current input connections
     /// O(n * k)
     fn create_output_connections(new_gates: &mut [Gate]) {
@@ -127,6 +121,7 @@ impl InitializedNetwork {
             }
         }
     }
+
     /// Create a new merged set of nodes based on the old nodes
     /// and a translation back to the old ids.
     /// O(n)
@@ -154,6 +149,7 @@ impl InitializedNetwork {
         assert!(old_gates.len() == old_to_new_id.len());
         (new_gates, old_to_new_id)
     }
+
     /// Create translation that combines the old and new translation
     /// from outside facing ids to nodes
     /// O(n)
@@ -161,20 +157,13 @@ impl InitializedNetwork {
         old_translation_table: &[IndexType],
         old_to_new_id: &[IndexType],
     ) -> Vec<IndexType> {
-        Self::create_translation_table_min_len(old_translation_table, old_to_new_id, 0)
-    }
-    fn create_translation_table_min_len(
-        old_translation_table: &[IndexType],
-        old_to_new_id: &[IndexType],
-        min_len: usize,
-    ) -> Vec<IndexType> {
-        let v: Vec<_> = old_translation_table
-            .iter()
-            .map(|x| old_to_new_id[*x as usize])
-            .chain(old_translation_table.len() as IndexType..min_len as IndexType)
-            .collect();
-        assert_ge!(v.len(), min_len);
-        v
+        {
+            let v: Vec<_> = old_translation_table
+                .iter()
+                .map(|x| old_to_new_id[*x as usize])
+                .collect();
+            v
+        }
     }
     /// Single network optimization pass. Much like compilers,
     /// some passes make it possible for others or the same
@@ -332,14 +321,13 @@ impl InitializedNetwork {
 #[derive(Debug, Default, Clone)]
 pub(crate) struct EditableNetwork {
     pub(crate) gates: Vec<Gate>,
-    pub(crate) translation_table: Vec<IndexType>,
+    //pub(crate) translation_table: Vec<IndexType>,
 }
 impl EditableNetwork {
     pub(crate) fn initialized(&self, optimize: bool) -> InitializedNetwork {
         InitializedNetwork::new(self.clone(), optimize)
     }
 }
-
 
 /// The API for creating a gate network.
 #[derive(Debug, Default, Clone)]
