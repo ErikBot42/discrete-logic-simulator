@@ -345,8 +345,8 @@ impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
     /// # Panics
     /// If more than `IndexType::MAX` are added, or after initialized
     pub(crate) fn add_vertex(&mut self, kind: GateType) -> usize {
-        self.network.gates.push(Gate::from_gate_type(kind));
         let next_id: IndexType = self.network.gates.len().try_into().unwrap();
+        self.network.gates.push(Gate::from_gate_type(kind));
         next_id.try_into().unwrap()
     }
 
