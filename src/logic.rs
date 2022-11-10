@@ -278,6 +278,16 @@ pub enum UpdateStrategy {
     /// Update gates with simd
     Simd = 2,
 }
+impl UpdateStrategy {
+    const fn from(value: u8) -> Self {
+        match value {
+            0 => UpdateStrategy::Reference,
+            1 => UpdateStrategy::ScalarSimd,
+            2 => UpdateStrategy::Simd,
+            _ => panic!(),
+        }
+    }
+}
 
 /// Contains prepared datastructures to run the network.
 #[derive(Debug, Default, Clone)]
@@ -288,12 +298,7 @@ pub(crate) struct CompiledNetwork<const STRATEGY: u8> {
     cluster_update_list: UpdateList,
 }
 impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
-    const STRATEGY: UpdateStrategy = match STRATEGY_I {
-        0 => UpdateStrategy::Reference,
-        1 => UpdateStrategy::ScalarSimd,
-        2 => UpdateStrategy::Simd,
-        _ => panic!(),
-    };
+    const STRATEGY: UpdateStrategy = UpdateStrategy::from(STRATEGY_I);
 
     //unsafe { transmute::<u8, UpdateStrategy>(STRATEGY_I)};
     #[cfg(test)]

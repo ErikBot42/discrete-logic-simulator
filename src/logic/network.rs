@@ -3,6 +3,7 @@ use crate::logic::{gate_status, CompiledNetwork, Gate, GateKey, GateType, IndexT
 use itertools::Itertools;
 use std::collections::HashMap;
 
+
 /// Iterate through all gates, skipping any
 /// placeholder gates.
 trait NetworkInfo {
