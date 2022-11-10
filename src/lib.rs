@@ -31,7 +31,7 @@ pub mod raw_list;
 
 #[cfg(test)]
 mod tests {
-    use crate::blueprint::{VcbParser, VcbBoard};
+    use crate::blueprint::{VcbBoard, VcbParser};
     use crate::logic::UpdateStrategy;
 
     //#[cfg(test)]
@@ -157,19 +157,12 @@ mod tests {
         let acc_other = other.compiled_network.get_acc_test();
         let state_reference = reference.make_inner_state_vec();
         let state_other = other.make_inner_state_vec();
-        //let diff_ids_acc: Vec<(usize, (u8, u8))> = optimized
-        //    .compiled_network
-        //    .get_acc_test()
-        //    .zip(optimized_scalar.compiled_network.get_acc_test())
-        //    .enumerate()
-        //    .filter(|(_, (a, b))| a != b)
-        //    .collect();
         let diff: Vec<_> = state_reference
             .into_iter()
             .zip(state_other)
             .zip(acc_reference.zip(acc_other))
             .enumerate()
-            .filter(|(_, ((bool_a, bool_b), (acc_a, acc_b)))| bool_a != bool_b || acc_a != acc_b)
+            .filter(|(_, ((bool_a, bool_b), _))| bool_a != bool_b)
             .collect();
         println!("--------------------------------------");
         println!("OTHER:");
@@ -177,14 +170,7 @@ mod tests {
         println!("REFERENCE:");
         reference.print();
         if diff.len() != 0
-        /* || diff_ids_acc.len() != 0*/
         {
-            //println!("got");
-            //other.print();
-            //println!("expected:");
-            //reference.print();
-            //optimized.print_marked(&diff_ids);
-            //scalar/non scalar mismatch for test {name}, in iteration {i} at nodes
 
             panic!(
                 "diff ids: \n{}",
@@ -193,9 +179,6 @@ mod tests {
                     .collect::<Vec<_>>()
                     .join("\n"),
             );
-            //\n{diff_ids_acc:?}
-            //correct = false;
-            //break;
         }
     }
     #[test]
@@ -228,18 +211,27 @@ mod tests {
     //}
 
     #[test]
-    fn basic_gate_test_optimized() {
-        basic_gate_test(true, false);
-        basic_gate_test(true, true);
+    fn basic_gate_test_scalar() {
+        generic_basic_gate_test_w::<{ UpdateStrategy::ScalarSimd as u8 }>();
     }
     #[test]
-    fn basic_gate_test_unoptimimized() {
-        basic_gate_test(false, false);
-        basic_gate_test(false, true);
+    fn basic_gate_test_reference() {
+        generic_basic_gate_test_w::<{ UpdateStrategy::Reference as u8 }>();
+    }
+    #[test]
+    fn basic_gate_test_simd() {
+        generic_basic_gate_test_w::<{ UpdateStrategy::Simd as u8 }>();
     }
 
-    fn basic_gate_test(optimize: bool, add_all: bool) {
-        const STRATEGY: u8 = UpdateStrategy::Reference as u8;
+    fn generic_basic_gate_test_w<const STRATEGY: u8>() {
+        basic_gate_test::<STRATEGY>(true, false);
+        basic_gate_test::<STRATEGY>(true, true);
+        basic_gate_test::<STRATEGY>(false, false);
+        basic_gate_test::<STRATEGY>(false, true);
+    }
+
+    fn basic_gate_test<const STRATEGY: u8>(optimize: bool, add_all: bool) {
+        //const STRATEGY: u8 = UpdateStrategy::Reference as u8;
         let mut board: VcbBoard<STRATEGY> =
             VcbParser::parse(include_str!("../test_files/gates.blueprint"), optimize);
         board.print();

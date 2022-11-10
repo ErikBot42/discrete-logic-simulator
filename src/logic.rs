@@ -1,7 +1,7 @@
 //! logic.rs: Contains the simulaion engine itself.
 
 #![allow(clippy::inline_always)]
-#![allow(dead_code)]
+//#![allow(dead_code)]
 
 pub mod gate_status;
 pub mod network;
@@ -400,10 +400,9 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             .iter()
             .map(|g| g.as_ref().map(|g| g.kind).unwrap_or_default())
             .collect();
-        kind.push(GateType::Or);
-        kind.push(GateType::Or);
-        kind.push(GateType::Or);
-        kind.push(GateType::Or);
+        for _ in 0..gate_status::PACKED_ELEMENTS {
+            kind.push(GateType::Or);
+        }
 
         let in_update_list: Vec<bool> = (0..acc_packed.len()).map(|_| false).collect();
 

@@ -1,8 +1,9 @@
 //! network.rs: Manage and optimize the network while preserving behaviour.
-use crate::logic::{gate_status, CompiledNetwork, Gate, GateKey, GateType, IndexType};
+use crate::logic::{
+    gate_status, CompiledNetwork, Gate, GateKey, GateType, IndexType, UpdateStrategy,
+};
 use itertools::Itertools;
 use std::collections::HashMap;
-
 
 /// Iterate through all gates, skipping any
 /// placeholder gates.
@@ -60,9 +61,11 @@ pub(crate) struct InitializedNetwork {
     translation_table: Vec<IndexType>,
 }
 impl InitializedNetwork {
-    pub(crate) fn with_gaps(self) -> NetworkWithGaps {
-        //NetworkWithGaps::create_from(self)
-        Self::optimize_for_scalar(&self) // <- this works too :)
+    pub(crate) fn with_gaps(self, strategy: UpdateStrategy) -> NetworkWithGaps {
+        match strategy {
+            UpdateStrategy::ScalarSimd => Self::optimize_for_scalar(&self),
+            _ => NetworkWithGaps::create_from(self),
+        }
     }
     fn create_from(network: EditableNetwork, optimize: bool) -> Self {
         assert_ne!(network.gates.len(), 0, "no gates where added.");
@@ -409,7 +412,11 @@ impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
     /// Should not panic.
     #[must_use]
     pub(crate) fn compiled(&self, optimize: bool) -> CompiledNetwork<{ STRATEGY }> {
-        CompiledNetwork::create(self.network.initialized(optimize).with_gaps())
+        CompiledNetwork::create(
+            self.network
+                .initialized(optimize)
+                .with_gaps(UpdateStrategy::from(STRATEGY)),
+        )
     }
     fn initialized(self, optimize: bool) -> InitializedNetwork {
         InitializedNetwork::create_from(self.network, optimize)
