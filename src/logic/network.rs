@@ -408,7 +408,7 @@ impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
     /// Should not panic.
     #[must_use]
     pub(crate) fn compiled(&self, optimize: bool) -> CompiledNetwork<{ STRATEGY }> {
-        CompiledNetwork::create(&self.network, optimize)
+        CompiledNetwork::create(self.network.initialized(optimize).with_gaps())
     }
     fn initialized(self, optimize: bool) -> InitializedNetwork {
         InitializedNetwork::create_from(self.network, optimize)
