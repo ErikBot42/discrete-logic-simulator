@@ -340,24 +340,22 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     fn create(mut network: NetworkWithGaps) -> Self {
         let number_of_gates = network.gates.len();
 
-        let update_list = UpdateList::collect_size(
-            network
-                .gates
-                .iter_mut()
-                .enumerate()
-                .filter(|(_, gate)| {
-                    gate.as_ref()
-                        .map(|gate| gate.kind.will_update_at_start())
-                        .unwrap_or_default()
+        let update_list: Vec<IndexType> = network
+            .gates
+            .iter_mut()
+            .enumerate()
+            .filter(|(_, gate)| {
+                gate.as_ref()
+                    .map(|gate| gate.kind.will_update_at_start())
+                    .unwrap_or_default()
+            })
+            .filter_map(|(gate_id, gate)| {
+                gate.as_mut().map(|g| {
+                    g.in_update_list = true;
+                    gate_id as IndexType
                 })
-                .filter_map(|(gate_id, gate)| {
-                    gate.as_mut().map(|g| {
-                        g.in_update_list = true;
-                        gate_id as IndexType
-                    })
-                }),
-            number_of_gates,
-        );
+            })
+            .collect();
         let gates = &network.gates;
 
         let (packed_output_indexes, packed_outputs) = Self::pack_outputs(gates);
@@ -384,15 +382,27 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             .map(|((i, s), r)| gate_status::new(*i, *s != 0, *r))
             .collect::<Vec<gate_status::Inner>>();
 
-        //if Self::STRATEGY == UpdateStrategy::ScalarSimd {
-        //    assert_eq!(in_update_list.len() % gate_status::PACKED_ELEMENTS, 0);
-        //    assert_eq!(update_list.len() % gate_status::PACKED_ELEMENTS, 0);
-        //    let in_update_list = in_update_list
-        //        .iter()
-        //        .cloned()
-        //        .array_chunks::<{ gate_status::PACKED_ELEMENTS }>()
-        //        .map(|x| x.into_iter().any(|x| x))
-        //}
+        let (update_list, in_update_list) = if Self::STRATEGY == UpdateStrategy::ScalarSimd {
+            assert_eq!(in_update_list.len() % gate_status::PACKED_ELEMENTS, 0);
+            //assert_eq!(update_list.len() % gate_status::PACKED_ELEMENTS, 0);
+            let in_update_list: Vec<_> = in_update_list
+                .iter()
+                .cloned()
+                .array_chunks::<{ gate_status::PACKED_ELEMENTS }>()
+                .map(|x| x.into_iter().any(|x| x))
+                .collect();
+            let scalar_update_list: Vec<_> = in_update_list
+                .iter()
+                .copied()
+                .enumerate()
+                .filter(|(_, b)| *b)
+                .map(|(i, _)| i as IndexType)
+                .collect();
+            (scalar_update_list, in_update_list)
+        } else {
+            (update_list, in_update_list)
+        };
+        let update_list = UpdateList::collect_size(update_list.into_iter(), number_of_gates);
 
         let status_packed = gate_status::pack(status.iter().copied());
         let acc_packed = gate_status::pack(acc.iter().copied());
