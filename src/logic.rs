@@ -8,7 +8,6 @@ pub mod network;
 pub(crate) use crate::logic::network::GateNetwork;
 
 use crate::logic::network::*;
-use itertools::iproduct;
 use std::mem::transmute;
 use std::simd::{Mask, Simd, SimdPartialEq};
 
@@ -114,23 +113,23 @@ pub(crate) struct Gate {
     //TODO: "do not merge" flag for gates that are "volatile", for example handling IO
 }
 impl Gate {
-    fn has_overlapping_outputs(&self, other: &Gate) -> bool {
-        iproduct!(self.outputs.iter(), other.outputs.iter()).any(|(&a, &b)| a == b)
-    }
-    fn has_overlapping_outputs_at_same_index(&self, other: &Gate) -> bool {
-        self.outputs
-            .iter()
-            .zip(other.outputs.iter())
-            .any(|(&a, &b)| a == b)
-    }
-    fn has_overlapping_outputs_at_same_index_with_alignment_8(&self, other: &Gate) -> bool {
-        self.outputs
-            .iter()
-            .zip(other.outputs.iter())
-            .any(|(&a, &b)| (a as i32 - b as i32).abs() <= 8)
-    }
+    //fn has_overlapping_outputs(&self, other: &Gate) -> bool {
+    //    iproduct!(self.outputs.iter(), other.outputs.iter()).any(|(&a, &b)| a == b)
+    //}
+    //fn has_overlapping_outputs_at_same_index(&self, other: &Gate) -> bool {
+    //    self.outputs
+    //        .iter()
+    //        .zip(other.outputs.iter())
+    //        .any(|(&a, &b)| a == b)
+    //}
+    //fn has_overlapping_outputs_at_same_index_with_alignment_8(&self, other: &Gate) -> bool {
+    //    self.outputs
+    //        .iter()
+    //        .zip(other.outputs.iter())
+    //        .any(|(&a, &b)| (a as i32 - b as i32).abs() <= 8)
+    //}
     fn is_cluster_a_xor_is_cluster_b(&self, other: &Gate) -> bool {
-        (self.kind == GateType::Cluster) != (other.kind == GateType::Cluster)
+        self.kind.is_cluster() != other.kind.is_cluster()
     }
     fn new(kind: GateType, outputs: Vec<IndexType>) -> Self {
         let start_acc = match kind {
@@ -428,7 +427,9 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
         let mut in_update_list: Vec<bool> = (0..number_of_gates).map(|_| false).collect();
         unsafe { update_list.iter() }.for_each(|i| {
-            in_update_list.get_mut(i as usize).map(|i| *i = true);
+            if let Some(i) = in_update_list.get_mut(i as usize) {
+                *i = true
+            };
         });
 
         Self {
@@ -579,7 +580,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
         dbg!(update_list_p);
         for id_packed in 0..status_packed_len {
-        //for id_packed in update_list_p.iter().map(|x| *x as usize) {
+            //for id_packed in update_list_p.iter().map(|x| *x as usize) {
             //debug_assert!(inner.in_update_list[id_packed], "{:?}", inner.in_update_list);
 
             let status_p = &mut inner.status_packed[id_packed];
@@ -850,7 +851,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
     }
 
-
     #[inline(never)]
     fn propagate_delta_to_accs_scalar_safe<F: FnMut(IndexType)>(
         delta_p: gate_status::Packed,
@@ -899,8 +899,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             .copied()
             .for_each(update_list_handler);
     }
-
-
 
     /// Reference impl
     #[inline(never)]
@@ -1042,9 +1040,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             }
         }
     }
-}
-struct AlignedArray {
-    a: [u32; 8],
 }
 
 #[cfg(test)]

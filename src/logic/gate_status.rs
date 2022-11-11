@@ -1,6 +1,5 @@
 //use super::*;
 use super::{AccType, Gate, RunTimeGateType, SimdLogicType};
-use std::mem::transmute;
 use std::simd::{LaneCount, Mask, Simd, SimdPartialEq, SupportedLaneCount};
 //TODO: this only uses 4 bits, 2 adjacent gates could share their
 //      in_update_list flag and be updated at the same time.
@@ -20,7 +19,7 @@ const FLAG_IS_INVERTED: Inner = 1 << IS_INVERTED;
 const FLAG_IS_XOR: Inner = 1 << IS_XOR;
 
 const FLAGS_MASK: Inner = FLAG_IS_INVERTED | FLAG_IS_XOR;
-const ANY_MASK: Inner = FLAG_STATE | FLAG_IN_UPDATE_LIST | FLAG_IS_INVERTED | FLAG_IS_XOR;
+//const ANY_MASK: Inner = FLAG_STATE | FLAG_IN_UPDATE_LIST | FLAG_IS_INVERTED | FLAG_IS_XOR;
 
 pub(crate) fn new(in_update_list: bool, state: bool, kind: RunTimeGateType) -> Inner {
     //let in_update_list = in_update_list as u8;
@@ -143,9 +142,6 @@ fn eval_mut_no_assert<const CLUSTER: bool>(inner_mut: &mut Inner, acc: AccType) 
     }
 }
 
-const fn splat_u4_u8(value: u8) -> u8 {
-    (value << 4) | value
-}
 pub(crate) const fn splat_u32(value: u8) -> Packed {
     pack_single([value; PACKED_ELEMENTS])
 }

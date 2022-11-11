@@ -36,9 +36,6 @@ mod tests {
     use crate::blueprint::{VcbBoard, VcbParser};
     use crate::logic::UpdateStrategy;
 
-    //#[cfg(test)]
-    //use pretty_assertions::assert_eq;
-
     fn prep_cases<const STRATEGY: u8>(optimize: bool) -> Vec<(&'static str, VcbBoard<STRATEGY>)> {
         let cases: Vec<(&str, &str)> = vec![
             ("gates", include_str!("../test_files/gates.blueprint")),
@@ -183,15 +180,16 @@ mod tests {
             );
         }
     }
-    #[ignore]
+    //#[ignore]
     #[test]
     fn scalar_regression_test_unoptimized() {
         assert!(scalar_test(false));
     }
-    //#[test]
-    //fn scalar_regression_test_optimized() {
-    //    assert!(scalar_test(true));
-    //}
+    //#[ignore]
+    #[test]
+    fn scalar_regression_test_optimized() {
+        assert!(scalar_test(true));
+    }
 
     #[test]
     fn simd_regression_test_unoptimized() {

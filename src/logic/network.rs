@@ -225,8 +225,8 @@ impl InitializedNetwork {
             prev_network_gate_count = new_network.gates.len();
         }
     }
-    
-    /// In order for scalar packing optimizations to be sound, 
+
+    /// In order for scalar packing optimizations to be sound,
     /// cluster and non cluster cannot be mixed
     fn prepare_for_scalar_packing(&self) -> NetworkWithGaps {
         self.reordered_by(|v| {
@@ -410,8 +410,5 @@ impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
                 .initialized(optimize)
                 .with_gaps(UpdateStrategy::from(STRATEGY)),
         )
-    }
-    fn initialized(self, optimize: bool) -> InitializedNetwork {
-        InitializedNetwork::create_from(self.network, optimize)
     }
 }
