@@ -569,6 +569,8 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         } else {
             (unsafe { gate_update_list.get_slice() }, cluster_update_list)
         };
+        //let update_list_p = dbg!(update_list_p);
+
         // this updates EVERY gate
         // TODO: unchecked reads.
         // TODO: case where entire group of deltas is zero
@@ -606,14 +608,15 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 |id: IndexType| {
                     let id_p = id / gate_status::PACKED_ELEMENTS as u32;
                     let id_p_usize = id_p as usize;
-                    unsafe {
-                        if !*(inner.in_update_list).get_unchecked(id_p_usize) {
+                    if !inner.in_update_list[id_p_usize] {
+                        unsafe {
                             next_update_list_p.push(id_p);
-                            *(inner.in_update_list).get_unchecked_mut(id_p_usize) = true;
                         }
+                        inner.in_update_list[id_p_usize] = true;
                     }
                 },
             );
+            inner.in_update_list[id_packed] = false;
         }
     }
 
