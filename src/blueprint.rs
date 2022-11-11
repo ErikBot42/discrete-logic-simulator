@@ -201,6 +201,7 @@ impl<const STRATEGY: u8> BoardElement<STRATEGY> {
     fn print(&self, board: &VcbBoard<STRATEGY>, _i: usize, marked: bool) {
         let mut brfac: u32 = 50;
         let tmpstr = if let Some(t) = self.id {
+            let id_to_print = board.compiled_network.get_inner_id(t) % 100;
             if let Some(id) = board.nodes[t].network_id {
                 if board.compiled_network.get_state(id) {
                     brfac = 255;
@@ -215,9 +216,9 @@ impl<const STRATEGY: u8> BoardElement<STRATEGY> {
                 //    GateType::CLUSTER => format!(" C"),
                 //}
                 //format!("{:>2}",t%100)
-                format!("{:>2}", t % 100)
+                format!("{:>2}", id_to_print)
             } else {
-                format!("{:>2}", t % 100)
+                format!("{:>2}", id_to_print)
             }
         } else {
             "  ".to_string()

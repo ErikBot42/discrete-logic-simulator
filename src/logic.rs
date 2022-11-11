@@ -465,6 +465,11 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
         (packed_output_indexes, packed_outputs)
     }
+    
+    pub(crate) fn get_inner_id(&self, gate_id: usize) -> usize {
+        self.i.translation_table[gate_id] as usize
+    }
+
     /// # Panics
     /// Not initialized, if `gate_id` is out of range
     #[must_use]
