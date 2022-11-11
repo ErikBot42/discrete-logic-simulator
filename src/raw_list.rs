@@ -1,6 +1,7 @@
 //! A list that is just a raw array that is manipulated directly.
 //! Very unsafe but slightly faster than a normal vector
-#![allow(dead_code)]
+//! This is needed because it's used in the innermost loop
+//#![allow(dead_code)]
 #![allow(clippy::inline_always)]
 
 #[derive(Debug, Default, Clone)]
@@ -36,13 +37,13 @@ where
             len: 0,
         }
     }
-    #[inline(always)]
-    pub(crate) fn clear(&mut self) {
-        self.len = 0;
-    }
     pub(crate) fn push_safe(&mut self, el: T) {
         self.list[self.len] = el;
         self.len += 1;
+    }
+    #[inline(always)]
+    pub(crate) fn clear(&mut self) {
+        self.len = 0;
     }
     #[inline(always)]
     pub(crate) unsafe fn push(&mut self, el: T) {
@@ -80,5 +81,8 @@ where
     #[inline(always)]
     pub(crate) fn len(&self) -> usize {
         self.len
+    }
+    pub(crate) unsafe fn iter(&self) -> impl Iterator<Item = T> + '_ {
+        unsafe { self.get_slice().iter().cloned() }
     }
 }

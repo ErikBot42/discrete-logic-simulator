@@ -4,6 +4,7 @@
 #![feature(core_intrinsics)]
 #![feature(generic_arg_infer)]
 #![feature(let_chains)]
+#![feature(iter_array_chunks)]
 macro_rules! unwrap_or_else {
     ($expression:expr, $block:expr) => {
         match $expression {

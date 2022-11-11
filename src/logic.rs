@@ -339,6 +339,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     }
     fn create(mut network: NetworkWithGaps) -> Self {
         let number_of_gates = network.gates.len();
+
         let update_list = UpdateList::collect_size(
             network
                 .gates
@@ -358,6 +359,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             number_of_gates,
         );
         let gates = &network.gates;
+
         let (packed_output_indexes, packed_outputs) = Self::pack_outputs(gates);
         let runtime_gate_kind: Vec<RunTimeGateType> = gates
             .iter()
@@ -381,6 +383,16 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             .zip(runtime_gate_kind.iter())
             .map(|((i, s), r)| gate_status::new(*i, *s != 0, *r))
             .collect::<Vec<gate_status::Inner>>();
+
+        //if Self::STRATEGY == UpdateStrategy::ScalarSimd {
+        //    assert_eq!(in_update_list.len() % gate_status::PACKED_ELEMENTS, 0);
+        //    assert_eq!(update_list.len() % gate_status::PACKED_ELEMENTS, 0);
+        //    let in_update_list = in_update_list
+        //        .iter()
+        //        .cloned()
+        //        .array_chunks::<{ gate_status::PACKED_ELEMENTS }>()
+        //        .map(|x| x.into_iter().any(|x| x))
+        //}
 
         let status_packed = gate_status::pack(status.iter().copied());
         let acc_packed = gate_status::pack(acc.iter().copied());
