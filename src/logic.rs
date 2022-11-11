@@ -338,10 +338,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         assert_eq!(self.cluster_update_list.len(), 0);
     }
     fn create(mut network: NetworkWithGaps) -> Self {
-        //network = network.optimize_for_scalar();
-        //if Self::STRATEGY == UpdateStrategy::ScalarSimd {
-        //}
-
         let number_of_gates = network.gates.len();
         let update_list = UpdateList::collect_size(
             network

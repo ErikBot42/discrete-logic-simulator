@@ -63,7 +63,7 @@ pub(crate) struct InitializedNetwork {
 impl InitializedNetwork {
     pub(crate) fn with_gaps(self, strategy: UpdateStrategy) -> NetworkWithGaps {
         match strategy {
-            UpdateStrategy::ScalarSimd => Self::optimize_for_scalar(&self),
+            UpdateStrategy::ScalarSimd => Self::prepare_for_scalar_packing(&self),
             _ => NetworkWithGaps::create_from(self),
         }
     }
@@ -225,22 +225,15 @@ impl InitializedNetwork {
             prev_network_gate_count = new_network.gates.len();
         }
     }
-
-    fn optimize_for_scalar(&self) -> NetworkWithGaps {
-        //let sort = |a: &Gate, b: &Gate| {
-        //    //let by_number_of_outputs = a.outputs.len().cmp(&b.outputs.len());
-        //    //let by_kind = a.kind.cmp(&b.kind);
-
-        //    //by_number_of_outputs.then(by_kind)
-        //};
-        // TODO: PERF: reorder outputs to try and fit more outputs in single group
+    
+    /// In order for scalar packing optimizations to be sound, 
+    /// cluster and non cluster cannot be mixed
+    fn prepare_for_scalar_packing(&self) -> NetworkWithGaps {
         self.reordered_by(|v| {
-            //v.sort_by(|(_, a), (_, b)| sort(a, b));
             Self::aligned_by_inner(
                 v,
                 gate_status::PACKED_ELEMENTS,
                 Gate::is_cluster_a_xor_is_cluster_b,
-                //Gate::has_overlapping_outputs_at_same_index_with_alignment_8,
             )
         })
     }
