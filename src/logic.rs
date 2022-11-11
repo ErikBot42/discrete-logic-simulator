@@ -425,7 +425,10 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             kind.push(GateType::Or);
         }
 
-        let in_update_list: Vec<bool> = (0..acc_packed.len()).map(|_| false).collect();
+        let mut in_update_list: Vec<bool> = (0..acc_packed.len()).map(|_| false).collect();
+        unsafe { update_list.iter() }.for_each(|i| {
+            in_update_list.get_mut(i as usize).map(|i| *i = true);
+        });
 
         Self {
             i: CompiledNetworkInner {
