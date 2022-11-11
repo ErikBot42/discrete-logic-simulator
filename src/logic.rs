@@ -378,15 +378,15 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             if Self::STRATEGY == UpdateStrategy::ScalarSimd {
                 assert_eq!(gates.len() % gate_status::PACKED_ELEMENTS, 0);
                 assert_eq!(gates.len(), in_update_list.len());
-                let in_update_list: Vec<_> = in_update_list
+                let scalar_in_update_list: Vec<_> = in_update_list
                     .iter()
                     .array_chunks::<{ gate_status::PACKED_ELEMENTS }>()
                     .map(|x| x.into_iter().any(|x| *x))
                     .collect();
-                let scalar_update_list: Vec<_> = in_update_list
+                let scalar_update_list: Vec<_> = scalar_in_update_list
                     .iter()
                     .enumerate()
-                    .filter_map(|(i, b)| b.then_some(i as IndexType))
+                    .filter_map(|(i, b)| b.then_some(dbg!(i) as IndexType))
                     .collect();
                 scalar_update_list
             } else {
@@ -420,10 +420,13 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
 
         let mut in_update_list: Vec<bool> = (0..number_of_gates).map(|_| false).collect();
-        unsafe { update_list.iter() }.for_each(|i| {
-            if let Some(i) = in_update_list.get_mut(i as usize) {
-                *i = true;
-            };
+        unsafe { update_list.iter().enumerate() }.for_each(|(id, i)| {
+            in_update_list[i as usize] = true;
+            dbg!(id);
+            //if let Some(i) = in_update_list.get_mut(i as usize) {
+            //    dbg!(id);
+            //    *i = true;
+            //};
         });
 
         Self {
@@ -573,9 +576,23 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         let status_packed_len = inner.status_packed.len();
 
         dbg!(update_list_p);
+        //[0, 1, 2, 3, 4, 5, 6, 7]
+        let _: Vec<_> = dbg!(update_list_p
+            .iter()
+            .map(|i| {
+                (
+                    *i,
+                    [0, 1, 2, 3, 4, 5, 6, 7].map(|j| i * gate_status::PACKED_ELEMENTS as u32 + j),
+                )
+            })
+            .collect());
         for id_packed in 0..status_packed_len {
-            //for id_packed in update_list_p.iter().map(|x| *x as usize) {
-            //debug_assert!(inner.in_update_list[id_packed], "{:?}", inner.in_update_list);
+        //for id_packed in update_list_p.iter().map(|x| *x as usize) {
+        //    debug_assert!(
+        //        inner.in_update_list[id_packed],
+        //        "{:?}",
+        //        inner.in_update_list
+        //    );
 
             let status_p = &mut inner.status_packed[id_packed];
             let acc_p = &inner.acc_packed[id_packed];
