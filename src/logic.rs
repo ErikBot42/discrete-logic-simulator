@@ -569,7 +569,10 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         // this updates EVERY gate
         // TODO: unchecked reads.
         // TODO: case where entire group of deltas is zero
-        for (id_packed, status_p) in inner.status_packed.iter_mut().enumerate() {
+        let status_packed_len = inner.status_packed.len();
+        for id_packed in 0..status_packed_len {
+
+            let status_p = inner.status_packed.get_mut(id_packed).unwrap();
             let acc_p = &inner.acc_packed[id_packed];
             let is_cluster = [0, 1, 2, 3, 4, 5, 6, 7].map(|x| {
                 inner.kind[x + id_packed * gate_status::PACKED_ELEMENTS] == GateType::Cluster
