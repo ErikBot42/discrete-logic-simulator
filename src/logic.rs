@@ -6,8 +6,7 @@
 pub mod gate_status;
 pub mod network;
 pub(crate) use crate::logic::network::GateNetwork;
-
-use crate::logic::network::*;
+use crate::logic::network::NetworkWithGaps;
 use std::mem::transmute;
 use std::simd::{Mask, Simd, SimdPartialEq};
 
@@ -388,7 +387,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 //assert_eq!(update_list.len() % gate_status::PACKED_ELEMENTS, 0);
                 let in_update_list: Vec<_> = in_update_list
                     .iter()
-                    .cloned()
+                    .copied()
                     .array_chunks::<{ gate_status::PACKED_ELEMENTS }>()
                     .map(|x| x.into_iter().any(|x| x))
                     .collect();
@@ -428,7 +427,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         let mut in_update_list: Vec<bool> = (0..number_of_gates).map(|_| false).collect();
         unsafe { update_list.iter() }.for_each(|i| {
             if let Some(i) = in_update_list.get_mut(i as usize) {
-                *i = true
+                *i = true;
             };
         });
 
