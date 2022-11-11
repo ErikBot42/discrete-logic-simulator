@@ -373,30 +373,20 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             .iter()
             .map(|gate| gate.as_ref().map(|g| g.acc).unwrap_or_default())
             .collect();
-        let status: Vec<gate_status::Inner> = in_update_list
-            .iter()
-            .zip(state.iter())
-            .zip(runtime_gate_kind.iter())
-            .map(|((i, s), r)| gate_status::new(*i, *s != 0, *r))
-            .collect::<Vec<gate_status::Inner>>();
 
         let update_list = UpdateList::collect_size(
             if Self::STRATEGY == UpdateStrategy::ScalarSimd {
                 assert_eq!(gates.len() % gate_status::PACKED_ELEMENTS, 0);
-                assert_eq!(in_update_list.len() % gate_status::PACKED_ELEMENTS, 0);
-                //assert_eq!(update_list.len() % gate_status::PACKED_ELEMENTS, 0);
+                assert_eq!(gates.len(), in_update_list.len());
                 let in_update_list: Vec<_> = in_update_list
                     .iter()
-                    .copied()
                     .array_chunks::<{ gate_status::PACKED_ELEMENTS }>()
-                    .map(|x| x.into_iter().any(|x| x))
+                    .map(|x| x.into_iter().any(|x| *x))
                     .collect();
                 let scalar_update_list: Vec<_> = in_update_list
                     .iter()
-                    .copied()
                     .enumerate()
-                    .filter(|(_, b)| *b)
-                    .map(|(i, _)| i as IndexType)
+                    .filter_map(|(i, b)| b.then_some(i as IndexType))
                     .collect();
                 scalar_update_list
             } else {
@@ -405,7 +395,12 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             .into_iter(),
             number_of_gates,
         );
-
+        let status: Vec<gate_status::Inner> = in_update_list
+            .iter()
+            .zip(state.iter())
+            .zip(runtime_gate_kind.iter())
+            .map(|((i, s), r)| gate_status::new(*i, *s != 0, *r))
+            .collect::<Vec<gate_status::Inner>>();
         let status_packed = gate_status::pack(status.iter().copied());
         let acc_packed = gate_status::pack(acc.iter().copied());
         acc_packed
