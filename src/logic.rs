@@ -561,7 +561,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         gate_update_list: &mut UpdateList,
         cluster_update_list: &mut UpdateList,
     ) {
-        let (update_list, next_update_list) = if CLUSTER {
+        let (update_list_p, next_update_list_p) = if CLUSTER {
             (unsafe { cluster_update_list.get_slice() }, gate_update_list)
         } else {
             (unsafe { gate_update_list.get_slice() }, cluster_update_list)
@@ -593,12 +593,12 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 packed_output_indexes,
                 packed_outputs,
                 |id: IndexType| {
-                    let id = id / gate_status::PACKED_ELEMENTS as u32;
-                    let id_usize = id as usize;
+                    let id_p = id / gate_status::PACKED_ELEMENTS as u32;
+                    let id_p_usize = id_p as usize;
                     unsafe {
-                        if !*(inner.in_update_list).get_unchecked(id_usize) {
-                            next_update_list.push(id);
-                            *(inner.in_update_list).get_unchecked_mut(id_usize) = true;
+                        if !*(inner.in_update_list).get_unchecked(id_p_usize) {
+                            next_update_list_p.push(id_p);
+                            *(inner.in_update_list).get_unchecked_mut(id_p_usize) = true;
                         }
                     }
                 },
