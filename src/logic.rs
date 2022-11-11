@@ -425,7 +425,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             kind.push(GateType::Or);
         }
 
-        let mut in_update_list: Vec<bool> = (0..acc_packed.len()).map(|_| false).collect();
+        let mut in_update_list: Vec<bool> = (0..number_of_gates).map(|_| false).collect();
         unsafe { update_list.iter() }.for_each(|i| {
             in_update_list.get_mut(i as usize).map(|i| *i = true);
         });
@@ -574,6 +574,8 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         // TODO: case where entire group of deltas is zero
         let status_packed_len = inner.status_packed.len();
         for id_packed in 0..status_packed_len {
+            //debug_assert!(inner.in_update_list[id_packed], "{:?}", inner.in_update_list);
+
             let status_p = inner.status_packed.get_mut(id_packed).unwrap();
             let acc_p = &inner.acc_packed[id_packed];
             let is_cluster = [0, 1, 2, 3, 4, 5, 6, 7].map(|x| {
