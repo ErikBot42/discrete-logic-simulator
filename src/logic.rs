@@ -446,7 +446,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             },
             update_list,
             cluster_update_list: UpdateList::new(number_of_gates),
-        } 
+        }
     }
     fn pack_outputs(gates: &[Option<Gate>]) -> (Vec<IndexType>, Vec<IndexType>) {
         // TODO: potentially optimized overlapping outputs/indexes
@@ -571,12 +571,18 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         // TODO: case where entire group of deltas is zero
         let status_packed_len = inner.status_packed.len();
         for id_packed in 0..status_packed_len {
-
             let status_p = inner.status_packed.get_mut(id_packed).unwrap();
             let acc_p = &inner.acc_packed[id_packed];
             let is_cluster = [0, 1, 2, 3, 4, 5, 6, 7].map(|x| {
                 inner.kind[x + id_packed * gate_status::PACKED_ELEMENTS] == GateType::Cluster
             });
+
+            assert!(
+                is_cluster.into_iter().is_sorted(),
+                "Scalar was not packed properly: {is_cluster:?}"
+            );
+
+            let is_cluster = [is_cluster[0]; gate_status::PACKED_ELEMENTS];
 
             let delta_p =
                 gate_status::eval_mut_scalar_masked::<CLUSTER>(status_p, *acc_p, is_cluster);

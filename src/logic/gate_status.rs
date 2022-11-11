@@ -217,9 +217,7 @@ pub(crate) fn eval_mut_scalar_masked<const CLUSTER: bool>(
     acc: Packed,
     cluster_mask: [bool; PACKED_ELEMENTS],
 ) -> Packed {
-    let cluster_mask = or_combine(pack_single(
-        unsafe { transmute(cluster_mask) }, /*.map(u8::from)*/
-    ));
+    let cluster_mask = or_combine(pack_single(cluster_mask.map(u8::from)));
     let (active_mask, inactive_mask) = if CLUSTER {
         (cluster_mask, !cluster_mask)
     } else {
