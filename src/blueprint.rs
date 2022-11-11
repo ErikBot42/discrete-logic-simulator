@@ -498,7 +498,7 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
     /// # Panics
     /// invalid base64 string, invalid zstd, invalid colors
     #[must_use]
-    pub fn parse(data: &str, optimize: bool) -> VcbBoard<STRATEGY> {
+    pub fn parse_to_board(data: &str, optimize: bool) -> VcbBoard<STRATEGY> {
         let bytes = base64::decode_config(data.trim(), base64::STANDARD).unwrap();
         let data_bytes = &bytes[..bytes.len() - Footer::SIZE];
         let footer_bytes: [u8; Footer::SIZE] = bytes[bytes.len() - Footer::SIZE..bytes.len()]

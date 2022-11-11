@@ -70,15 +70,15 @@ fn main() {
     match args.implementation {
         UpdateStrategy::ScalarSimd => handle_board(
             &args,
-            VcbParser::<{ UpdateStrategy::ScalarSimd as u8 }>::parse(&string, true),
+            VcbParser::<{ UpdateStrategy::ScalarSimd as u8 }>::parse_to_board(&string, true),
         ),
         UpdateStrategy::Reference => handle_board(
             &args,
-            VcbParser::<{ UpdateStrategy::Reference as u8 }>::parse(&string, true),
+            VcbParser::<{ UpdateStrategy::Reference as u8 }>::parse_to_board(&string, true),
         ),
         UpdateStrategy::Simd => handle_board(
             &args,
-            VcbParser::<{ UpdateStrategy::Simd as u8 }>::parse(&string, true),
+            VcbParser::<{ UpdateStrategy::Simd as u8 }>::parse_to_board(&string, true),
         ),
     }
 }
