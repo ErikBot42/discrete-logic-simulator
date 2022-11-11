@@ -382,27 +382,30 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             .map(|((i, s), r)| gate_status::new(*i, *s != 0, *r))
             .collect::<Vec<gate_status::Inner>>();
 
-        let (update_list, in_update_list) = if Self::STRATEGY == UpdateStrategy::ScalarSimd {
-            assert_eq!(in_update_list.len() % gate_status::PACKED_ELEMENTS, 0);
-            //assert_eq!(update_list.len() % gate_status::PACKED_ELEMENTS, 0);
-            let in_update_list: Vec<_> = in_update_list
-                .iter()
-                .cloned()
-                .array_chunks::<{ gate_status::PACKED_ELEMENTS }>()
-                .map(|x| x.into_iter().any(|x| x))
-                .collect();
-            let scalar_update_list: Vec<_> = in_update_list
-                .iter()
-                .copied()
-                .enumerate()
-                .filter(|(_, b)| *b)
-                .map(|(i, _)| i as IndexType)
-                .collect();
-            (scalar_update_list, in_update_list)
-        } else {
-            (update_list, in_update_list)
-        };
-        let update_list = UpdateList::collect_size(update_list.into_iter(), number_of_gates);
+        let update_list = UpdateList::collect_size(
+            if Self::STRATEGY == UpdateStrategy::ScalarSimd {
+                assert_eq!(in_update_list.len() % gate_status::PACKED_ELEMENTS, 0);
+                //assert_eq!(update_list.len() % gate_status::PACKED_ELEMENTS, 0);
+                let in_update_list: Vec<_> = in_update_list
+                    .iter()
+                    .cloned()
+                    .array_chunks::<{ gate_status::PACKED_ELEMENTS }>()
+                    .map(|x| x.into_iter().any(|x| x))
+                    .collect();
+                let scalar_update_list: Vec<_> = in_update_list
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .filter(|(_, b)| *b)
+                    .map(|(i, _)| i as IndexType)
+                    .collect();
+                scalar_update_list
+            } else {
+                update_list
+            }
+            .into_iter(),
+            number_of_gates,
+        );
 
         let status_packed = gate_status::pack(status.iter().copied());
         let acc_packed = gate_status::pack(acc.iter().copied());
@@ -443,7 +446,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             },
             update_list,
             cluster_update_list: UpdateList::new(number_of_gates),
-        } //.clone()
+        } 
     }
     fn pack_outputs(gates: &[Option<Gate>]) -> (Vec<IndexType>, Vec<IndexType>) {
         // TODO: potentially optimized overlapping outputs/indexes
