@@ -384,6 +384,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
         let update_list = UpdateList::collect_size(
             if Self::STRATEGY == UpdateStrategy::ScalarSimd {
+                assert_eq!(gates.len() % gate_status::PACKED_ELEMENTS, 0);
                 assert_eq!(in_update_list.len() % gate_status::PACKED_ELEMENTS, 0);
                 //assert_eq!(update_list.len() % gate_status::PACKED_ELEMENTS, 0);
                 let in_update_list: Vec<_> = in_update_list
@@ -575,10 +576,13 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         // TODO: unchecked reads.
         // TODO: case where entire group of deltas is zero
         let status_packed_len = inner.status_packed.len();
+
+        dbg!(update_list_p);
         for id_packed in 0..status_packed_len {
+        //for id_packed in update_list_p.iter().map(|x| *x as usize) {
             //debug_assert!(inner.in_update_list[id_packed], "{:?}", inner.in_update_list);
 
-            let status_p = inner.status_packed.get_mut(id_packed).unwrap();
+            let status_p = &mut inner.status_packed[id_packed];
             let acc_p = &inner.acc_packed[id_packed];
             let is_cluster = [0, 1, 2, 3, 4, 5, 6, 7].map(|x| {
                 inner.kind[x + id_packed * gate_status::PACKED_ELEMENTS] == GateType::Cluster
@@ -590,6 +594,10 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             );
 
             let is_cluster = [is_cluster[0]; gate_status::PACKED_ELEMENTS];
+
+            // very not robust...
+            //if is_cluster[0] != CLUSTER {continue}
+            //assert_eq!(is_cluster[0], CLUSTER);
 
             let delta_p =
                 gate_status::eval_mut_scalar_masked::<CLUSTER>(status_p, *acc_p, is_cluster);
@@ -618,6 +626,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             );
             inner.in_update_list[id_packed] = false;
         }
+        dbg!(next_update_list_p);
     }
 
     /// Update all gates in update list.
@@ -840,6 +849,58 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 unsafe { _mm256_add_epi32(output_id_index_mm, _mm256_set1_epi32(1)) };
         }
     }
+
+
+    #[inline(never)]
+    fn propagate_delta_to_accs_scalar_safe<F: FnMut(IndexType)>(
+        delta_p: gate_status::Packed,
+        id_packed: usize,
+        acc_packed: &mut [gate_status::Packed],
+        packed_output_indexes: &[IndexType],
+        packed_outputs: &[IndexType],
+        mut update_list_handler: F,
+    ) {
+        let group_id_offset = id_packed * gate_status::PACKED_ELEMENTS;
+        let acc = bytemuck::cast_slice_mut(acc_packed);
+        let deltas = gate_status::unpack_single(delta_p);
+
+        for (id_inner, delta) in deltas.into_iter().enumerate() {
+            Self::propagate_delta_to_accs_safe(
+                group_id_offset + id_inner,
+                delta,
+                acc,
+                packed_output_indexes,
+                packed_outputs,
+                &mut update_list_handler,
+            );
+        }
+    }
+    #[inline(always)]
+    fn propagate_delta_to_accs_safe<F: FnMut(IndexType)>(
+        id: usize,
+        delta: AccTypeInner,
+        acc: &mut [AccTypeInner],
+        packed_output_indexes: &[IndexType],
+        packed_outputs: &[IndexType],
+        update_list_handler: F,
+    ) {
+        if delta == 0 {
+            return;
+        }
+        let from_index = packed_output_indexes[id] as usize;
+        let to_index = packed_output_indexes[id + 1] as usize;
+
+        for output_id in packed_outputs[from_index..to_index].iter() {
+            let other_acc = &mut acc[*output_id as usize];
+            *other_acc = other_acc.wrapping_add(delta);
+        }
+        unsafe { packed_outputs.get_unchecked(from_index..to_index) }
+            .iter()
+            .copied()
+            .for_each(update_list_handler);
+    }
+
+
 
     /// Reference impl
     #[inline(never)]

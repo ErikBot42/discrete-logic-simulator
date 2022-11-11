@@ -133,7 +133,7 @@ mod tests {
             .zip(optimized_scalar.into_iter())
         {
             //let width = optimized.width;
-            compare_boards_iter(&mut optimized, &mut optimized_scalar, 30);
+            compare_boards_iter(&mut optimized, &mut optimized_scalar, 20);
         }
         //correct
         true
@@ -183,6 +183,7 @@ mod tests {
             );
         }
     }
+    #[ignore]
     #[test]
     fn scalar_regression_test_unoptimized() {
         assert!(scalar_test(false));
