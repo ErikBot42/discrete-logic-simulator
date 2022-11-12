@@ -107,7 +107,7 @@ fn handle_board<const STRATEGY: u8>(args: &Args, mut board: VcbBoard<STRATEGY>) 
                 board.print();
                 board.update();
                 crossterm::terminal::enable_raw_mode().unwrap();
-                std::thread::sleep(Duration::from_millis(100));
+                //std::thread::sleep(Duration::from_millis(100));
                 if crossterm::event::poll(Duration::from_secs(0)).unwrap() {
                     let term_event = crossterm::event::read().unwrap();
                     crossterm::terminal::disable_raw_mode().unwrap();

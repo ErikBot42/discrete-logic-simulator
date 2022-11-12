@@ -5,7 +5,10 @@
 #![allow(clippy::cast_sign_loss)]
 use crate::logic::{CompiledNetwork, GateNetwork, GateType};
 use colored::Colorize;
+use crossterm::style::{Colors, Print, ResetColor, SetColors};
+use crossterm::QueueableCommand;
 use std::collections::BTreeSet;
+use std::io::{stdout, Write};
 
 #[derive(Debug, PartialEq, Eq)]
 enum Layer {
@@ -592,17 +595,9 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         }
     }
     fn print_compact(&self) -> Result<(), std::io::Error> {
-        use crossterm::style::{
-            Attribute, Color, Colors, Print, ResetColor, SetBackgroundColor, SetColors,
-            SetForegroundColor,
-        };
-        use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
-        use crossterm::{cursor, execute, QueueableCommand, Result};
-        use std::io::{stdout, Write};
         let mut stdout = stdout();
         stdout.queue(Print("\n"))?;
         for y in (0..self.height).step_by(2) {
-            //buffer.push_str(" ");
             for x in 0..self.width {
                 let i = x + y * self.width;
                 let i2 = x + (y + 1) * self.width;
@@ -618,15 +613,8 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                     (col[0], col[1], col[2]).into(),
                 )))?;
                 stdout.queue(Print("▄"))?;
-
-                //let tmp = "▄"
-                //    .on_truecolor(col[0], col[1], col[2])
-                //    .truecolor(col2[0], col2[1], col2[2]);
-                //let s = tmp.to_string();
-                //buffer.push_str(&s);
             }
             stdout.queue(Print("\n"))?;
-            //buffer.push('\n');
         }
         stdout.queue(ResetColor)?;
         stdout.flush()?;
@@ -637,7 +625,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         self.print_inner(true);
     }
     pub fn print(&self) {
-        self.print_compact();
+        self.print_compact().unwrap();
     }
 }
 
