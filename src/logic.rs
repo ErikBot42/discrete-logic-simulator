@@ -13,6 +13,10 @@ use std::simd::{Mask, Simd, SimdPartialEq};
 
 use crate::logic::network::InitializedNetwork;
 
+//enum LogicSims {
+//    Reference(reference_sim::ReferenceLogicSim),
+//}
+
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, PartialOrd, Ord, Default)]
 /// A = active inputs
 /// T = total inputs
@@ -101,7 +105,6 @@ type UpdateList = crate::raw_list::RawList<IndexType>;
 type GateKey = (GateType, Vec<IndexType>);
 
 trait LogicSim {
-
     // test: get acc optional
     // test: add all to update list
 
@@ -197,7 +200,6 @@ impl Gate {
         self.inputs.append(inputs);
     }
     #[inline]
-    #[cfg(test)]
     const fn evaluate(acc: AccType, kind: RunTimeGateType) -> bool {
         match kind {
             RunTimeGateType::OrNand => acc != (0),
@@ -510,6 +512,9 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     #[must_use]
     pub(crate) fn get_state(&self, gate_id: usize) -> bool {
         let gate_id = self.i.translation_table[gate_id];
+        self.get_state_internal(gate_id as usize)
+    }
+    fn get_state_internal(&self, gate_id: usize) -> bool {
         match Self::STRATEGY {
             UpdateStrategy::ScalarSimd => {
                 gate_status::get_state_from_packed_slice(&self.i.status_packed, gate_id as usize)
@@ -1090,6 +1095,27 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 }
             }
         }
+    }
+}
+impl<const STRATEGY: u8> LogicSim for CompiledNetwork<STRATEGY> {
+    fn create(network: NetworkWithGaps) -> Self {
+        Self::create(network)
+    }
+
+    fn get_state_internal(&self, gate_id: usize) -> bool {
+        self.get_state_internal(gate_id)
+    }
+
+    fn number_of_gates_external(&self) -> usize {
+        self.i.translation_table.len()
+    }
+
+    fn update(&mut self) {
+        self.update()
+    }
+
+    fn to_internal_id(&self, gate_id: usize) -> usize {
+        self.i.translation_table[gate_id] as usize
     }
 }
 
