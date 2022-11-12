@@ -1,6 +1,10 @@
 ![.](https://github.com/ErikBot42/discrete-logic-simulator/actions/workflows/rust.yml/badge.svg)
 # discrete-logic-simulator
-Logic simulator for tick based games such as VCB
+Logic simulator for tick based games such as VCB with a CLI
+
+![clip](https://user-images.githubusercontent.com/63870842/201472068-4dfb62d5-0c28-48c0-ae3d-54ddf9415810.gif)
+
+(Video looks a bit weird because making gifs is hard)
 
 ## Simplified algorithm for a subset of the implementations
 It is an event based simulation.
