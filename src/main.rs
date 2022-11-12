@@ -86,12 +86,12 @@ fn main() {
 fn handle_board<const STRATEGY: u8>(args: &Args, mut board: VcbBoard<STRATEGY>) {
     match args.mode {
         RunMode::Print => {
-            board.update();
             board.print();
+            board.update();
         },
         RunMode::Run => loop {
-            board.update();
             board.print();
+            board.update();
             std::thread::sleep(Duration::from_millis(500));
         },
         RunMode::Bench => {

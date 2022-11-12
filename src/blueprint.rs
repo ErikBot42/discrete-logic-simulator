@@ -290,25 +290,29 @@ impl Trace {
 #[derive(Debug)]
 struct BoardElement<const STRATEGY: u8> {
     /// Raw color from input file.
-    color: [u8; 4],
+    color_on: [u8; 4],
+    color_off: [u8; 4],
     kind: Trace,
     id: Option<usize>,
 }
 impl<const STRATEGY: u8> BoardElement<STRATEGY> {
     fn new(color: &[u8]) -> Self {
+        let trace = Trace::from_raw_color(color);
         BoardElement {
-            color: color.try_into().unwrap(),
-            kind: Trace::from_raw_color(color),
+            color_on: trace.to_color_on(),
+            color_off: trace.to_color_off(),
+            kind: trace,
             id: None,
         }
     }
-    fn trace_to_colors(trace: Trace) {}
     fn print(&self, board: &VcbBoard<STRATEGY>, _i: usize, marked: bool, debug: bool) {
         let mut brfac: u32 = 50;
+        let mut state = false;
         let tmpstr = if let Some(t) = self.id {
             let id_to_print = board.compiled_network.get_inner_id(t) % 100;
             if let Some(id) = board.nodes[t].network_id {
                 if board.compiled_network.get_state(id) {
+                    state = true;
                     brfac = 255;
                 };
                 if debug {
@@ -330,22 +334,24 @@ impl<const STRATEGY: u8> BoardElement<STRATEGY> {
             (255, 0, 0)
         } else {
             (
-                ((u32::from(self.color[0]) * brfac) / 255)
+                ((u32::from(self.color_on[0]) * brfac) / 255)
                     .try_into()
                     .unwrap(),
-                ((u32::from(self.color[1]) * brfac) / 255)
+                ((u32::from(self.color_on[1]) * brfac) / 255)
                     .try_into()
                     .unwrap(),
-                ((u32::from(self.color[2]) * brfac) / 255)
+                ((u32::from(self.color_on[2]) * brfac) / 255)
                     .try_into()
                     .unwrap(),
             )
         };
-        let tmp = tmpstr.on_truecolor(col.0, col.1, col.2).truecolor(
-            u8::MAX - col.0,
-            u8::MAX - col.1,
-            u8::MAX - col.2,
-        );
+        let col = if state { self.color_on } else { self.color_off };
+
+        let tmp = tmpstr.on_truecolor(col[0], col[1], col[2]);
+        //.truecolor(
+        //u8::MAX - col.0,
+        //u8::MAX - col.1,
+        //u8::MAX - col.2,);
         print!("{}", tmp);
     }
 }
