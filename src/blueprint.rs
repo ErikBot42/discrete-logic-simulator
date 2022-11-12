@@ -75,8 +75,10 @@ enum Trace {
     Annotation,
     Filler,
 }
-impl Trace {
-    // colors from file format
+
+struct ColorConstants {}
+#[rustfmt::skip]
+impl ColorConstants {
     const COLOR_GRAY: [u8; 4] = [42, 53, 65, 255];
     const COLOR_WHITE: [u8; 4] = [159, 168, 174, 255];
     const COLOR_RED: [u8; 4] = [161, 85, 94, 255];
@@ -111,44 +113,48 @@ impl Trace {
     const COLOR_LED: [u8; 4] = [255, 255, 255, 255];
     const COLOR_ANNOTATION: [u8; 4] = [58, 69, 81, 255];
     const COLOR_FILLER: [u8; 4] = [140, 171, 161, 255];
+}
+
+impl Trace {
+    // colors from file format
     #[rustfmt::skip]
     fn from_raw_color(color: &[u8]) -> Self {
         let color: [u8; 4] = color.try_into().unwrap();
         match color {
-            Self::COLOR_GRAY       => Trace::Gray,
-            Self::COLOR_WHITE      => Trace::White,
-            Self::COLOR_RED        => Trace::Red,
-            Self::COLOR_ORANGE1    => Trace::Orange1,
-            Self::COLOR_ORANGE2    => Trace::Orange2,
-            Self::COLOR_ORANGE3    => Trace::Orange3,
-            Self::COLOR_YELLOW     => Trace::Yellow,
-            Self::COLOR_GREEN1     => Trace::Green1,
-            Self::COLOR_GREEN2     => Trace::Green2,
-            Self::COLOR_CYAN1      => Trace::Cyan1,
-            Self::COLOR_CYAN2      => Trace::Cyan2,
-            Self::COLOR_BLUE1      => Trace::Blue1,
-            Self::COLOR_BLUE2      => Trace::Blue2,
-            Self::COLOR_PURPLE     => Trace::Purple,
-            Self::COLOR_MAGENTA    => Trace::Magenta,
-            Self::COLOR_PINK       => Trace::Pink,
-            Self::COLOR_WRITE      => Trace::Write,
-            Self::COLOR_EMPTY      => Trace::Empty,
-            Self::COLOR_CROSS      => Trace::Cross,
-            Self::COLOR_READ       => Trace::Read,
-            Self::COLOR_BUFFER     => Trace::Buffer,
-            Self::COLOR_AND        => Trace::And,
-            Self::COLOR_OR         => Trace::Or,
-            Self::COLOR_XOR        => Trace::Xor,
-            Self::COLOR_NOT        => Trace::Not,
-            Self::COLOR_NAND       => Trace::Nand,
-            Self::COLOR_NOR        => Trace::Nor,
-            Self::COLOR_XNOR       => Trace::Xnor,
-            Self::COLOR_LATCHON    => Trace::LatchOn,
-            Self::COLOR_LATCHOFF   => Trace::LatchOff,
-            Self::COLOR_CLOCK      => Trace::Clock,
-            Self::COLOR_LED        => Trace::Led,
-            Self::COLOR_ANNOTATION => Trace::Annotation,
-            Self::COLOR_FILLER     => Trace::Filler,
+            ColorConstants::COLOR_GRAY       => Trace::Gray,
+            ColorConstants::COLOR_WHITE      => Trace::White,
+            ColorConstants::COLOR_RED        => Trace::Red,
+            ColorConstants::COLOR_ORANGE1    => Trace::Orange1,
+            ColorConstants::COLOR_ORANGE2    => Trace::Orange2,
+            ColorConstants::COLOR_ORANGE3    => Trace::Orange3,
+            ColorConstants::COLOR_YELLOW     => Trace::Yellow,
+            ColorConstants::COLOR_GREEN1     => Trace::Green1,
+            ColorConstants::COLOR_GREEN2     => Trace::Green2,
+            ColorConstants::COLOR_CYAN1      => Trace::Cyan1,
+            ColorConstants::COLOR_CYAN2      => Trace::Cyan2,
+            ColorConstants::COLOR_BLUE1      => Trace::Blue1,
+            ColorConstants::COLOR_BLUE2      => Trace::Blue2,
+            ColorConstants::COLOR_PURPLE     => Trace::Purple,
+            ColorConstants::COLOR_MAGENTA    => Trace::Magenta,
+            ColorConstants::COLOR_PINK       => Trace::Pink,
+            ColorConstants::COLOR_WRITE      => Trace::Write,
+            ColorConstants::COLOR_EMPTY      => Trace::Empty,
+            ColorConstants::COLOR_CROSS      => Trace::Cross,
+            ColorConstants::COLOR_READ       => Trace::Read,
+            ColorConstants::COLOR_BUFFER     => Trace::Buffer,
+            ColorConstants::COLOR_AND        => Trace::And,
+            ColorConstants::COLOR_OR         => Trace::Or,
+            ColorConstants::COLOR_XOR        => Trace::Xor,
+            ColorConstants::COLOR_NOT        => Trace::Not,
+            ColorConstants::COLOR_NAND       => Trace::Nand,
+            ColorConstants::COLOR_NOR        => Trace::Nor,
+            ColorConstants::COLOR_XNOR       => Trace::Xnor,
+            ColorConstants::COLOR_LATCHON    => Trace::LatchOn,
+            ColorConstants::COLOR_LATCHOFF   => Trace::LatchOff,
+            ColorConstants::COLOR_CLOCK      => Trace::Clock,
+            ColorConstants::COLOR_LED        => Trace::Led,
+            ColorConstants::COLOR_ANNOTATION => Trace::Annotation,
+            ColorConstants::COLOR_FILLER     => Trace::Filler,
             _ => panic!("Invalid trace color"),
         }
     }
