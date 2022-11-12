@@ -165,9 +165,9 @@ mod tests {
             .collect();
         println!("--------------------------------------");
         println!("OTHER:");
-        other.print();
+        other.print_debug();
         println!("REFERENCE:");
-        reference.print();
+        reference.print_debug();
         if diff.len() != 0
         {
 
@@ -235,7 +235,7 @@ mod tests {
         //const STRATEGY: u8 = UpdateStrategy::Reference as u8;
         let mut board: VcbBoard<STRATEGY> =
             VcbParser::parse_to_board(include_str!("../test_files/gates.blueprint"), optimize);
-        board.print();
+        board.print_debug();
         assert_eq!(
             board.make_state_vec(),
             [
@@ -268,7 +268,7 @@ mod tests {
             board.compiled_network.add_all_to_update_list()
         };
         board.update();
-        board.print();
+        board.print_debug();
         assert_eq!(
             board.make_state_vec(),
             [
@@ -301,7 +301,7 @@ mod tests {
             board.compiled_network.add_all_to_update_list()
         };
         board.update();
-        board.print();
+        board.print_debug();
         assert_eq!(
             board.make_state_vec(),
             [
@@ -334,7 +334,7 @@ mod tests {
             board.compiled_network.add_all_to_update_list()
         };
         board.update();
-        board.print();
+        board.print_debug();
         assert_eq!(
             board.make_state_vec(),
             [

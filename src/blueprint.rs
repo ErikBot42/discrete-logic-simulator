@@ -198,7 +198,7 @@ impl<const STRATEGY: u8> BoardElement<STRATEGY> {
             id: None,
         }
     }
-    fn print(&self, board: &VcbBoard<STRATEGY>, _i: usize, marked: bool) {
+    fn print(&self, board: &VcbBoard<STRATEGY>, _i: usize, marked: bool, debug: bool) {
         let mut brfac: u32 = 50;
         let tmpstr = if let Some(t) = self.id {
             let id_to_print = board.compiled_network.get_inner_id(t) % 100;
@@ -206,9 +206,17 @@ impl<const STRATEGY: u8> BoardElement<STRATEGY> {
                 if board.compiled_network.get_state(id) {
                     brfac = 255;
                 };
-                format!("{:>2}", id_to_print)
+                if debug {
+                    format!("{:>2}", id_to_print)
+                } else {
+                    format!("  ")
+                }
             } else {
-                format!("{:>2}", id_to_print)
+                if debug {
+                    format!("{:>2}", id_to_print)
+                } else {
+                    format!("  ")
+                }
             }
         } else {
             "  ".to_string()
@@ -228,7 +236,11 @@ impl<const STRATEGY: u8> BoardElement<STRATEGY> {
                     .unwrap(),
             )
         };
-        let tmp = tmpstr.on_truecolor(col.0,col.1,col.2).truecolor(u8::MAX-col.0,u8::MAX-col.1,u8::MAX-col.2);
+        let tmp = tmpstr.on_truecolor(col.0, col.1, col.2).truecolor(
+            u8::MAX - col.0,
+            u8::MAX - col.1,
+            u8::MAX - col.2,
+        );
         print!("{}", tmp);
     }
 }
@@ -449,20 +461,26 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         for y in 0..self.height {
             for x in 0..self.width {
                 let i = x + y * self.width;
-                self.elements[i].print(self, i, marked.contains(&i));
+                self.elements[i].print(self, i, marked.contains(&i), true);
             }
             println!();
         }
     }
-    pub fn print(&self) {
+    fn print_inner(&self, debug: bool) {
         println!("\nBoard:");
         for y in 0..self.height {
             for x in 0..self.width {
                 let i = x + y * self.width;
-                self.elements[i].print(self, i, false);
+                self.elements[i].print(self, i, false, debug);
             }
             println!();
         }
+    }
+    pub fn print_debug(&self) {
+        self.print_inner(true);
+    }
+    pub fn print(&self) {
+        self.print_inner(false);
     }
 }
 
