@@ -315,44 +315,23 @@ impl<const STRATEGY: u8> BoardElement<STRATEGY> {
         }
     }
     fn print(&self, board: &VcbBoard<STRATEGY>, _i: usize, marked: bool, debug: bool) {
-        let mut brfac: u32 = 50;
+        let format = |debug, id: usize| {
+            if debug {
+                format!("{:>2}", id)
+            } else {
+                format!("  ")
+            }
+        };
+
         let mut state = false;
         let tmpstr = if let Some(t) = self.id {
-            let id_to_print = board.compiled_network.get_inner_id(t) % 100;
-            if let Some(id) = board.nodes[t].network_id {
-                if board.compiled_network.get_state(id) {
-                    state = true;
-                    brfac = 255;
-                };
-                if debug {
-                    format!("{:>2}", id_to_print)
-                } else {
-                    format!("  ")
-                }
-            } else {
-                if debug {
-                    format!("{:>2}", id_to_print)
-                } else {
-                    format!("  ")
-                }
-            }
+            state = board.nodes[t]
+                .network_id
+                .map(|i| board.compiled_network.get_state(i))
+                .unwrap_or_default();
+            format(debug, board.compiled_network.get_inner_id(t) % 100)
         } else {
             "  ".to_string()
-        };
-        let col = if marked {
-            (255, 0, 0)
-        } else {
-            (
-                ((u32::from(self.color_on[0]) * brfac) / 255)
-                    .try_into()
-                    .unwrap(),
-                ((u32::from(self.color_on[1]) * brfac) / 255)
-                    .try_into()
-                    .unwrap(),
-                ((u32::from(self.color_on[2]) * brfac) / 255)
-                    .try_into()
-                    .unwrap(),
-            )
         };
         let col = if state { self.color_on } else { self.color_off };
 
@@ -362,6 +341,22 @@ impl<const STRATEGY: u8> BoardElement<STRATEGY> {
         //u8::MAX - col.1,
         //u8::MAX - col.2,);
         print!("{}", tmp);
+    }
+    fn get_color(&self, board: &VcbBoard<STRATEGY>) -> [u8; 4] {
+        let state = self
+            .id
+            .map(|t| {
+                board.nodes[t]
+                    .network_id
+                    .map(|i| board.compiled_network.get_state(i))
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+        if state {
+            self.color_on
+        } else {
+            self.color_off
+        }
     }
 }
 /// Represents one gate or trace
@@ -596,11 +591,43 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             println!();
         }
     }
+    fn print_compact(&self) {
+        println!("\nBoard:");
+        for y in (0..self.height).step_by(2) {
+            for x in 0..self.width {
+                let i = x + y * self.width;
+                let i2 = x + (y + 1) * self.width;
+                let col = self.elements[i].get_color(&self);
+                let col2 = self
+                    .elements
+                    .get(i2)
+                    .map(|s| s.get_color(&self))
+                    .unwrap_or(Trace::Empty.to_color_off());
+
+                //let col = if state { self.color_on } else { self.color_off };
+                let tmp = "▄"
+                    .on_truecolor(col[0], col[1], col[2])
+                    .truecolor(col2[0], col2[1], col2[2]);
+                print!("{}", tmp);
+
+                //let tmp = tmpstr.on_truecolor(col[0], col[1], col[2]);
+                ////.truecolor(
+                ////u8::MAX - col.0,
+                ////u8::MAX - col.1,
+                ////u8::MAX - col.2,);
+                //print!("{}", tmp);
+            }
+            println!();
+        }
+    }
+    //
+
     pub fn print_debug(&self) {
         self.print_inner(true);
     }
     pub fn print(&self) {
-        self.print_inner(false);
+        self.print_compact();
+        //self.print_inner(false);
     }
 }
 
