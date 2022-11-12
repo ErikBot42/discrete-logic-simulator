@@ -591,13 +591,18 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             println!();
         }
     }
-    fn print_compact(&self) {
+    fn print_compact(&self) -> Result<(), std::io::Error> {
+        use crossterm::style::{
+            Attribute, Color, Colors, Print, ResetColor, SetBackgroundColor, SetColors,
+            SetForegroundColor,
+        };
         use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
-        use crossterm::{execute, Result};
+        use crossterm::{cursor, execute, QueueableCommand, Result};
         use std::io::{stdout, Write};
-        let mut buffer = String::new();
+        let mut stdout = stdout();
+        stdout.queue(Print("\n"))?;
         for y in (0..self.height).step_by(2) {
-            buffer.push_str(" ");
+            //buffer.push_str(" ");
             for x in 0..self.width {
                 let i = x + y * self.width;
                 let i2 = x + (y + 1) * self.width;
@@ -607,15 +612,25 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                     .get(i2)
                     .map(|s| s.get_color(&self))
                     .unwrap_or(Trace::Empty.to_color_off());
-                let tmp = "▄"
-                    .on_truecolor(col[0], col[1], col[2])
-                    .truecolor(col2[0], col2[1], col2[2]);
-                let s = tmp.to_string();
-                buffer.push_str(&s);
+
+                stdout.queue(SetColors(Colors::new(
+                    (col2[0], col2[1], col2[2]).into(),
+                    (col[0], col[1], col[2]).into(),
+                )))?;
+                stdout.queue(Print("▄"))?;
+
+                //let tmp = "▄"
+                //    .on_truecolor(col[0], col[1], col[2])
+                //    .truecolor(col2[0], col2[1], col2[2]);
+                //let s = tmp.to_string();
+                //buffer.push_str(&s);
             }
-            buffer.push('\n');
+            stdout.queue(Print("\n"))?;
+            //buffer.push('\n');
         }
-        print!("\n\n{}", buffer);
+        stdout.queue(ResetColor)?;
+        stdout.flush()?;
+        Ok(())
     }
 
     pub fn print_debug(&self) {

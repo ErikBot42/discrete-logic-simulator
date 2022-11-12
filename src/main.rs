@@ -105,9 +105,6 @@ fn handle_board<const STRATEGY: u8>(args: &Args, mut board: VcbBoard<STRATEGY>) 
             loop {
                 execute!(stdout(), crossterm::cursor::MoveTo(0, 0),).unwrap();
                 board.print();
-
-                // Do anything on the alternate screen
-
                 board.update();
                 crossterm::terminal::enable_raw_mode().unwrap();
                 std::thread::sleep(Duration::from_millis(100));
