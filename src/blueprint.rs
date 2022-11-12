@@ -76,7 +76,7 @@ enum Trace {
     Filler,
 }
 impl Trace {
-    fn from_color(color: &[u8]) -> Self {
+    fn from_raw_color(color: &[u8]) -> Self {
         let color: [u8; 4] = color.try_into().unwrap();
         match color {
             [42, 53, 65, 255] => Trace::Gray,
@@ -186,6 +186,7 @@ impl Trace {
 /// make a copy of this type.
 #[derive(Debug)]
 struct BoardElement<const STRATEGY: u8> {
+    /// Raw color from input file.
     color: [u8; 4],
     kind: Trace,
     id: Option<usize>,
@@ -194,9 +195,12 @@ impl<const STRATEGY: u8> BoardElement<STRATEGY> {
     fn new(color: &[u8]) -> Self {
         BoardElement {
             color: color.try_into().unwrap(),
-            kind: Trace::from_color(color),
+            kind: Trace::from_raw_color(color),
             id: None,
         }
+    }
+    fn trace_to_colors(trace: Trace) {
+
     }
     fn print(&self, board: &VcbBoard<STRATEGY>, _i: usize, marked: bool, debug: bool) {
         let mut brfac: u32 = 50;

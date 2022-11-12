@@ -180,12 +180,12 @@ mod tests {
             );
         }
     }
-    #[ignore]
+    //#[ignore]
     #[test]
     fn scalar_regression_test_unoptimized() {
         assert!(scalar_test(false));
     }
-    #[ignore]
+    //#[ignore]
     #[test]
     fn scalar_regression_test_optimized() {
         assert!(scalar_test(true));
