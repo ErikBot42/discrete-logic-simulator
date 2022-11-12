@@ -5,8 +5,8 @@
 #![allow(clippy::cast_sign_loss)]
 use crate::logic::{CompiledNetwork, GateNetwork, GateType};
 //use colored::Colorize;
-use crossterm::style::{style, Attribute, Color, Colors, Print, ResetColor, SetColors, Stylize};
-use crossterm::{execute, QueueableCommand, Result};
+use crossterm::style::{Color, Colors, Print, ResetColor, SetColors, Stylize};
+use crossterm::{QueueableCommand, Result};
 use std::collections::BTreeSet;
 use std::io::{stdout, Write};
 #[derive(Debug, PartialEq, Eq)]
@@ -316,7 +316,7 @@ impl<const STRATEGY: u8> BoardElement<STRATEGY> {
             id: None,
         }
     }
-    fn print(&self, board: &VcbBoard<STRATEGY>, _i: usize, marked: bool, debug: bool) {
+    fn print(&self, board: &VcbBoard<STRATEGY>, _i: usize, _marked: bool, debug: bool) {
         let format = |debug, id: usize| {
             if debug {
                 format!("{:>2}", id)
