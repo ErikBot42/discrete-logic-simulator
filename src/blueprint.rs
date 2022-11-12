@@ -5,11 +5,10 @@
 #![allow(clippy::cast_sign_loss)]
 use crate::logic::{CompiledNetwork, GateNetwork, GateType};
 //use colored::Colorize;
-use crossterm::style::{Colors, Print, ResetColor, SetColors};
+use crossterm::style::{style, Attribute, Color, Colors, Print, ResetColor, SetColors, Stylize};
 use crossterm::{execute, QueueableCommand, Result};
 use std::collections::BTreeSet;
 use std::io::{stdout, Write};
-
 #[derive(Debug, PartialEq, Eq)]
 enum Layer {
     Logic,
@@ -337,28 +336,10 @@ impl<const STRATEGY: u8> BoardElement<STRATEGY> {
             "  ".to_string()
         };
         let col = if state { self.color_on } else { self.color_off };
+        let col1: Color = (col[0], col[1], col[2]).into();
+        let col2: Color = (255 - col[0], 255 - col[1], 255 - col[2]).into();
 
-        execute!(
-            stdout(),
-            SetColors(Colors::new(
-                (255 - col[0], 255 - col[1], 255 - col[2]).into(),
-                (col[0], col[1], col[2]).into(),
-            ))
-        )
-        .unwrap();
-        print!("{}", tmpstr);
-
-        //stdout()
-        //    .queue()
-        //    .unwrap();
-
-        //TODO: COLOR HERE
-        //let tmp = tmpstr.on_truecolor(col[0], col[1], col[2]);
-        //.truecolor(
-        //u8::MAX - col.0,
-        //u8::MAX - col.1,
-        //u8::MAX - col.2,);
-        //print!("{}", tmp);
+        print!("{}", tmpstr.on(col1).with(col2));
     }
     fn get_color(&self, board: &VcbBoard<STRATEGY>) -> [u8; 4] {
         let state = self
@@ -640,7 +621,8 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         self.print_inner(true);
     }
     pub fn print(&self) {
-        self.print_compact().unwrap();
+        //self.print_compact().unwrap();
+        self.print_debug();
     }
 }
 
