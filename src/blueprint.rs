@@ -592,6 +592,9 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         }
     }
     fn print_compact(&self) {
+        use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
+        use crossterm::{execute, Result};
+        use std::io::{stdout, Write};
         let mut buffer = String::new();
         for y in (0..self.height).step_by(2) {
             for x in 0..self.width {
@@ -603,27 +606,22 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                     .get(i2)
                     .map(|s| s.get_color(&self))
                     .unwrap_or(Trace::Empty.to_color_off());
-
                 let tmp = "▄"
                     .on_truecolor(col[0], col[1], col[2])
                     .truecolor(col2[0], col2[1], col2[2]);
                 let s = tmp.to_string();
                 buffer.push_str(&s);
-                //print!("{}", s);
             }
             buffer.push('\n');
-            //println!();
         }
-        print!("\nBoard:\n{}", buffer);
+        print!("\n\n{}\n\n", buffer);
     }
-    //
 
     pub fn print_debug(&self) {
         self.print_inner(true);
     }
     pub fn print(&self) {
         self.print_compact();
-        //self.print_inner(false);
     }
 }
 

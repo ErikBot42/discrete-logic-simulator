@@ -1,7 +1,10 @@
 use clap::{Parser, ValueEnum};
+use crossterm::terminal::{ClearType, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::{execute, Result};
 use logic_simulator::blueprint::{VcbBoard, VcbParser};
 use logic_simulator::logic::UpdateStrategy;
 use std::fs::read_to_string;
+use std::io::{stdout, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -46,6 +49,7 @@ struct Args {
 }
 
 fn main() {
+    //colored::control::set_override(true);
     let args = Args::parse();
 
     println!("File {:?}!", args.blueprint_file);
@@ -86,13 +90,40 @@ fn main() {
 fn handle_board<const STRATEGY: u8>(args: &Args, mut board: VcbBoard<STRATEGY>) {
     match args.mode {
         RunMode::Print => {
-            board.print();
             board.update();
+            board.print();
         },
-        RunMode::Run => loop {
-            board.print();
-            board.update();
-            std::thread::sleep(Duration::from_millis(500));
+        RunMode::Run => {
+            execute!(stdout(), LeaveAlternateScreen).unwrap();
+            execute!(stdout(), EnterAlternateScreen).unwrap();
+            loop {
+                execute!(
+                    stdout(),
+                    crossterm::cursor::MoveTo(0, 0),
+                    //crossterm::terminal::Clear(ClearType::FromCursorDown),
+                )
+                .unwrap();
+                board.print();
+
+                // Do anything on the alternate screen
+
+                board.update();
+                crossterm::terminal::enable_raw_mode().unwrap();
+                std::thread::sleep(Duration::from_millis(100));
+                if crossterm::event::poll(Duration::from_secs(0)).unwrap() {
+                    let term_event = crossterm::event::read().unwrap();
+                    crossterm::terminal::disable_raw_mode().unwrap();
+                    match term_event {
+                        crossterm::event::Event::Key(..) => break,
+                        crossterm::event::Event::Resize(..) => {
+                            execute!(stdout(), crossterm::terminal::Clear(ClearType::All),).unwrap()
+                        },
+                        _ => (),
+                    }
+                }
+                crossterm::terminal::disable_raw_mode().unwrap();
+            }
+            execute!(stdout(), LeaveAlternateScreen).unwrap();
         },
         RunMode::Bench => {
             let iterations = args.iterations;
