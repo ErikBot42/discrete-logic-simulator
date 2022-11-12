@@ -592,7 +592,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         }
     }
     fn print_compact(&self) {
-        println!("\nBoard:");
+        let mut buffer = String::new();
         for y in (0..self.height).step_by(2) {
             for x in 0..self.width {
                 let i = x + y * self.width;
@@ -604,21 +604,17 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                     .map(|s| s.get_color(&self))
                     .unwrap_or(Trace::Empty.to_color_off());
 
-                //let col = if state { self.color_on } else { self.color_off };
                 let tmp = "▄"
                     .on_truecolor(col[0], col[1], col[2])
                     .truecolor(col2[0], col2[1], col2[2]);
-                print!("{}", tmp);
-
-                //let tmp = tmpstr.on_truecolor(col[0], col[1], col[2]);
-                ////.truecolor(
-                ////u8::MAX - col.0,
-                ////u8::MAX - col.1,
-                ////u8::MAX - col.2,);
-                //print!("{}", tmp);
+                let s = tmp.to_string();
+                buffer.push_str(&s);
+                //print!("{}", s);
             }
-            println!();
+            buffer.push('\n');
+            //println!();
         }
+        print!("\nBoard:\n{}", buffer);
     }
     //
 
