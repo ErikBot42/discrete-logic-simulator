@@ -94,15 +94,16 @@ fn handle_board<const STRATEGY: u8>(args: &Args, mut board: VcbBoard<STRATEGY>) 
             board.print();
         },
         RunMode::Run => {
-            execute!(stdout(), LeaveAlternateScreen).unwrap();
-            execute!(stdout(), EnterAlternateScreen).unwrap();
+            execute!(
+                stdout(),
+                EnterAlternateScreen,
+                crossterm::cursor::Hide,
+                crossterm::terminal::DisableLineWrap
+            )
+            .unwrap();
+
             loop {
-                execute!(
-                    stdout(),
-                    crossterm::cursor::MoveTo(0, 0),
-                    //crossterm::terminal::Clear(ClearType::FromCursorDown),
-                )
-                .unwrap();
+                execute!(stdout(), crossterm::cursor::MoveTo(0, 0),).unwrap();
                 board.print();
 
                 // Do anything on the alternate screen
@@ -114,16 +115,21 @@ fn handle_board<const STRATEGY: u8>(args: &Args, mut board: VcbBoard<STRATEGY>) 
                     let term_event = crossterm::event::read().unwrap();
                     crossterm::terminal::disable_raw_mode().unwrap();
                     match term_event {
-                        crossterm::event::Event::Key(..) => break,
                         crossterm::event::Event::Resize(..) => {
                             execute!(stdout(), crossterm::terminal::Clear(ClearType::All),).unwrap()
                         },
-                        _ => (),
+                        _ => break,
                     }
                 }
                 crossterm::terminal::disable_raw_mode().unwrap();
             }
-            execute!(stdout(), LeaveAlternateScreen).unwrap();
+            execute!(
+                stdout(),
+                LeaveAlternateScreen,
+                crossterm::cursor::Show,
+                crossterm::terminal::EnableLineWrap
+            )
+            .unwrap()
         },
         RunMode::Bench => {
             let iterations = args.iterations;

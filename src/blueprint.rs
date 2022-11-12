@@ -597,6 +597,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         use std::io::{stdout, Write};
         let mut buffer = String::new();
         for y in (0..self.height).step_by(2) {
+            buffer.push_str(" ");
             for x in 0..self.width {
                 let i = x + y * self.width;
                 let i2 = x + (y + 1) * self.width;
@@ -614,7 +615,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             }
             buffer.push('\n');
         }
-        print!("\n\n{}\n\n", buffer);
+        print!("\n\n{}", buffer);
     }
 
     pub fn print_debug(&self) {
