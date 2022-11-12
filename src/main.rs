@@ -103,11 +103,16 @@ fn handle_board<const STRATEGY: u8>(args: &Args, mut board: VcbBoard<STRATEGY>) 
             .unwrap();
 
             loop {
+                //use std::time::Instant;
                 execute!(stdout(), crossterm::cursor::MoveTo(0, 0),).unwrap();
                 board.print();
-                board.update();
                 crossterm::terminal::enable_raw_mode().unwrap();
-                //std::thread::sleep(Duration::from_millis(100));
+                //let prev = Instant::now();
+                //while prev.elapsed().as_millis() < 16 {
+                board.update();
+                //}
+                std::thread::sleep(Duration::from_millis(16));
+
                 if crossterm::event::poll(Duration::from_secs(0)).unwrap() {
                     let term_event = crossterm::event::read().unwrap();
                     crossterm::terminal::disable_raw_mode().unwrap();
