@@ -90,8 +90,8 @@ fn handle_board<const STRATEGY: u8>(args: &Args, mut board: VcbBoard<STRATEGY>) 
             board.print();
         },
         RunMode::Run => loop {
-            board.print();
             board.update();
+            board.print();
             std::thread::sleep(Duration::from_millis(500));
         },
         RunMode::Bench => {

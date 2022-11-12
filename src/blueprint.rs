@@ -79,6 +79,7 @@ enum Trace {
 struct ColorConstants {}
 #[rustfmt::skip]
 impl ColorConstants {
+    //                                    r,   g,   b,   w
     const COLOR_GRAY:       [u8; 4] = [  42,  53,  65, 255 ];
     const COLOR_WHITE:      [u8; 4] = [ 159, 168, 174, 255 ];
     const COLOR_RED:        [u8; 4] = [ 161,  85,  94, 255 ];
@@ -116,6 +117,66 @@ impl ColorConstants {
 }
 
 impl Trace {
+    fn to_color_raw(self) -> [u8; 4] {
+        match self {
+            Trace::Gray => ColorConstants::COLOR_GRAY,
+            Trace::White => ColorConstants::COLOR_WHITE,
+            Trace::Red => ColorConstants::COLOR_RED,
+            Trace::Orange1 => ColorConstants::COLOR_ORANGE1,
+            Trace::Orange2 => ColorConstants::COLOR_ORANGE2,
+            Trace::Orange3 => ColorConstants::COLOR_ORANGE3,
+            Trace::Yellow => ColorConstants::COLOR_YELLOW,
+            Trace::Green1 => ColorConstants::COLOR_GREEN1,
+            Trace::Green2 => ColorConstants::COLOR_GREEN2,
+            Trace::Cyan1 => ColorConstants::COLOR_CYAN1,
+            Trace::Cyan2 => ColorConstants::COLOR_CYAN2,
+            Trace::Blue1 => ColorConstants::COLOR_BLUE1,
+            Trace::Blue2 => ColorConstants::COLOR_BLUE2,
+            Trace::Purple => ColorConstants::COLOR_PURPLE,
+            Trace::Magenta => ColorConstants::COLOR_MAGENTA,
+            Trace::Pink => ColorConstants::COLOR_PINK,
+            Trace::Write => ColorConstants::COLOR_WRITE,
+            Trace::Empty => ColorConstants::COLOR_EMPTY,
+            Trace::Cross => ColorConstants::COLOR_CROSS,
+            Trace::Read => ColorConstants::COLOR_READ,
+            Trace::Buffer => ColorConstants::COLOR_BUFFER,
+            Trace::And => ColorConstants::COLOR_AND,
+            Trace::Or => ColorConstants::COLOR_OR,
+            Trace::Xor => ColorConstants::COLOR_XOR,
+            Trace::Not => ColorConstants::COLOR_NOT,
+            Trace::Nand => ColorConstants::COLOR_NAND,
+            Trace::Nor => ColorConstants::COLOR_NOR,
+            Trace::Xnor => ColorConstants::COLOR_XNOR,
+            Trace::LatchOn => ColorConstants::COLOR_LATCHON,
+            Trace::LatchOff => ColorConstants::COLOR_LATCHOFF,
+            Trace::Clock => ColorConstants::COLOR_CLOCK,
+            Trace::Led => ColorConstants::COLOR_LED,
+            Trace::Annotation => ColorConstants::COLOR_ANNOTATION,
+            Trace::Filler => ColorConstants::COLOR_FILLER,
+        }
+    }
+    fn to_color_on(self) -> [u8; 4] {
+        match self {
+            Trace::LatchOff => Trace::LatchOn,
+            _ => self,
+        }
+        .to_color_raw()
+    }
+    fn to_color_off(self) -> [u8; 4] {
+        match self {
+            Trace::LatchOn => Trace::LatchOff.to_color_raw(),
+            _ => {
+                let rgb = self.to_color_raw();
+                let brfac = 60;
+                [
+                    ((u32::from(rgb[0]) * brfac) / 255).try_into().unwrap(),
+                    ((u32::from(rgb[1]) * brfac) / 255).try_into().unwrap(),
+                    ((u32::from(rgb[2]) * brfac) / 255).try_into().unwrap(),
+                    0,
+                ]
+            },
+        }
+    }
     // colors from file format
     #[rustfmt::skip]
     fn from_raw_color(color: &[u8]) -> Self {
