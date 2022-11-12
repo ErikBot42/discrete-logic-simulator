@@ -172,7 +172,7 @@ impl Trace {
                     ((u32::from(rgb[0]) * brfac) / 255).try_into().unwrap(),
                     ((u32::from(rgb[1]) * brfac) / 255).try_into().unwrap(),
                     ((u32::from(rgb[2]) * brfac) / 255).try_into().unwrap(),
-                    0,
+                    rgb[3],
                 ]
             },
         }
