@@ -4,9 +4,9 @@
 #![allow(dead_code)]
 #![allow(clippy::cast_sign_loss)]
 use crate::logic::{CompiledNetwork, GateNetwork, GateType};
-use colored::Colorize;
+//use colored::Colorize;
 use crossterm::style::{Colors, Print, ResetColor, SetColors};
-use crossterm::QueueableCommand;
+use crossterm::{execute, QueueableCommand, Result};
 use std::collections::BTreeSet;
 use std::io::{stdout, Write};
 
@@ -338,12 +338,27 @@ impl<const STRATEGY: u8> BoardElement<STRATEGY> {
         };
         let col = if state { self.color_on } else { self.color_off };
 
-        let tmp = tmpstr.on_truecolor(col[0], col[1], col[2]);
+        execute!(
+            stdout(),
+            SetColors(Colors::new(
+                (255 - col[0], 255 - col[1], 255 - col[2]).into(),
+                (col[0], col[1], col[2]).into(),
+            ))
+        )
+        .unwrap();
+        print!("{}", tmpstr);
+
+        //stdout()
+        //    .queue()
+        //    .unwrap();
+
+        //TODO: COLOR HERE
+        //let tmp = tmpstr.on_truecolor(col[0], col[1], col[2]);
         //.truecolor(
         //u8::MAX - col.0,
         //u8::MAX - col.1,
         //u8::MAX - col.2,);
-        print!("{}", tmp);
+        //print!("{}", tmp);
     }
     fn get_color(&self, board: &VcbBoard<STRATEGY>) -> [u8; 4] {
         let state = self
@@ -594,7 +609,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             println!();
         }
     }
-    fn print_compact(&self) -> Result<(), std::io::Error> {
+    fn print_compact(&self) -> Result<()> {
         let mut stdout = stdout();
         stdout.queue(Print("\n"))?;
         for y in (0..self.height).step_by(2) {

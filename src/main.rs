@@ -1,10 +1,10 @@
 use clap::{Parser, ValueEnum};
+use crossterm::execute;
 use crossterm::terminal::{ClearType, EnterAlternateScreen, LeaveAlternateScreen};
-use crossterm::{execute, Result};
 use logic_simulator::blueprint::{VcbBoard, VcbParser};
 use logic_simulator::logic::UpdateStrategy;
 use std::fs::read_to_string;
-use std::io::{stdout, Write};
+use std::io::stdout;
 use std::path::PathBuf;
 use std::time::Duration;
 
