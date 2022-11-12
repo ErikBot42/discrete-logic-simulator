@@ -597,11 +597,11 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             for x in 0..self.width {
                 let i = x + y * self.width;
                 let i2 = x + (y + 1) * self.width;
-                let col = self.elements[i].get_color(&self);
+                let col = self.elements[i].get_color(self);
                 let col2 = self
                     .elements
                     .get(i2)
-                    .map(|s| s.get_color(&self))
+                    .map(|s| s.get_color(self))
                     .unwrap_or(Trace::Empty.to_color_off());
 
                 stdout.queue(SetColors(Colors::new(
