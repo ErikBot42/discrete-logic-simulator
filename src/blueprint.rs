@@ -79,40 +79,40 @@ enum Trace {
 struct ColorConstants {}
 #[rustfmt::skip]
 impl ColorConstants {
-    const COLOR_GRAY:       [u8; 4] = [42, 53, 65, 255];
-    const COLOR_WHITE:      [u8; 4] = [159, 168, 174, 255];
-    const COLOR_RED:        [u8; 4] = [161, 85, 94, 255];
-    const COLOR_ORANGE1:    [u8; 4] = [161, 108, 86, 255];
-    const COLOR_ORANGE2:    [u8; 4] = [161, 133, 86, 255];
-    const COLOR_ORANGE3:    [u8; 4] = [161, 152, 86, 255];
-    const COLOR_YELLOW:     [u8; 4] = [153, 161, 86, 255];
-    const COLOR_GREEN1:     [u8; 4] = [136, 161, 86, 255];
-    const COLOR_GREEN2:     [u8; 4] = [108, 161, 86, 255];
-    const COLOR_CYAN1:      [u8; 4] = [86, 161, 141, 255];
-    const COLOR_CYAN2:      [u8; 4] = [86, 147, 161, 255];
-    const COLOR_BLUE1:      [u8; 4] = [86, 123, 161, 255];
-    const COLOR_BLUE2:      [u8; 4] = [86, 98, 161, 255];
-    const COLOR_PURPLE:     [u8; 4] = [102, 86, 161, 255];
-    const COLOR_MAGENTA:    [u8; 4] = [135, 86, 161, 255];
-    const COLOR_PINK:       [u8; 4] = [161, 85, 151, 255];
-    const COLOR_WRITE:      [u8; 4] = [77, 56, 62, 255];
-    const COLOR_EMPTY:      [u8; 4] = [0, 0, 0, 0];
-    const COLOR_CROSS:      [u8; 4] = [102, 120, 142, 255];
-    const COLOR_READ:       [u8; 4] = [46, 71, 93, 255];
-    const COLOR_BUFFER:     [u8; 4] = [146, 255, 99, 255];
-    const COLOR_AND:        [u8; 4] = [255, 198, 99, 255];
-    const COLOR_OR:         [u8; 4] = [99, 242, 255, 255];
-    const COLOR_XOR:        [u8; 4] = [174, 116, 255, 255];
-    const COLOR_NOT:        [u8; 4] = [255, 98, 138, 255];
-    const COLOR_NAND:       [u8; 4] = [255, 162, 0, 255];
-    const COLOR_NOR:        [u8; 4] = [48, 217, 255, 255];
-    const COLOR_XNOR:       [u8; 4] = [166, 0, 255, 255];
-    const COLOR_LATCHON:    [u8; 4] = [99, 255, 159, 255];
-    const COLOR_LATCHOFF:   [u8; 4] = [56, 77, 71, 255];
-    const COLOR_CLOCK:      [u8; 4] = [255, 0, 65, 255];
-    const COLOR_LED:        [u8; 4] = [255, 255, 255, 255];
-    const COLOR_ANNOTATION: [u8; 4] = [58, 69, 81, 255];
-    const COLOR_FILLER:     [u8; 4] = [140, 171, 161, 255];
+    const COLOR_GRAY:       [u8; 4] = [  42,  53,  65, 255 ];
+    const COLOR_WHITE:      [u8; 4] = [ 159, 168, 174, 255 ];
+    const COLOR_RED:        [u8; 4] = [ 161,  85,  94, 255 ];
+    const COLOR_ORANGE1:    [u8; 4] = [ 161, 108,  86, 255 ];
+    const COLOR_ORANGE2:    [u8; 4] = [ 161, 133,  86, 255 ];
+    const COLOR_ORANGE3:    [u8; 4] = [ 161, 152,  86, 255 ];
+    const COLOR_YELLOW:     [u8; 4] = [ 153, 161,  86, 255 ];
+    const COLOR_GREEN1:     [u8; 4] = [ 136, 161,  86, 255 ];
+    const COLOR_GREEN2:     [u8; 4] = [ 108, 161,  86, 255 ];
+    const COLOR_CYAN1:      [u8; 4] = [  86, 161, 141, 255 ];
+    const COLOR_CYAN2:      [u8; 4] = [  86, 147, 161, 255 ];
+    const COLOR_BLUE1:      [u8; 4] = [  86, 123, 161, 255 ];
+    const COLOR_BLUE2:      [u8; 4] = [  86,  98, 161, 255 ];
+    const COLOR_PURPLE:     [u8; 4] = [ 102,  86, 161, 255 ];
+    const COLOR_MAGENTA:    [u8; 4] = [ 135,  86, 161, 255 ];
+    const COLOR_PINK:       [u8; 4] = [ 161,  85, 151, 255 ];
+    const COLOR_WRITE:      [u8; 4] = [  77,  56,  62, 255 ];
+    const COLOR_EMPTY:      [u8; 4] = [   0,   0,   0,   0 ];
+    const COLOR_CROSS:      [u8; 4] = [ 102, 120, 142, 255 ];
+    const COLOR_READ:       [u8; 4] = [  46,  71,  93, 255 ];
+    const COLOR_BUFFER:     [u8; 4] = [ 146, 255,  99, 255 ];
+    const COLOR_AND:        [u8; 4] = [ 255, 198,  99, 255 ];
+    const COLOR_OR:         [u8; 4] = [  99, 242, 255, 255 ];
+    const COLOR_XOR:        [u8; 4] = [ 174, 116, 255, 255 ];
+    const COLOR_NOT:        [u8; 4] = [ 255,  98, 138, 255 ];
+    const COLOR_NAND:       [u8; 4] = [ 255, 162,   0, 255 ];
+    const COLOR_NOR:        [u8; 4] = [  48, 217, 255, 255 ];
+    const COLOR_XNOR:       [u8; 4] = [ 166,   0, 255, 255 ];
+    const COLOR_LATCHON:    [u8; 4] = [  99, 255, 159, 255 ];
+    const COLOR_LATCHOFF:   [u8; 4] = [  56,  77,  71, 255 ];
+    const COLOR_CLOCK:      [u8; 4] = [ 255,   0,  65, 255 ];
+    const COLOR_LED:        [u8; 4] = [ 255, 255, 255, 255 ];
+    const COLOR_ANNOTATION: [u8; 4] = [  58,  69,  81, 255 ];
+    const COLOR_FILLER:     [u8; 4] = [ 140, 171, 161, 255 ];
 }
 
 impl Trace {
