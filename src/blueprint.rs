@@ -206,16 +206,6 @@ impl<const STRATEGY: u8> BoardElement<STRATEGY> {
                 if board.compiled_network.get_state(id) {
                     brfac = 255;
                 };
-                //match board.nodes[t].kind {
-                //    GateType::AND => format!(" A"),
-                //    GateType::NAND => format!("NA"),
-                //    GateType::OR => format!(" O"),
-                //    GateType::NOR => format!("NO"),
-                //    GateType::XOR => format!(" X"),
-                //    GateType::XNOR => format!("NX"),
-                //    GateType::CLUSTER => format!(" C"),
-                //}
-                //format!("{:>2}",t%100)
                 format!("{:>2}", id_to_print)
             } else {
                 format!("{:>2}", id_to_print)
@@ -223,24 +213,23 @@ impl<const STRATEGY: u8> BoardElement<STRATEGY> {
         } else {
             "  ".to_string()
         };
-        if marked {
-            print!("{}", tmpstr.on_truecolor(255, 0, 0));
+        let col = if marked {
+            (255, 0, 0)
         } else {
-            print!(
-                "{}",
-                tmpstr.on_truecolor(
-                    ((u32::from(self.color[0]) * brfac) / 255)
-                        .try_into()
-                        .unwrap(),
-                    ((u32::from(self.color[1]) * brfac) / 255)
-                        .try_into()
-                        .unwrap(),
-                    ((u32::from(self.color[2]) * brfac) / 255)
-                        .try_into()
-                        .unwrap()
-                )
-            );
-        }
+            (
+                ((u32::from(self.color[0]) * brfac) / 255)
+                    .try_into()
+                    .unwrap(),
+                ((u32::from(self.color[1]) * brfac) / 255)
+                    .try_into()
+                    .unwrap(),
+                ((u32::from(self.color[2]) * brfac) / 255)
+                    .try_into()
+                    .unwrap(),
+            )
+        };
+        let tmp = tmpstr.on_truecolor(col.0,col.1,col.2).truecolor(u8::MAX-col.0,u8::MAX-col.1,u8::MAX-col.2);
+        print!("{}", tmp);
     }
 }
 /// Represents one gate or trace
