@@ -166,14 +166,18 @@ impl Trace {
         match self {
             Trace::LatchOn => Trace::LatchOff.to_color_raw(),
             _ => {
-                let rgb = self.to_color_raw();
-                let brfac = 60;
-                [
-                    ((u32::from(rgb[0]) * brfac) / 255).try_into().unwrap(),
-                    ((u32::from(rgb[1]) * brfac) / 255).try_into().unwrap(),
-                    ((u32::from(rgb[2]) * brfac) / 255).try_into().unwrap(),
-                    rgb[3],
-                ]
+                if self.is_passive() {
+                    self.to_color_on()
+                } else {
+                    let rgb = self.to_color_raw();
+                    let brfac = 60;
+                    [
+                        ((u32::from(rgb[0]) * brfac) / 255).try_into().unwrap(),
+                        ((u32::from(rgb[1]) * brfac) / 255).try_into().unwrap(),
+                        ((u32::from(rgb[2]) * brfac) / 255).try_into().unwrap(),
+                        rgb[3],
+                    ]
+                }
             },
         }
     }
@@ -262,6 +266,10 @@ impl Trace {
     fn is_logic(self) -> bool {
         self.is_wire() || self.is_gate()
     }
+    fn is_passive(self) -> bool {
+        !self.is_logic()
+    }
+
     // is logically same as other, will connect
     fn is_same_as(self, other: Self) -> bool {
         (self == other) || (self.is_wire() && other.is_wire())
