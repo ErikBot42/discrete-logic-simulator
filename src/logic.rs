@@ -5,10 +5,13 @@
 
 pub mod gate_status;
 pub mod network;
+pub mod reference_sim;
 pub(crate) use crate::logic::network::GateNetwork;
 use crate::logic::network::NetworkWithGaps;
 use std::mem::transmute;
 use std::simd::{Mask, Simd, SimdPartialEq};
+
+use crate::logic::network::InitializedNetwork;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, PartialOrd, Ord, Default)]
 /// A = active inputs
@@ -97,6 +100,53 @@ type UpdateList = crate::raw_list::RawList<IndexType>;
 
 type GateKey = (GateType, Vec<IndexType>);
 
+trait LogicSim {
+
+    // test: get acc optional
+    // test: add all to update list
+
+    /// Create `LogicSim` struct from non-optimized network
+    fn create(network: NetworkWithGaps) -> Self;
+
+    /// Get state from *internal* id
+    fn get_state_internal(&self, gate_id: usize) -> bool;
+
+    /// Number of *external* gates
+    fn number_of_gates_external(&self) -> usize;
+
+    /// Run 1 tick
+    fn update(&mut self);
+
+    /// translate *external* to *internal* id
+    fn to_internal_id(&self, gate_id: usize) -> usize;
+
+    /// Get state from *external* id.
+    fn get_state(&self, gate_id: usize) -> bool {
+        self.get_state_internal(self.to_internal_id(gate_id))
+    }
+
+    /// Requirements for network optimizations
+    fn optimization_requirements() -> Option<()> {
+        None
+    }
+
+    /// Return vector of state from *external* perspective.
+    fn get_state_vec(&self) -> Vec<bool> {
+        (0..self.number_of_gates_external())
+            .map(|i| self.get_state_internal(i))
+            .collect()
+    }
+
+    /// Update network `iterations` times.
+    fn update_i(&mut self, iterations: usize) {
+        for _ in 0..iterations {
+            self.update();
+        }
+    }
+}
+//impl LogicSim for Foo {
+//}
+
 /// data needed after processing network
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Gate {
@@ -112,21 +162,6 @@ pub(crate) struct Gate {
     //TODO: "do not merge" flag for gates that are "volatile", for example handling IO
 }
 impl Gate {
-    //fn has_overlapping_outputs(&self, other: &Gate) -> bool {
-    //    iproduct!(self.outputs.iter(), other.outputs.iter()).any(|(&a, &b)| a == b)
-    //}
-    //fn has_overlapping_outputs_at_same_index(&self, other: &Gate) -> bool {
-    //    self.outputs
-    //        .iter()
-    //        .zip(other.outputs.iter())
-    //        .any(|(&a, &b)| a == b)
-    //}
-    //fn has_overlapping_outputs_at_same_index_with_alignment_8(&self, other: &Gate) -> bool {
-    //    self.outputs
-    //        .iter()
-    //        .zip(other.outputs.iter())
-    //        .any(|(&a, &b)| (a as i32 - b as i32).abs() <= 8)
-    //}
     fn is_cluster_a_xor_is_cluster_b(&self, other: &Gate) -> bool {
         self.kind.is_cluster() != other.kind.is_cluster()
     }
@@ -465,7 +500,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
         (packed_output_indexes, packed_outputs)
     }
-    
+
     pub(crate) fn get_inner_id(&self, gate_id: usize) -> usize {
         self.i.translation_table[gate_id] as usize
     }
@@ -592,12 +627,12 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             })
             .collect());
         for id_packed in 0..status_packed_len {
-        //for id_packed in update_list_p.iter().map(|x| *x as usize) {
-        //    debug_assert!(
-        //        inner.in_update_list[id_packed],
-        //        "{:?}",
-        //        inner.in_update_list
-        //    );
+            //for id_packed in update_list_p.iter().map(|x| *x as usize) {
+            //    debug_assert!(
+            //        inner.in_update_list[id_packed],
+            //        "{:?}",
+            //        inner.in_update_list
+            //    );
 
             let status_p = &mut inner.status_packed[id_packed];
             let acc_p = &inner.acc_packed[id_packed];
