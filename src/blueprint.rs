@@ -299,14 +299,14 @@ impl Trace {
 /// It is probably a mistake to
 /// make a copy of this type.
 #[derive(Debug)]
-struct BoardElement<const STRATEGY: u8> {
+struct BoardElement {
     /// Raw color from input file.
     color_on: [u8; 4],
     color_off: [u8; 4],
     kind: Trace,
     id: Option<usize>,
 }
-impl<const STRATEGY: u8> BoardElement<STRATEGY> {
+impl BoardElement {
     fn new(color: &[u8]) -> Self {
         let trace = Trace::from_raw_color(color);
         BoardElement {
@@ -316,7 +316,7 @@ impl<const STRATEGY: u8> BoardElement<STRATEGY> {
             id: None,
         }
     }
-    fn print(&self, board: &VcbBoard<STRATEGY>, _i: usize, _marked: bool, debug: bool) {
+    fn print<const STRATEGY: u8>(&self, board: &VcbBoard<STRATEGY>, _i: usize, _marked: bool, debug: bool) {
         let format = |debug, id: usize| {
             if debug {
                 format!("{:>2}", id)
@@ -341,7 +341,7 @@ impl<const STRATEGY: u8> BoardElement<STRATEGY> {
 
         print!("{}", tmpstr.on(col1).with(col2));
     }
-    fn get_color(&self, board: &VcbBoard<STRATEGY>) -> [u8; 4] {
+    fn get_color<const STRATEGY: u8>(&self, board: &VcbBoard<STRATEGY>) -> [u8; 4] {
         let state = self
             .id
             .map(|t| {
@@ -379,13 +379,16 @@ impl BoardNode {
 
 #[derive(Debug)]
 pub struct VcbBoard<const STRATEGY: u8> {
-    elements: Vec<BoardElement<STRATEGY>>,
+    elements: Vec<BoardElement>,
     nodes: Vec<BoardNode>,
     pub(crate) network: GateNetwork<STRATEGY>,
     pub(crate) compiled_network: CompiledNetwork<STRATEGY>,
     pub width: usize,
     pub height: usize,
 }
+//struct VcbPlainBoard {
+//    
+//}
 impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     /// For regression testing
     #[must_use]
