@@ -3,7 +3,7 @@
 
 use super::{Gate, LogicSim, RunTimeGateType};
 
-struct ReferenceLogicSim {
+pub(crate) struct ReferenceLogicSim {
     gate_update_list: Vec<super::IndexType>,
     cluster_update_list: Vec<super::IndexType>,
     in_update_list: Vec<bool>,

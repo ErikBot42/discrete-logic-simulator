@@ -11,11 +11,62 @@ use crate::logic::network::NetworkWithGaps;
 use std::mem::transmute;
 use std::simd::{Mask, Simd, SimdPartialEq};
 
-use crate::logic::network::InitializedNetwork;
+//use crate::logic::network::InitializedNetwork;
 
-//enum LogicSims {
-//    Reference(reference_sim::ReferenceLogicSim),
-//}
+enum LogicSims {
+    //Reference(reference_sim::ReferenceLogicSim),
+    Reference(CompiledNetwork<{ UpdateStrategy::Reference as u8 }>),
+    Simd(CompiledNetwork<{ UpdateStrategy::Simd as u8 }>),
+    Scalar(CompiledNetwork<{ UpdateStrategy::ScalarSimd as u8 }>),
+}
+impl LogicSims {
+    fn build(network: NetworkWithGaps, strategy: UpdateStrategy) -> Self {
+        match strategy {
+            UpdateStrategy::Reference => {
+                Self::Reference(<CompiledNetwork<{ UpdateStrategy::Reference as u8 }> as LogicSim>::create(network))
+            },
+            UpdateStrategy::Simd => {
+                Self::Simd(<CompiledNetwork<{ UpdateStrategy::Simd as u8 }> as LogicSim>::create(network))
+            },
+            UpdateStrategy::ScalarSimd => {
+                Self::Scalar(<CompiledNetwork<{ UpdateStrategy::ScalarSimd as u8 }> as LogicSim>::create(network))
+            },
+        }
+    }
+}
+impl LogicSim for LogicSims {
+    fn create(network: NetworkWithGaps) -> Self {
+        Self::build(network, UpdateStrategy::default())
+    }
+
+    fn get_state_internal(&self, gate_id: usize) -> bool {
+        match self {
+            Self::Reference(r) => r.get_state_internal(gate_id),
+            Self::Simd(s) => s.get_state_internal(gate_id),
+            Self::Scalar(s) => s.get_state_internal(gate_id),
+        }
+    }
+
+    fn number_of_gates_external(&self) -> usize {
+        match self {
+            Self::Reference(r) => r.number_of_gates_external(),
+            Self::Simd(s) => s.number_of_gates_external(),
+            Self::Scalar(s) => s.number_of_gates_external(),
+        }
+    }
+
+    fn update(&mut self) {
+        match self {
+            Self::Reference(r) => r.update(),
+            Self::Simd(s) => s.update(),
+            Self::Scalar(s) => s.update(),
+        }
+    }
+
+    fn to_internal_id(&self, gate_id: usize) -> usize {
+        todo!()
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, PartialOrd, Ord, Default)]
 /// A = active inputs
@@ -104,7 +155,7 @@ type UpdateList = crate::raw_list::RawList<IndexType>;
 
 type GateKey = (GateType, Vec<IndexType>);
 
-trait LogicSim {
+pub(crate) trait LogicSim {
     // test: get acc optional
     // test: add all to update list
 

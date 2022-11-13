@@ -654,8 +654,27 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         let footer_bytes: [u8; Footer::SIZE] = bytes[bytes.len() - Footer::SIZE..bytes.len()]
             .try_into()
             .unwrap();
+        let read_int = |i: usize| {
+            let i = i * 4;
+            i32::from_le_bytes([
+                footer_bytes[i],
+                footer_bytes[i + 1],
+                footer_bytes[i + 2],
+                footer_bytes[i + 3],
+            ])
+        };
         let footer = FooterInfo::new(&unsafe {
             std::mem::transmute::<[u8; Footer::SIZE], Footer>(footer_bytes)
+        });
+        let footer = FooterInfo::new(&Footer {
+            height_type: read_int(0),
+            height: read_int(1),
+            width_type: read_int(2),
+            width: read_int(3),
+            bytes_type: read_int(4),
+            bytes: read_int(5),
+            layer_type: read_int(6),
+            layer: read_int(7),
         });
         assert!(footer.layer == Layer::Logic);
         let data = zstd::bulk::decompress(data_bytes, 1 << 27).unwrap();
