@@ -33,6 +33,10 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             footer.height,
         ))
     }
+    fn make_plain_board_from_world(data: &str) -> anyhow::Result<VcbPlainBoard> {
+        print!("{}", data);
+        todo!()
+    }
     #[must_use]
     fn make_board_from_blueprint(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
         Ok(VcbBoard::new(
@@ -42,10 +46,12 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
     }
     #[must_use]
     pub fn parse(input: VcbParseInput, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
-        match input {
-            VcbParseInput::VcbBlueprint(b) => Self::make_board_from_blueprint(&b, optimize),
+        let plain_board = match input {
+            VcbParseInput::VcbBlueprint(b) => Self::make_plain_board_from_blueprint(&b)?,
             _ => unimplemented!(),
-        }
+        };
+        Ok(VcbBoard::new(plain_board, optimize))
+
     }
     /// # Panics
     /// invalid base64 string, invalid zstd, invalid colors
