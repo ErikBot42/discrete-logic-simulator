@@ -22,7 +22,12 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         let data = zstd::bulk::decompress(data_bytes, 1 << 27)?;
         assert!(!data.is_empty());
         assert!(data.len() == footer.count * 4);
-        Ok(VcbBoard::new(&data, footer.width, footer.height, optimize))
+
+
+        let plain_board = VcbPlainBoard::from_color_data(&data, footer.width, footer.height);
+
+        //Ok(VcbBoard::new(&data, footer.width, footer.height, optimize))
+        Ok(VcbBoard::new(plain_board, optimize))
     }
     /// # Panics
     /// invalid base64 string, invalid zstd, invalid colors
@@ -105,9 +110,8 @@ struct VcbPlainBoard {
     height: usize,
 }
 impl VcbPlainBoard {
-    fn from_color_data(data: &[u8], width: usize) -> Self {
+    fn from_color_data(data: &[u8], width: usize, height: usize) -> Self {
         let traces: Vec<_> = data.chunks(4).map(|x| Trace::from_raw_color(x.try_into().unwrap())).collect();
-        let height = traces.len() / width;
         assert_eq!(traces.len(), width * height);
         VcbPlainBoard {
             traces,
@@ -170,13 +174,17 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     pub fn update(&mut self) {
         self.compiled_network.update();
     }
-    fn new(data: &[u8], width: usize, height: usize, optimize: bool) -> Self {
+    //fn new(data: &[u8], width: usize, height: usize, optimize: bool) -> Self {
+    fn new(plain_board: VcbPlainBoard, optimize: bool) -> Self {
+        let height = plain_board.height;
+        let width = plain_board.width;
+
         let num_elements = width * height;
         let mut elements = Vec::with_capacity(num_elements);
-        //let traces = data.iter().map(Trace::from_raw_color);
 
         for i in 0..width * height {
-            elements.push(BoardElement::new(data[i * 4..i * 4 + 4].try_into().unwrap()));
+            //elements.push(BoardElement::new(data[i * 4..i * 4 + 4].try_into().unwrap()));
+            elements.push(BoardElement::from_trace(plain_board.traces[i]));
         }
         let mut board = VcbBoard {
             elements,
