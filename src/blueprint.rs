@@ -99,6 +99,24 @@ enum Layer {
     Off,
 }
 
+/// Represents one gate or trace
+#[derive(Debug)]
+struct BoardNode {
+    inputs: BTreeSet<usize>,
+    outputs: BTreeSet<usize>,
+    kind: GateType,
+    network_id: Option<usize>,
+}
+impl BoardNode {
+    fn new(trace: Trace) -> Self {
+        BoardNode {
+            inputs: BTreeSet::new(),
+            outputs: BTreeSet::new(),
+            kind: trace.to_gate(),
+            network_id: None,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct VcbBoard<const STRATEGY: u8> {
@@ -666,24 +684,6 @@ impl BoardElement {
             self.color_on
         } else {
             self.color_off
-        }
-    }
-}
-/// Represents one gate or trace
-#[derive(Debug)]
-struct BoardNode {
-    inputs: BTreeSet<usize>,
-    outputs: BTreeSet<usize>,
-    kind: GateType,
-    network_id: Option<usize>,
-}
-impl BoardNode {
-    fn new(trace: Trace) -> Self {
-        BoardNode {
-            inputs: BTreeSet::new(),
-            outputs: BTreeSet::new(),
-            kind: trace.to_gate(),
-            network_id: None,
         }
     }
 }
