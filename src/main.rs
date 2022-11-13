@@ -54,8 +54,8 @@ struct Args {
 
 fn main() {
     //colored::control::set_override(true);
+    std::env::set_var("RUST_BACKTRACE", "1");
     let args = Args::parse();
-
     //println!("File {:?}!", args.blueprint_file);
     //println!("String {:?}!", args.blueprint_string);
     //println!("Mode {:?}!", args.mode);
