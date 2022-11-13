@@ -80,6 +80,10 @@ struct FooterInfo {
 }
 impl FooterInfo {
     fn new(footer: &Footer) -> Self {
+        assert_eq!(footer.height_type, 2);
+        assert_eq!(footer.width_type, 2);
+        assert_eq!(footer.bytes_type, 2);
+        assert_eq!(footer.bytes, footer.height * footer.width * 4);
         FooterInfo {
             width: footer.width.try_into().unwrap(),
             height: footer.height.try_into().unwrap(),
