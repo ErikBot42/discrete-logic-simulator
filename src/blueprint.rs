@@ -17,10 +17,10 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
     #[must_use]
     fn make_plain_board_from_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
         let bytes = base64::decode_config(data.trim(), base64::STANDARD)?;
-        let data_bytes = &bytes[..bytes.len() - Footer::SIZE];
-        let footer_bytes: [u8; Footer::SIZE] =
-            bytes[bytes.len() - Footer::SIZE..bytes.len()].try_into()?;
-        let footer = Footer::from_bytes(footer_bytes);
+        let data_bytes = &bytes[..bytes.len() - BlueprintFooter::SIZE];
+        let footer_bytes: [u8; BlueprintFooter::SIZE] =
+            bytes[bytes.len() - BlueprintFooter::SIZE..bytes.len()].try_into()?;
+        let footer = BlueprintFooter::from_bytes(footer_bytes);
         assert!(footer.layer == Layer::Logic);
         let data = zstd::bulk::decompress(data_bytes, 1 << 27)?;
         assert!(!data.is_empty());
@@ -32,10 +32,45 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         ))
     }
     fn make_plain_board_from_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
-        print!("{}", s);
-        let maybe_json = dbg!(s.split("data = ").skip(1).next().unwrap());
+        // Godot json cannot be parsed by standard parsers
+        let maybe_json = s.split("data = ").skip(1).next().unwrap();
+        let s = maybe_json.split("\"layers\": [").skip(1).next().unwrap();
+        let s = s.split(']').next().unwrap();
+        let mut s = s
+            .split("PoolByteArray( ")
+            .skip(1)
+            .map(|x| x.split(')').next().unwrap())
+            .map(|x| {
+                x.split(',')
+                    .map(|x| str::parse::<u8>(x.trim()))
+                    .map(|x| x.unwrap())
+                    .collect::<Vec<_>>()
+            });
+        let bytes = s.next().unwrap();
 
-        todo!()
+        let data_bytes = &bytes[..bytes.len() - BoardFooter::SIZE];
+        let footer_bytes: [u8; BoardFooter::SIZE] =
+            bytes[bytes.len() - BoardFooter::SIZE..bytes.len()].try_into()?;
+        let footer = BoardFooter::from_bytes(footer_bytes);
+        dbg!(footer);
+
+        //let a = [0,1,2,3];
+        //let size = i32::from_le_bytes(a.map(|a| bytes[a]));
+        //let width = i32::from_le_bytes(a.map(|a| bytes[a]));
+        //let height = i32::from_le_bytes(a.map(|a| bytes[a]));
+
+        let data = zstd::bulk::decompress(&data_bytes, 1 << 27)?;
+
+        //let s: Vec<_> = s.collect();
+        //for (i, s) in s.enumerate() {
+        //    println!("{i}: {s:?}");
+        //}
+        Ok(VcbPlainBoard::from_color_data(&data, 2048, 2048))
+        //let v: serde_json::Result<serde_json::Value> = serde_json::from_str(maybe_json);
+        //println!("Decoded: {v:?}");
+        //println!("Decoded: {v:?}");
+
+        //todo!()
     }
     #[must_use]
     fn make_board_from_blueprint(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
@@ -51,7 +86,6 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             VcbParseInput::VcbWorld(w) => Self::make_plain_board_from_world(&w)?,
         };
         Ok(VcbBoard::new(plain_board, optimize))
-
     }
     /// # Panics
     /// invalid base64 string, invalid zstd, invalid colors
@@ -65,10 +99,60 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
     }
 }
 
-/// contains the raw footer data.
+/// contains the raw footer data for worlds
 #[derive(Debug, Default)]
 #[repr(C)]
-struct Footer {
+struct BoardFooter {
+    height_type: i32,
+    height: i32,
+    width_type: i32,
+    width: i32,
+    bytes_type: i32,
+    bytes: i32,
+}
+impl BoardFooter {
+    const SIZE: usize = std::mem::size_of::<Self>();
+    fn from_bytes(bytes: [u8; Self::SIZE]) -> BoardFooterInfo {
+        let read_int = |i: usize| i32::from_le_bytes([0, 1, 2, 3].map(|k| bytes[k + (i * 4)]));
+
+        #[rustfmt::skip]
+        let footer = BoardFooterInfo::new(&(Self {
+            height_type: read_int(0),
+            height:      read_int(1),
+            width_type:  read_int(2),
+            width:       read_int(3),
+            bytes_type:  read_int(4),
+            bytes:       read_int(5),
+        }));
+        footer
+    }
+}
+
+/// Useable cleaned footer data.
+#[derive(Debug)]
+struct BoardFooterInfo {
+    width: usize,
+    height: usize,
+    count: usize,
+}
+
+impl BoardFooterInfo {
+    fn new(footer: &BoardFooter) -> Self {
+        assert_eq!(footer.height_type, 2);
+        assert_eq!(footer.width_type, 2);
+        assert_eq!(footer.bytes_type, 2);
+        assert_eq!(footer.bytes, footer.height * footer.width * 4);
+        Self {
+            width: footer.width.try_into().unwrap(),
+            height: footer.height.try_into().unwrap(),
+            count: (footer.width * footer.height).try_into().unwrap(),
+        }
+    }
+}
+/// contains the raw footer data for blueprints
+#[derive(Debug, Default)]
+#[repr(C)]
+struct BlueprintFooter {
     height_type: i32,
     height: i32,
     width_type: i32,
@@ -78,12 +162,13 @@ struct Footer {
     layer_type: i32,
     layer: i32,
 }
-impl Footer {
+impl BlueprintFooter {
     const SIZE: usize = std::mem::size_of::<Self>();
-    fn from_bytes(bytes: [u8; Footer::SIZE]) -> FooterInfo {
+    fn from_bytes(bytes: [u8; Self::SIZE]) -> BlueprintFooterInfo {
         let read_int = |i: usize| i32::from_le_bytes([0, 1, 2, 3].map(|k| bytes[k + (i * 4)]));
+
         #[rustfmt::skip]
-        let footer = FooterInfo::new(&Footer {
+        let footer = BlueprintFooterInfo::new(&(Self {
             height_type: read_int(0),
             height:      read_int(1),
             width_type:  read_int(2),
@@ -92,26 +177,26 @@ impl Footer {
             bytes:       read_int(5),
             layer_type:  read_int(6),
             layer:       read_int(7),
-        });
+        }));
         footer
     }
 }
 
 /// Useable cleaned footer data.
 #[derive(Debug)]
-struct FooterInfo {
+struct BlueprintFooterInfo {
     width: usize,
     height: usize,
     count: usize,
     layer: Layer,
 }
-impl FooterInfo {
-    fn new(footer: &Footer) -> Self {
+impl BlueprintFooterInfo {
+    fn new(footer: &BlueprintFooter) -> Self {
         assert_eq!(footer.height_type, 2);
         assert_eq!(footer.width_type, 2);
         assert_eq!(footer.bytes_type, 2);
         assert_eq!(footer.bytes, footer.height * footer.width * 4);
-        FooterInfo {
+        BlueprintFooterInfo {
             width: footer.width.try_into().unwrap(),
             height: footer.height.try_into().unwrap(),
             count: (footer.width * footer.height).try_into().unwrap(),
@@ -386,8 +471,11 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     fn print_compact(&self) -> Result<(), std::io::Error> {
         let mut stdout = stdout();
         stdout.queue(Print("\n"))?;
-        for y in (0..self.height).step_by(2) {
-            for x in 0..self.width {
+        let (sx, sy) = crossterm::terminal::size().unwrap();
+        let max_print_width = self.width.max(sx as usize) - 2;
+        let max_print_height = self.height.max(sy as usize / 2) - 2 * 2;
+        for y in (0..max_print_height).step_by(2) {
+            for x in 0..max_print_width {
                 let i = x + y * self.width;
                 let i2 = x + (y + 1) * self.width;
                 let col = self.elements[i].get_color(self);
