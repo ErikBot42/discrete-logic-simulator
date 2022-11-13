@@ -316,7 +316,13 @@ impl BoardElement {
             id: None,
         }
     }
-    fn print<const STRATEGY: u8>(&self, board: &VcbBoard<STRATEGY>, _i: usize, _marked: bool, debug: bool) {
+    fn print<const STRATEGY: u8>(
+        &self,
+        board: &VcbBoard<STRATEGY>,
+        _i: usize,
+        _marked: bool,
+        debug: bool,
+    ) {
         let format = |debug, id: usize| {
             if debug {
                 format!("{:>2}", id)
@@ -341,17 +347,18 @@ impl BoardElement {
 
         print!("{}", tmpstr.on(col1).with(col2));
     }
-    fn get_color<const STRATEGY: u8>(&self, board: &VcbBoard<STRATEGY>) -> [u8; 4] {
-        let state = self
-            .id
+    fn get_state<const STRATEGY: u8>(&self, board: &VcbBoard<STRATEGY>) -> bool {
+        self.id
             .map(|t| {
                 board.nodes[t]
                     .network_id
                     .map(|i| board.compiled_network.get_state(i))
                     .unwrap_or_default()
             })
-            .unwrap_or_default();
-        if state {
+            .unwrap_or_default()
+    }
+    fn get_color<const STRATEGY: u8>(&self, board: &VcbBoard<STRATEGY>) -> [u8; 4] {
+        if self.get_state(board) {
             self.color_on
         } else {
             self.color_off
@@ -387,7 +394,7 @@ pub struct VcbBoard<const STRATEGY: u8> {
     pub height: usize,
 }
 //struct VcbPlainBoard {
-//    
+//
 //}
 impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     /// For regression testing
@@ -656,9 +663,7 @@ impl Footer {
     }
 }
 
-enum BlueprintParseError {
-
-}
+enum BlueprintParseError {}
 
 #[derive(Default)]
 pub struct VcbParser<const STRATEGY: u8> {}
