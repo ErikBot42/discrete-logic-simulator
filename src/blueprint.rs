@@ -180,14 +180,9 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         let width = plain_board.width;
 
         let num_elements = width * height;
-        //let mut elements = Vec::with_capacity(num_elements);
         
         let elements: Vec<_> = plain_board.traces.into_iter().map(BoardElement::from_trace).collect();
 
-        //for i in 0..width * height {
-        //    //elements.push(BoardElement::new(data[i * 4..i * 4 + 4].try_into().unwrap()));
-        //    elements.push(BoardElement::from_trace(plain_board.traces[i]));
-        //}
         let mut board = VcbBoard {
             elements,
             nodes: Vec::new(),
@@ -322,7 +317,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         let this = &self.elements[TryInto::<usize>::try_into(this_x).unwrap()];
         let this_kind = this.kind;
 
-        if !this.kind.is_logic() {
+        if !this_kind.is_logic() {
             return;
         }
 
