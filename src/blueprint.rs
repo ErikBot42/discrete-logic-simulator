@@ -6,7 +6,7 @@
 use crate::logic::{CompiledNetwork, GateNetwork, GateType};
 //use colored::Colorize;
 use crossterm::style::{Color, Colors, Print, ResetColor, SetColors, Stylize};
-use crossterm::{QueueableCommand, Result};
+use crossterm::QueueableCommand;
 use std::collections::BTreeSet;
 use std::io::{stdout, Write};
 #[derive(Debug, PartialEq, Eq)]
@@ -590,7 +590,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             println!();
         }
     }
-    fn print_compact(&self) -> Result<()> {
+    fn print_compact<E: std::convert::From<std::io::Error>>(&self) -> Result<(), E> {
         let mut stdout = stdout();
         stdout.queue(Print("\n"))?;
         for y in (0..self.height).step_by(2) {
@@ -640,11 +640,29 @@ struct Footer {
     layer: i32,
 }
 impl Footer {
-    const SIZE: usize = 32; // 8*4 bytes
+    const SIZE: usize = std::mem::size_of::<Self>(); 
+    fn from_bytes(bytes: [u8; Footer::SIZE]) -> FooterInfo {
+        let read_int = |i: usize| i32::from_le_bytes([0, 1, 2, 3].map(|k| bytes[k + (i * 4)]));
+        #[rustfmt::skip]
+        let footer = FooterInfo::new(&Footer {
+            height_type: read_int(0),
+            height:      read_int(1),
+            width_type:  read_int(2),
+            width:       read_int(3),
+            bytes_type:  read_int(4),
+            bytes:       read_int(5),
+            layer_type:  read_int(6),
+            layer:       read_int(7),
+        });
+        footer
+    }
 }
 #[derive(Default)]
 pub struct VcbParser<const STRATEGY: u8> {}
 impl<const STRATEGY: u8> VcbParser<STRATEGY> {
+    fn bytes_from_blueprint(data: &str) -> Result<Vec<u8>, base64::DecodeError> {
+        base64::decode_config(data.trim(), base64::STANDARD)
+    }
     /// # Panics
     /// invalid base64 string, invalid zstd, invalid colors
     #[must_use]
@@ -654,28 +672,7 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         let footer_bytes: [u8; Footer::SIZE] = bytes[bytes.len() - Footer::SIZE..bytes.len()]
             .try_into()
             .unwrap();
-        let read_int = |i: usize| {
-            let i = i * 4;
-            i32::from_le_bytes([
-                footer_bytes[i],
-                footer_bytes[i + 1],
-                footer_bytes[i + 2],
-                footer_bytes[i + 3],
-            ])
-        };
-        let footer = FooterInfo::new(&unsafe {
-            std::mem::transmute::<[u8; Footer::SIZE], Footer>(footer_bytes)
-        });
-        let footer = FooterInfo::new(&Footer {
-            height_type: read_int(0),
-            height: read_int(1),
-            width_type: read_int(2),
-            width: read_int(3),
-            bytes_type: read_int(4),
-            bytes: read_int(5),
-            layer_type: read_int(6),
-            layer: read_int(7),
-        });
+        let footer = Footer::from_bytes(footer_bytes);
         assert!(footer.layer == Layer::Logic);
         let data = zstd::bulk::decompress(data_bytes, 1 << 27).unwrap();
         assert!(!data.is_empty());
