@@ -1,6 +1,5 @@
 //! blueprint.rs: parsing VCB blueprints
 
-//#![allow(dead_code)]
 #![allow(clippy::cast_sign_loss)]
 
 use crate::logic::{CompiledNetwork, GateNetwork, GateType};
@@ -25,7 +24,6 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
 
         let plain_board = VcbPlainBoard::from_color_data(&data, footer.width, footer.height);
 
-        //Ok(VcbBoard::new(&data, footer.width, footer.height, optimize))
         Ok(VcbBoard::new(plain_board, optimize))
     }
     /// # Panics
@@ -111,7 +109,7 @@ struct VcbPlainBoard {
 impl VcbPlainBoard {
     fn from_color_data(data: &[u8], width: usize, height: usize) -> Self {
         let traces: Vec<_> = data
-            .chunks(4)
+            .chunks_exact(4)
             .map(|x| Trace::from_raw_color(x.try_into().unwrap()))
             .collect();
         assert_eq!(traces.len(), width * height);
@@ -176,7 +174,6 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     pub fn update(&mut self) {
         self.compiled_network.update();
     }
-    //fn new(data: &[u8], width: usize, height: usize, optimize: bool) -> Self {
     fn new(plain_board: VcbPlainBoard, optimize: bool) -> Self {
         let height = plain_board.height;
         let width = plain_board.width;
@@ -225,7 +222,6 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         }
         board.compiled_network = board.network.compiled(optimize);
 
-        // TODO: terminal buffer
         board
     }
     fn add_connection(&mut self, connection: (usize, usize), swp_dir: bool) {
@@ -244,9 +240,9 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         );
     }
 
-    // floodfill with id at given index
-    // pre: logic trace, otherwise id could have been
-    // assigned to nothing, this_x valid
+    /// floodfill with id at given index
+    /// pre: logic trace, otherwise id could have been
+    /// assigned to nothing, this_x valid
     fn fill_id(&mut self, this_x: i32, id: usize) {
         let this = &mut self.elements[TryInto::<usize>::try_into(this_x).unwrap()];
         let this_kind = this.kind;
