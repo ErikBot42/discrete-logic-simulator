@@ -8,6 +8,11 @@ use crossterm::QueueableCommand;
 use std::collections::BTreeSet;
 use std::io::{stdout, Write};
 
+pub enum VcbParseInput {
+    VcbBlueprint(String),
+    VcbWorld(String),
+}
+
 #[derive(Default)]
 pub struct VcbParser<const STRATEGY: u8> {}
 impl<const STRATEGY: u8> VcbParser<STRATEGY> {
@@ -32,6 +37,12 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             Self::make_plain_board_from_blueprint(data)?,
             optimize,
         ))
+    }
+    fn parse(input: VcbParseInput, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
+        match input {
+            VcbParseInput::VcbBlueprint(b) => Self::make_board_from_blueprint(&b, optimize),
+            _ => unimplemented!(),
+        }
     }
     /// # Panics
     /// invalid base64 string, invalid zstd, invalid colors

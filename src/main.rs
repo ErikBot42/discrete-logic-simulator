@@ -1,7 +1,7 @@
 use clap::{Parser, ValueEnum};
 use crossterm::execute;
 use crossterm::terminal::{ClearType, EnterAlternateScreen, LeaveAlternateScreen};
-use logic_simulator::blueprint::VcbParser;
+use logic_simulator::blueprint::{VcbParseInput, VcbParser};
 use logic_simulator::logic::UpdateStrategy;
 use std::fs::read_to_string;
 use std::io::stdout;
@@ -65,14 +65,17 @@ fn main() {
         None => read_to_string(args.blueprint_file.clone().unwrap()).expect("File should exist"),
     };
 
-    //let string = include_str!("../test_files/big_decoder.blueprint");
-    //let string = include_str!("../test_files/intro.blueprint");
-    //let string = include_str!("../test_files/gates.blueprint");
-    //let string = include_str!("../test_files/small_decoder.blueprint");
-    //let string = include_str!("../test_files/circle.blueprint");
-    //let string = include_str!("../test_files/gates.blueprint");
-    //let string = include_str!("../test_files/invalid_base64.blueprint");
-    //let string = include_str!("../test_files/invalid_zstd.blueprint");
+    let read_file = |s: PathBuf| read_to_string(s).expect("File should exist");
+    let parser_input = args
+        .blueprint_string
+        .clone()
+        .or(args.blueprint_file.clone().map(read_file))
+        .map(VcbParseInput::VcbBlueprint)
+        .or(args
+            .world_file
+            .clone()
+            .map(read_file)
+            .map(VcbParseInput::VcbWorld));
 
     // branch to specific type here to remove overhead later.
 
