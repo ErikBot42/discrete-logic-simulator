@@ -8,13 +8,35 @@ use crossterm::style::{Color, Colors, Print, ResetColor, SetColors, Stylize};
 use crossterm::QueueableCommand;
 use std::collections::BTreeSet;
 use std::io::{stdout, Write};
-#[derive(Debug, PartialEq, Eq)]
-enum Layer {
-    Logic,
-    On,
-    Off,
+
+#[derive(Default)]
+pub struct VcbParser<const STRATEGY: u8> {}
+impl<const STRATEGY: u8> VcbParser<STRATEGY> {
+    fn make_board_from_blueprint(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
+        let bytes = base64::decode_config(data.trim(), base64::STANDARD)?;
+        let data_bytes = &bytes[..bytes.len() - Footer::SIZE];
+        let footer_bytes: [u8; Footer::SIZE] =
+            bytes[bytes.len() - Footer::SIZE..bytes.len()].try_into()?;
+        let footer = Footer::from_bytes(footer_bytes);
+        assert!(footer.layer == Layer::Logic);
+        let data = zstd::bulk::decompress(data_bytes, 1 << 27)?;
+        assert!(!data.is_empty());
+        assert!(data.len() == footer.count * 4);
+        Ok(VcbBoard::new(&data, footer.width, footer.height, optimize))
+    }
+    /// # Panics
+    /// invalid base64 string, invalid zstd, invalid colors
+    #[must_use]
+    pub fn parse_to_board(data: &str, optimize: bool) -> VcbBoard<STRATEGY> {
+        Self::make_board_from_blueprint(data, optimize).unwrap()
+    }
+    #[must_use]
+    pub fn try_parse_to_board(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
+        Self::make_board_from_blueprint(data, optimize)
+    }
 }
-// useable cleaned footer data.
+
+/// Useable cleaned footer data.
 #[derive(Debug)]
 struct FooterInfo {
     width: usize,
@@ -36,6 +58,53 @@ impl FooterInfo {
             },
         }
     }
+}
+#[derive(Debug, PartialEq, Eq)]
+enum Layer {
+    Logic,
+    On,
+    Off,
+}
+
+
+/// All color constants used by vcb
+#[rustfmt::skip]
+mod vcb_colors {
+    //                                               r,   g,   b,   w
+    pub(crate) const COLOR_GRAY:       [u8; 4] = [  42,  53,  65, 255 ];
+    pub(crate) const COLOR_WHITE:      [u8; 4] = [ 159, 168, 174, 255 ];
+    pub(crate) const COLOR_RED:        [u8; 4] = [ 161,  85,  94, 255 ];
+    pub(crate) const COLOR_ORANGE1:    [u8; 4] = [ 161, 108,  86, 255 ];
+    pub(crate) const COLOR_ORANGE2:    [u8; 4] = [ 161, 133,  86, 255 ];
+    pub(crate) const COLOR_ORANGE3:    [u8; 4] = [ 161, 152,  86, 255 ];
+    pub(crate) const COLOR_YELLOW:     [u8; 4] = [ 153, 161,  86, 255 ];
+    pub(crate) const COLOR_GREEN1:     [u8; 4] = [ 136, 161,  86, 255 ];
+    pub(crate) const COLOR_GREEN2:     [u8; 4] = [ 108, 161,  86, 255 ];
+    pub(crate) const COLOR_CYAN1:      [u8; 4] = [  86, 161, 141, 255 ];
+    pub(crate) const COLOR_CYAN2:      [u8; 4] = [  86, 147, 161, 255 ];
+    pub(crate) const COLOR_BLUE1:      [u8; 4] = [  86, 123, 161, 255 ];
+    pub(crate) const COLOR_BLUE2:      [u8; 4] = [  86,  98, 161, 255 ];
+    pub(crate) const COLOR_PURPLE:     [u8; 4] = [ 102,  86, 161, 255 ];
+    pub(crate) const COLOR_MAGENTA:    [u8; 4] = [ 135,  86, 161, 255 ];
+    pub(crate) const COLOR_PINK:       [u8; 4] = [ 161,  85, 151, 255 ];
+    pub(crate) const COLOR_WRITE:      [u8; 4] = [  77,  56,  62, 255 ];
+    pub(crate) const COLOR_EMPTY:      [u8; 4] = [   0,   0,   0,   0 ];
+    pub(crate) const COLOR_CROSS:      [u8; 4] = [ 102, 120, 142, 255 ];
+    pub(crate) const COLOR_READ:       [u8; 4] = [  46,  71,  93, 255 ];
+    pub(crate) const COLOR_BUFFER:     [u8; 4] = [ 146, 255,  99, 255 ];
+    pub(crate) const COLOR_AND:        [u8; 4] = [ 255, 198,  99, 255 ];
+    pub(crate) const COLOR_OR:         [u8; 4] = [  99, 242, 255, 255 ];
+    pub(crate) const COLOR_XOR:        [u8; 4] = [ 174, 116, 255, 255 ];
+    pub(crate) const COLOR_NOT:        [u8; 4] = [ 255,  98, 138, 255 ];
+    pub(crate) const COLOR_NAND:       [u8; 4] = [ 255, 162,   0, 255 ];
+    pub(crate) const COLOR_NOR:        [u8; 4] = [  48, 217, 255, 255 ];
+    pub(crate) const COLOR_XNOR:       [u8; 4] = [ 166,   0, 255, 255 ];
+    pub(crate) const COLOR_LATCHON:    [u8; 4] = [  99, 255, 159, 255 ];
+    pub(crate) const COLOR_LATCHOFF:   [u8; 4] = [  56,  77,  71, 255 ];
+    pub(crate) const COLOR_CLOCK:      [u8; 4] = [ 255,   0,  65, 255 ];
+    pub(crate) const COLOR_LED:        [u8; 4] = [ 255, 255, 255, 255 ];
+    pub(crate) const COLOR_ANNOTATION: [u8; 4] = [  58,  69,  81, 255 ];
+    pub(crate) const COLOR_FILLER:     [u8; 4] = [ 140, 171, 161, 255 ];
 }
 
 #[non_exhaustive]
@@ -77,84 +146,44 @@ enum Trace {
     Filler,
 }
 
-struct ColorConstants {}
-#[rustfmt::skip]
-impl ColorConstants {
-    //                                    r,   g,   b,   w
-    const COLOR_GRAY:       [u8; 4] = [  42,  53,  65, 255 ];
-    const COLOR_WHITE:      [u8; 4] = [ 159, 168, 174, 255 ];
-    const COLOR_RED:        [u8; 4] = [ 161,  85,  94, 255 ];
-    const COLOR_ORANGE1:    [u8; 4] = [ 161, 108,  86, 255 ];
-    const COLOR_ORANGE2:    [u8; 4] = [ 161, 133,  86, 255 ];
-    const COLOR_ORANGE3:    [u8; 4] = [ 161, 152,  86, 255 ];
-    const COLOR_YELLOW:     [u8; 4] = [ 153, 161,  86, 255 ];
-    const COLOR_GREEN1:     [u8; 4] = [ 136, 161,  86, 255 ];
-    const COLOR_GREEN2:     [u8; 4] = [ 108, 161,  86, 255 ];
-    const COLOR_CYAN1:      [u8; 4] = [  86, 161, 141, 255 ];
-    const COLOR_CYAN2:      [u8; 4] = [  86, 147, 161, 255 ];
-    const COLOR_BLUE1:      [u8; 4] = [  86, 123, 161, 255 ];
-    const COLOR_BLUE2:      [u8; 4] = [  86,  98, 161, 255 ];
-    const COLOR_PURPLE:     [u8; 4] = [ 102,  86, 161, 255 ];
-    const COLOR_MAGENTA:    [u8; 4] = [ 135,  86, 161, 255 ];
-    const COLOR_PINK:       [u8; 4] = [ 161,  85, 151, 255 ];
-    const COLOR_WRITE:      [u8; 4] = [  77,  56,  62, 255 ];
-    const COLOR_EMPTY:      [u8; 4] = [   0,   0,   0,   0 ];
-    const COLOR_CROSS:      [u8; 4] = [ 102, 120, 142, 255 ];
-    const COLOR_READ:       [u8; 4] = [  46,  71,  93, 255 ];
-    const COLOR_BUFFER:     [u8; 4] = [ 146, 255,  99, 255 ];
-    const COLOR_AND:        [u8; 4] = [ 255, 198,  99, 255 ];
-    const COLOR_OR:         [u8; 4] = [  99, 242, 255, 255 ];
-    const COLOR_XOR:        [u8; 4] = [ 174, 116, 255, 255 ];
-    const COLOR_NOT:        [u8; 4] = [ 255,  98, 138, 255 ];
-    const COLOR_NAND:       [u8; 4] = [ 255, 162,   0, 255 ];
-    const COLOR_NOR:        [u8; 4] = [  48, 217, 255, 255 ];
-    const COLOR_XNOR:       [u8; 4] = [ 166,   0, 255, 255 ];
-    const COLOR_LATCHON:    [u8; 4] = [  99, 255, 159, 255 ];
-    const COLOR_LATCHOFF:   [u8; 4] = [  56,  77,  71, 255 ];
-    const COLOR_CLOCK:      [u8; 4] = [ 255,   0,  65, 255 ];
-    const COLOR_LED:        [u8; 4] = [ 255, 255, 255, 255 ];
-    const COLOR_ANNOTATION: [u8; 4] = [  58,  69,  81, 255 ];
-    const COLOR_FILLER:     [u8; 4] = [ 140, 171, 161, 255 ];
-}
-
 impl Trace {
     #[rustfmt::skip]
     fn to_color_raw(self) -> [u8; 4] {
         match self {
-            Trace::Gray       => ColorConstants::COLOR_GRAY,
-            Trace::White      => ColorConstants::COLOR_WHITE,
-            Trace::Red        => ColorConstants::COLOR_RED,
-            Trace::Orange1    => ColorConstants::COLOR_ORANGE1,
-            Trace::Orange2    => ColorConstants::COLOR_ORANGE2,
-            Trace::Orange3    => ColorConstants::COLOR_ORANGE3,
-            Trace::Yellow     => ColorConstants::COLOR_YELLOW,
-            Trace::Green1     => ColorConstants::COLOR_GREEN1,
-            Trace::Green2     => ColorConstants::COLOR_GREEN2,
-            Trace::Cyan1      => ColorConstants::COLOR_CYAN1,
-            Trace::Cyan2      => ColorConstants::COLOR_CYAN2,
-            Trace::Blue1      => ColorConstants::COLOR_BLUE1,
-            Trace::Blue2      => ColorConstants::COLOR_BLUE2,
-            Trace::Purple     => ColorConstants::COLOR_PURPLE,
-            Trace::Magenta    => ColorConstants::COLOR_MAGENTA,
-            Trace::Pink       => ColorConstants::COLOR_PINK,
-            Trace::Write      => ColorConstants::COLOR_WRITE,
-            Trace::Empty      => ColorConstants::COLOR_EMPTY,
-            Trace::Cross      => ColorConstants::COLOR_CROSS,
-            Trace::Read       => ColorConstants::COLOR_READ,
-            Trace::Buffer     => ColorConstants::COLOR_BUFFER,
-            Trace::And        => ColorConstants::COLOR_AND,
-            Trace::Or         => ColorConstants::COLOR_OR,
-            Trace::Xor        => ColorConstants::COLOR_XOR,
-            Trace::Not        => ColorConstants::COLOR_NOT,
-            Trace::Nand       => ColorConstants::COLOR_NAND,
-            Trace::Nor        => ColorConstants::COLOR_NOR,
-            Trace::Xnor       => ColorConstants::COLOR_XNOR,
-            Trace::LatchOn    => ColorConstants::COLOR_LATCHON,
-            Trace::LatchOff   => ColorConstants::COLOR_LATCHOFF,
-            Trace::Clock      => ColorConstants::COLOR_CLOCK,
-            Trace::Led        => ColorConstants::COLOR_LED,
-            Trace::Annotation => ColorConstants::COLOR_ANNOTATION,
-            Trace::Filler     => ColorConstants::COLOR_FILLER,
+            Trace::Gray       => vcb_colors::COLOR_GRAY,
+            Trace::White      => vcb_colors::COLOR_WHITE,
+            Trace::Red        => vcb_colors::COLOR_RED,
+            Trace::Orange1    => vcb_colors::COLOR_ORANGE1,
+            Trace::Orange2    => vcb_colors::COLOR_ORANGE2,
+            Trace::Orange3    => vcb_colors::COLOR_ORANGE3,
+            Trace::Yellow     => vcb_colors::COLOR_YELLOW,
+            Trace::Green1     => vcb_colors::COLOR_GREEN1,
+            Trace::Green2     => vcb_colors::COLOR_GREEN2,
+            Trace::Cyan1      => vcb_colors::COLOR_CYAN1,
+            Trace::Cyan2      => vcb_colors::COLOR_CYAN2,
+            Trace::Blue1      => vcb_colors::COLOR_BLUE1,
+            Trace::Blue2      => vcb_colors::COLOR_BLUE2,
+            Trace::Purple     => vcb_colors::COLOR_PURPLE,
+            Trace::Magenta    => vcb_colors::COLOR_MAGENTA,
+            Trace::Pink       => vcb_colors::COLOR_PINK,
+            Trace::Write      => vcb_colors::COLOR_WRITE,
+            Trace::Empty      => vcb_colors::COLOR_EMPTY,
+            Trace::Cross      => vcb_colors::COLOR_CROSS,
+            Trace::Read       => vcb_colors::COLOR_READ,
+            Trace::Buffer     => vcb_colors::COLOR_BUFFER,
+            Trace::And        => vcb_colors::COLOR_AND,
+            Trace::Or         => vcb_colors::COLOR_OR,
+            Trace::Xor        => vcb_colors::COLOR_XOR,
+            Trace::Not        => vcb_colors::COLOR_NOT,
+            Trace::Nand       => vcb_colors::COLOR_NAND,
+            Trace::Nor        => vcb_colors::COLOR_NOR,
+            Trace::Xnor       => vcb_colors::COLOR_XNOR,
+            Trace::LatchOn    => vcb_colors::COLOR_LATCHON,
+            Trace::LatchOff   => vcb_colors::COLOR_LATCHOFF,
+            Trace::Clock      => vcb_colors::COLOR_CLOCK,
+            Trace::Led        => vcb_colors::COLOR_LED,
+            Trace::Annotation => vcb_colors::COLOR_ANNOTATION,
+            Trace::Filler     => vcb_colors::COLOR_FILLER,
         }
     }
     fn to_color_on(self) -> [u8; 4] {
@@ -188,40 +217,40 @@ impl Trace {
     fn from_raw_color(color: &[u8]) -> Self {
         let color: [u8; 4] = color.try_into().unwrap();
         match color {
-            ColorConstants::COLOR_GRAY       => Trace::Gray,
-            ColorConstants::COLOR_WHITE      => Trace::White,
-            ColorConstants::COLOR_RED        => Trace::Red,
-            ColorConstants::COLOR_ORANGE1    => Trace::Orange1,
-            ColorConstants::COLOR_ORANGE2    => Trace::Orange2,
-            ColorConstants::COLOR_ORANGE3    => Trace::Orange3,
-            ColorConstants::COLOR_YELLOW     => Trace::Yellow,
-            ColorConstants::COLOR_GREEN1     => Trace::Green1,
-            ColorConstants::COLOR_GREEN2     => Trace::Green2,
-            ColorConstants::COLOR_CYAN1      => Trace::Cyan1,
-            ColorConstants::COLOR_CYAN2      => Trace::Cyan2,
-            ColorConstants::COLOR_BLUE1      => Trace::Blue1,
-            ColorConstants::COLOR_BLUE2      => Trace::Blue2,
-            ColorConstants::COLOR_PURPLE     => Trace::Purple,
-            ColorConstants::COLOR_MAGENTA    => Trace::Magenta,
-            ColorConstants::COLOR_PINK       => Trace::Pink,
-            ColorConstants::COLOR_WRITE      => Trace::Write,
-            ColorConstants::COLOR_EMPTY      => Trace::Empty,
-            ColorConstants::COLOR_CROSS      => Trace::Cross,
-            ColorConstants::COLOR_READ       => Trace::Read,
-            ColorConstants::COLOR_BUFFER     => Trace::Buffer,
-            ColorConstants::COLOR_AND        => Trace::And,
-            ColorConstants::COLOR_OR         => Trace::Or,
-            ColorConstants::COLOR_XOR        => Trace::Xor,
-            ColorConstants::COLOR_NOT        => Trace::Not,
-            ColorConstants::COLOR_NAND       => Trace::Nand,
-            ColorConstants::COLOR_NOR        => Trace::Nor,
-            ColorConstants::COLOR_XNOR       => Trace::Xnor,
-            ColorConstants::COLOR_LATCHON    => Trace::LatchOn,
-            ColorConstants::COLOR_LATCHOFF   => Trace::LatchOff,
-            ColorConstants::COLOR_CLOCK      => Trace::Clock,
-            ColorConstants::COLOR_LED        => Trace::Led,
-            ColorConstants::COLOR_ANNOTATION => Trace::Annotation,
-            ColorConstants::COLOR_FILLER     => Trace::Filler,
+            vcb_colors::COLOR_GRAY       => Trace::Gray,
+            vcb_colors::COLOR_WHITE      => Trace::White,
+            vcb_colors::COLOR_RED        => Trace::Red,
+            vcb_colors::COLOR_ORANGE1    => Trace::Orange1,
+            vcb_colors::COLOR_ORANGE2    => Trace::Orange2,
+            vcb_colors::COLOR_ORANGE3    => Trace::Orange3,
+            vcb_colors::COLOR_YELLOW     => Trace::Yellow,
+            vcb_colors::COLOR_GREEN1     => Trace::Green1,
+            vcb_colors::COLOR_GREEN2     => Trace::Green2,
+            vcb_colors::COLOR_CYAN1      => Trace::Cyan1,
+            vcb_colors::COLOR_CYAN2      => Trace::Cyan2,
+            vcb_colors::COLOR_BLUE1      => Trace::Blue1,
+            vcb_colors::COLOR_BLUE2      => Trace::Blue2,
+            vcb_colors::COLOR_PURPLE     => Trace::Purple,
+            vcb_colors::COLOR_MAGENTA    => Trace::Magenta,
+            vcb_colors::COLOR_PINK       => Trace::Pink,
+            vcb_colors::COLOR_WRITE      => Trace::Write,
+            vcb_colors::COLOR_EMPTY      => Trace::Empty,
+            vcb_colors::COLOR_CROSS      => Trace::Cross,
+            vcb_colors::COLOR_READ       => Trace::Read,
+            vcb_colors::COLOR_BUFFER     => Trace::Buffer,
+            vcb_colors::COLOR_AND        => Trace::And,
+            vcb_colors::COLOR_OR         => Trace::Or,
+            vcb_colors::COLOR_XOR        => Trace::Xor,
+            vcb_colors::COLOR_NOT        => Trace::Not,
+            vcb_colors::COLOR_NAND       => Trace::Nand,
+            vcb_colors::COLOR_NOR        => Trace::Nor,
+            vcb_colors::COLOR_XNOR       => Trace::Xnor,
+            vcb_colors::COLOR_LATCHON    => Trace::LatchOn,
+            vcb_colors::COLOR_LATCHOFF   => Trace::LatchOff,
+            vcb_colors::COLOR_CLOCK      => Trace::Clock,
+            vcb_colors::COLOR_LED        => Trace::Led,
+            vcb_colors::COLOR_ANNOTATION => Trace::Annotation,
+            vcb_colors::COLOR_FILLER     => Trace::Filler,
             _ => panic!("Invalid trace color"),
         }
     }
@@ -388,7 +417,6 @@ impl BoardNode {
 //    width: usize,
 //    height: usize,
 //}
-
 
 #[derive(Debug)]
 pub struct VcbBoard<const STRATEGY: u8> {
@@ -664,32 +692,5 @@ impl Footer {
             layer:       read_int(7),
         });
         footer
-    }
-}
-
-#[derive(Default)]
-pub struct VcbParser<const STRATEGY: u8> {}
-impl<const STRATEGY: u8> VcbParser<STRATEGY> {
-    fn make_board_from_blueprint(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
-        let bytes = base64::decode_config(data.trim(), base64::STANDARD)?;
-        let data_bytes = &bytes[..bytes.len() - Footer::SIZE];
-        let footer_bytes: [u8; Footer::SIZE] =
-            bytes[bytes.len() - Footer::SIZE..bytes.len()].try_into()?;
-        let footer = Footer::from_bytes(footer_bytes);
-        assert!(footer.layer == Layer::Logic);
-        let data = zstd::bulk::decompress(data_bytes, 1 << 27)?;
-        assert!(!data.is_empty());
-        assert!(data.len() == footer.count * 4);
-        Ok(VcbBoard::new(&data, footer.width, footer.height, optimize))
-    }
-    /// # Panics
-    /// invalid base64 string, invalid zstd, invalid colors
-    #[must_use]
-    pub fn parse_to_board(data: &str, optimize: bool) -> VcbBoard<STRATEGY> {
-        Self::make_board_from_blueprint(data, optimize).unwrap()
-    }
-    #[must_use]
-    pub fn try_parse_to_board(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
-        Self::make_board_from_blueprint(data, optimize)
     }
 }
