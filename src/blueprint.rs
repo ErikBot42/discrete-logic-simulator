@@ -23,7 +23,6 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         assert!(!data.is_empty());
         assert!(data.len() == footer.count * 4);
 
-
         let plain_board = VcbPlainBoard::from_color_data(&data, footer.width, footer.height);
 
         //Ok(VcbBoard::new(&data, footer.width, footer.height, optimize))
@@ -111,7 +110,10 @@ struct VcbPlainBoard {
 }
 impl VcbPlainBoard {
     fn from_color_data(data: &[u8], width: usize, height: usize) -> Self {
-        let traces: Vec<_> = data.chunks(4).map(|x| Trace::from_raw_color(x.try_into().unwrap())).collect();
+        let traces: Vec<_> = data
+            .chunks(4)
+            .map(|x| Trace::from_raw_color(x.try_into().unwrap()))
+            .collect();
         assert_eq!(traces.len(), width * height);
         VcbPlainBoard {
             traces,
@@ -180,8 +182,12 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         let width = plain_board.width;
 
         let num_elements = width * height;
-        
-        let elements: Vec<_> = plain_board.traces.into_iter().map(BoardElement::from_trace).collect();
+
+        let elements: Vec<_> = plain_board
+            .traces
+            .into_iter()
+            .map(BoardElement::from_trace)
+            .collect();
 
         let mut board = VcbBoard {
             elements,
@@ -264,9 +270,10 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                 }
                 if !other_kind.is_same_as(this_kind) {
                     continue 'side;
+                } else {
+                    self.fill_id(other_x, id);
+                    continue 'side;
                 }
-                self.fill_id(other_x, id);
-                continue 'side;
             }
         }
     }
