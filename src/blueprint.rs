@@ -640,7 +640,7 @@ struct Footer {
     layer: i32,
 }
 impl Footer {
-    const SIZE: usize = std::mem::size_of::<Self>(); 
+    const SIZE: usize = std::mem::size_of::<Self>();
     fn from_bytes(bytes: [u8; Footer::SIZE]) -> FooterInfo {
         let read_int = |i: usize| i32::from_le_bytes([0, 1, 2, 3].map(|k| bytes[k + (i * 4)]));
         #[rustfmt::skip]
@@ -657,26 +657,30 @@ impl Footer {
         footer
     }
 }
+
 #[derive(Default)]
 pub struct VcbParser<const STRATEGY: u8> {}
 impl<const STRATEGY: u8> VcbParser<STRATEGY> {
-    fn bytes_from_blueprint(data: &str) -> Result<Vec<u8>, base64::DecodeError> {
-        base64::decode_config(data.trim(), base64::STANDARD)
-    }
     /// # Panics
     /// invalid base64 string, invalid zstd, invalid colors
-    #[must_use]
-    pub fn parse_to_board(data: &str, optimize: bool) -> VcbBoard<STRATEGY> {
-        let bytes = base64::decode_config(data.trim(), base64::STANDARD).unwrap();
+    fn make_board_from_blueprint(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
+        let bytes = base64::decode_config(data.trim(), base64::STANDARD)?;
         let data_bytes = &bytes[..bytes.len() - Footer::SIZE];
-        let footer_bytes: [u8; Footer::SIZE] = bytes[bytes.len() - Footer::SIZE..bytes.len()]
-            .try_into()
-            .unwrap();
+        let footer_bytes: [u8; Footer::SIZE] =
+            bytes[bytes.len() - Footer::SIZE..bytes.len()].try_into()?;
         let footer = Footer::from_bytes(footer_bytes);
         assert!(footer.layer == Layer::Logic);
-        let data = zstd::bulk::decompress(data_bytes, 1 << 27).unwrap();
+        let data = zstd::bulk::decompress(data_bytes, 1 << 27)?;
         assert!(!data.is_empty());
         assert!(data.len() == footer.count * 4);
-        VcbBoard::new(&data, footer.width, footer.height, optimize)
+        Ok(VcbBoard::new(&data, footer.width, footer.height, optimize))
+    }
+    #[must_use]
+    pub fn parse_to_board(data: &str, optimize: bool) -> VcbBoard<STRATEGY> {
+        Self::make_board_from_blueprint(data, optimize).unwrap()
+    }
+    #[must_use]
+    pub fn try_parse_to_board(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
+        Self::make_board_from_blueprint(data, optimize)
     }
 }

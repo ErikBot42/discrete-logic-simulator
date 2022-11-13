@@ -71,23 +71,34 @@ fn main() {
     //let string = include_str!("../test_files/invalid_zstd.blueprint");
 
     // branch to specific type here to remove overhead later.
+
+    //match args.implementation {
+    //    UpdateStrategy::ScalarSimd => handle_board(
+    //        &args,
+    //        VcbParser::<{ UpdateStrategy::ScalarSimd as u8 }>::parse_to_board(&string, true),
+    //    ),
+    //    UpdateStrategy::Reference => handle_board(
+    //        &args,
+    //        VcbParser::<{ UpdateStrategy::Reference as u8 }>::parse_to_board(&string, true),
+    //    ),
+    //    UpdateStrategy::Simd => handle_board(
+    //        &args,
+    //        VcbParser::<{ UpdateStrategy::Simd as u8 }>::parse_to_board(&string, true),
+    //    ),
+    //}
     match args.implementation {
-        UpdateStrategy::ScalarSimd => handle_board(
-            &args,
-            VcbParser::<{ UpdateStrategy::ScalarSimd as u8 }>::parse_to_board(&string, true),
-        ),
-        UpdateStrategy::Reference => handle_board(
-            &args,
-            VcbParser::<{ UpdateStrategy::Reference as u8 }>::parse_to_board(&string, true),
-        ),
-        UpdateStrategy::Simd => handle_board(
-            &args,
-            VcbParser::<{ UpdateStrategy::Simd as u8 }>::parse_to_board(&string, true),
-        ),
+        UpdateStrategy::Reference => {
+            handle_board::<{ UpdateStrategy::Reference as u8 }>(&args, &string)
+        },
+        UpdateStrategy::ScalarSimd => {
+            handle_board::<{ UpdateStrategy::ScalarSimd as u8 }>(&args, &string)
+        },
+        UpdateStrategy::Simd => handle_board::<{ UpdateStrategy::Simd as u8 }>(&args, &string),
     }
 }
 
-fn handle_board<const STRATEGY: u8>(args: &Args, mut board: VcbBoard<STRATEGY>) {
+fn handle_board<const STRATEGY: u8>(args: &Args, string: &str) {
+    let mut board = VcbParser::<STRATEGY>::parse_to_board(&string, true);
     match args.mode {
         RunMode::Print => {
             board.update();
