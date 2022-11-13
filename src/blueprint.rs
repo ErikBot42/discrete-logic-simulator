@@ -309,7 +309,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             println!();
         }
     }
-    fn print_compact<E: std::convert::From<std::io::Error>>(&self) -> Result<(), E> {
+    fn print_compact(&self) -> Result<(), std::io::Error> {
         let mut stdout = stdout();
         stdout.queue(Print("\n"))?;
         for y in (0..self.height).step_by(2) {
@@ -340,8 +340,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         self.print_inner(true);
     }
     pub fn print(&self) {
-        //self.print_compact().unwrap();
-        self.print_debug();
+        self.print_compact().unwrap();
     }
 }
 
