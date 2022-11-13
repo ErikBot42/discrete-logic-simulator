@@ -16,6 +16,7 @@ pub enum VcbParseInput {
 #[derive(Default)]
 pub struct VcbParser<const STRATEGY: u8> {}
 impl<const STRATEGY: u8> VcbParser<STRATEGY> {
+    #[must_use]
     fn make_plain_board_from_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
         let bytes = base64::decode_config(data.trim(), base64::STANDARD)?;
         let data_bytes = &bytes[..bytes.len() - Footer::SIZE];
@@ -32,13 +33,15 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             footer.height,
         ))
     }
+    #[must_use]
     fn make_board_from_blueprint(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
         Ok(VcbBoard::new(
             Self::make_plain_board_from_blueprint(data)?,
             optimize,
         ))
     }
-    fn parse(input: VcbParseInput, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
+    #[must_use]
+    pub fn parse(input: VcbParseInput, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
         match input {
             VcbParseInput::VcbBlueprint(b) => Self::make_board_from_blueprint(&b, optimize),
             _ => unimplemented!(),

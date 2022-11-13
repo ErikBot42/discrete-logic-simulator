@@ -56,17 +56,10 @@ fn main() {
     //colored::control::set_override(true);
     std::env::set_var("RUST_BACKTRACE", "1");
     let args = Args::parse();
-    //println!("File {:?}!", args.blueprint_file);
-    //println!("String {:?}!", args.blueprint_string);
-    //println!("Mode {:?}!", args.mode);
 
-    let string: String = match args.blueprint_string.clone() {
-        Some(s) => s,
-        None => read_to_string(args.blueprint_file.clone().unwrap()).expect("File should exist"),
-    };
 
     let read_file = |s: PathBuf| read_to_string(s).expect("File should exist");
-    let parser_input = args
+    let parser_input: VcbParseInput = args
         .blueprint_string
         .clone()
         .or(args.blueprint_file.clone().map(read_file))
@@ -75,23 +68,22 @@ fn main() {
             .world_file
             .clone()
             .map(read_file)
-            .map(VcbParseInput::VcbWorld));
+            .map(VcbParseInput::VcbWorld)).unwrap();
 
     // branch to specific type here to remove overhead later.
-
     match args.implementation {
         UpdateStrategy::Reference => {
-            handle_board::<{ UpdateStrategy::Reference as u8 }>(&args, &string)
+            handle_board::<{ UpdateStrategy::Reference as u8 }>(&args, parser_input)
         },
         UpdateStrategy::ScalarSimd => {
-            handle_board::<{ UpdateStrategy::ScalarSimd as u8 }>(&args, &string)
+            handle_board::<{ UpdateStrategy::ScalarSimd as u8 }>(&args, parser_input)
         },
-        UpdateStrategy::Simd => handle_board::<{ UpdateStrategy::Simd as u8 }>(&args, &string),
+        UpdateStrategy::Simd => handle_board::<{ UpdateStrategy::Simd as u8 }>(&args, parser_input),
     }
 }
 
-fn handle_board<const STRATEGY: u8>(args: &Args, string: &str) {
-    let mut board = { VcbParser::<STRATEGY>::parse_to_board(&string, true) };
+fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbParseInput) {
+    let mut board = { VcbParser::<STRATEGY>::parse(parser_input, true).unwrap() };
     match args.mode {
         RunMode::Print => {
             board.update();
