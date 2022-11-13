@@ -1,5 +1,3 @@
-//! blueprint.rs: parsing VCB blueprints
-
 #![allow(clippy::cast_sign_loss)]
 
 use crate::logic::{CompiledNetwork, GateNetwork, GateType};
@@ -33,8 +31,10 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             footer.height,
         ))
     }
-    fn make_plain_board_from_world(data: &str) -> anyhow::Result<VcbPlainBoard> {
-        print!("{}", data);
+    fn make_plain_board_from_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
+        print!("{}", s);
+        let maybe_json = dbg!(s.split("data = ").skip(1).next().unwrap());
+
         todo!()
     }
     #[must_use]
@@ -48,7 +48,7 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
     pub fn parse(input: VcbParseInput, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
         let plain_board = match input {
             VcbParseInput::VcbBlueprint(b) => Self::make_plain_board_from_blueprint(&b)?,
-            _ => unimplemented!(),
+            VcbParseInput::VcbWorld(w) => Self::make_plain_board_from_world(&w)?,
         };
         Ok(VcbBoard::new(plain_board, optimize))
 

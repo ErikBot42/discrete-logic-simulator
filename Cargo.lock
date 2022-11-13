@@ -362,6 +362,7 @@ dependencies = [
  "criterion",
  "crossterm",
  "itertools",
+ "serde_json",
  "zstd",
 ]
 
