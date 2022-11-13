@@ -499,7 +499,17 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     }
     pub fn print_vcb_discord_emoji(&self) {
         for y in 0..self.height {
+            let mut min_print_width = 0;
             for x in 0..self.width {
+                let i = x + y * self.width;
+
+                if !matches!(self.elements[i].kind, Trace::Empty) {
+                    min_print_width = x
+                }
+            }
+            min_print_width += 1;
+
+            for x in 0..min_print_width {
                 let i = x + y * self.width;
                 #[rustfmt::skip]
                 print!(
