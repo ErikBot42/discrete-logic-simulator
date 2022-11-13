@@ -106,7 +106,7 @@ struct VcbPlainBoard {
 }
 impl VcbPlainBoard {
     fn from_color_data(data: &[u8], width: usize) -> Self {
-        let traces: Vec<_> = data.chunks(4).map(Trace::from_raw_color).collect();
+        let traces: Vec<_> = data.chunks(4).map(|x| Trace::from_raw_color(x.try_into().unwrap())).collect();
         let height = traces.len() / width;
         assert_eq!(traces.len(), width * height);
         VcbPlainBoard {
@@ -173,9 +173,10 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     fn new(data: &[u8], width: usize, height: usize, optimize: bool) -> Self {
         let num_elements = width * height;
         let mut elements = Vec::with_capacity(num_elements);
+        //let traces = data.iter().map(Trace::from_raw_color);
 
         for i in 0..width * height {
-            elements.push(BoardElement::new(&data[i * 4..i * 4 + 4]));
+            elements.push(BoardElement::new(data[i * 4..i * 4 + 4].try_into().unwrap()));
         }
         let mut board = VcbBoard {
             elements,
@@ -526,7 +527,7 @@ impl Trace {
     }
     // colors from file format
     #[rustfmt::skip]
-    fn from_raw_color(color: &[u8]) -> Self {
+    fn from_raw_color(color: [u8; 4]) -> Self {
         let color: [u8; 4] = color.try_into().unwrap();
         match color {
             vcb_colors::COLOR_GRAY       => Trace::Gray,
@@ -647,7 +648,15 @@ struct BoardElement {
     id: Option<usize>,
 }
 impl BoardElement {
-    fn new(color: &[u8]) -> Self {
+    fn from_trace(trace: Trace) -> Self {
+        BoardElement {
+            color_on: trace.to_color_on(),
+            color_off: trace.to_color_off(),
+            kind: trace,
+            id: None,
+        }
+    }
+    fn new(color: [u8; 4]) -> Self {
         let trace = Trace::from_raw_color(color);
         BoardElement {
             color_on: trace.to_color_on(),
