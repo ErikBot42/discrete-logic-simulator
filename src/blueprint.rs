@@ -36,7 +36,6 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
     }
 }
 
-
 /// contains the raw footer data.
 #[derive(Debug, Default)]
 #[repr(C)]
@@ -97,6 +96,25 @@ enum Layer {
     Logic,
     On,
     Off,
+}
+
+/// Decoded blueprint or board
+struct VcbPlainBoard {
+    traces: Vec<Trace>,
+    width: usize,
+    height: usize,
+}
+impl VcbPlainBoard {
+    fn from_color_data(data: &[u8], width: usize) -> Self {
+        let traces: Vec<_> = data.chunks(4).map(Trace::from_raw_color).collect();
+        let height = traces.len() / width;
+        assert_eq!(traces.len(), width * height);
+        VcbPlainBoard {
+            traces,
+            width,
+            height,
+        }
+    }
 }
 
 /// Represents one gate or trace
@@ -687,11 +705,3 @@ impl BoardElement {
         }
     }
 }
-
-//struct VcbPlainBoard {
-//    traces: Vec<Trace>,
-//    width: usize,
-//    height: usize,
-//}
-
-
