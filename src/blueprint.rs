@@ -268,12 +268,10 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                 if other_kind == Trace::Cross {
                     continue 'forward;
                 }
-                if !other_kind.is_same_as(this_kind) {
-                    continue 'side;
-                } else {
+                if other_kind.is_same_as(this_kind) {
                     self.fill_id(other_x, id);
-                    continue 'side;
                 }
+                continue 'side;
             }
         }
     }
