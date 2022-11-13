@@ -72,20 +72,6 @@ fn main() {
 
     // branch to specific type here to remove overhead later.
 
-    //match args.implementation {
-    //    UpdateStrategy::ScalarSimd => handle_board(
-    //        &args,
-    //        VcbParser::<{ UpdateStrategy::ScalarSimd as u8 }>::parse_to_board(&string, true),
-    //    ),
-    //    UpdateStrategy::Reference => handle_board(
-    //        &args,
-    //        VcbParser::<{ UpdateStrategy::Reference as u8 }>::parse_to_board(&string, true),
-    //    ),
-    //    UpdateStrategy::Simd => handle_board(
-    //        &args,
-    //        VcbParser::<{ UpdateStrategy::Simd as u8 }>::parse_to_board(&string, true),
-    //    ),
-    //}
     match args.implementation {
         UpdateStrategy::Reference => {
             handle_board::<{ UpdateStrategy::Reference as u8 }>(&args, &string)
@@ -97,8 +83,8 @@ fn main() {
     }
 }
 
-fn handle_board<const STRATEGY: u8>(args: &Args, string: &str) {
-    let mut board = VcbParser::<STRATEGY>::parse_to_board(&string, true);
+fn handle_board<const STRATEGY: u8>(args: &Args, string: &str)  {
+    let mut board = { VcbParser::<STRATEGY>::parse_to_board(&string, true) };
     match args.mode {
         RunMode::Print => {
             board.update();

@@ -47,7 +47,7 @@ itertools = "0.10.5"
 bytemuck = "1.12.1"
 clap = { version = "4.0.19", features = ["derive"] }
 crossterm = "0.25.0"
-anyhow = "1.0.66"
+anyhow = { version = "1.0.66", features = ["backtrace"] }
 #rand = "0.8.5"
 
 

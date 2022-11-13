@@ -406,10 +406,6 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     pub(crate) fn make_inner_state_vec(&self) -> Vec<bool> {
         self.compiled_network.get_state_vec()
     }
-    //#[inline(always)]
-    //pub fn update_simd(&mut self) {
-    //    self.compiled_network.update_simd();
-    //}
     #[inline(always)]
     pub fn update(&mut self) {
         self.compiled_network.update();
@@ -474,7 +470,6 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             (self.nodes[start].kind == GateType::Cluster),
             (self.nodes[end].kind == GateType::Cluster)
         );
-        //if a {println!("connect: {start}, {end}");}
     }
 
     // floodfill with id at given index
@@ -658,11 +653,13 @@ impl Footer {
     }
 }
 
+enum BlueprintParseError {
+
+}
+
 #[derive(Default)]
 pub struct VcbParser<const STRATEGY: u8> {}
 impl<const STRATEGY: u8> VcbParser<STRATEGY> {
-    /// # Panics
-    /// invalid base64 string, invalid zstd, invalid colors
     fn make_board_from_blueprint(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
         let bytes = base64::decode_config(data.trim(), base64::STANDARD)?;
         let data_bytes = &bytes[..bytes.len() - Footer::SIZE];
@@ -675,6 +672,8 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         assert!(data.len() == footer.count * 4);
         Ok(VcbBoard::new(&data, footer.width, footer.height, optimize))
     }
+    /// # Panics
+    /// invalid base64 string, invalid zstd, invalid colors
     #[must_use]
     pub fn parse_to_board(data: &str, optimize: bool) -> VcbBoard<STRATEGY> {
         Self::make_board_from_blueprint(data, optimize).unwrap()
