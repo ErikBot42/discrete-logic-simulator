@@ -1,10 +1,9 @@
-// blueprint.rs: parsing VCB blueprints
-#![allow(clippy::inline_always)]
-//#![allow(clippy::upper_case_acronyms)]
-#![allow(dead_code)]
+//! blueprint.rs: parsing VCB blueprints
+
+//#![allow(dead_code)]
 #![allow(clippy::cast_sign_loss)]
+
 use crate::logic::{CompiledNetwork, GateNetwork, GateType};
-//use colored::Colorize;
 use crossterm::style::{Color, Colors, Print, ResetColor, SetColors, Stylize};
 use crossterm::QueueableCommand;
 use std::collections::BTreeSet;
@@ -384,6 +383,13 @@ impl BoardNode {
     }
 }
 
+//struct VcbPlainBoard {
+//    traces: Vec<Trace>,
+//    width: usize,
+//    height: usize,
+//}
+
+
 #[derive(Debug)]
 pub struct VcbBoard<const STRATEGY: u8> {
     elements: Vec<BoardElement>,
@@ -393,9 +399,7 @@ pub struct VcbBoard<const STRATEGY: u8> {
     pub width: usize,
     pub height: usize,
 }
-//struct VcbPlainBoard {
-//
-//}
+
 impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     /// For regression testing
     #[must_use]
@@ -662,8 +666,6 @@ impl Footer {
         footer
     }
 }
-
-enum BlueprintParseError {}
 
 #[derive(Default)]
 pub struct VcbParser<const STRATEGY: u8> {}
