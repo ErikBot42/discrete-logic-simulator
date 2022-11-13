@@ -1,7 +1,7 @@
 use clap::{Parser, ValueEnum};
 use crossterm::execute;
 use crossterm::terminal::{ClearType, EnterAlternateScreen, LeaveAlternateScreen};
-use logic_simulator::blueprint::{VcbBoard, VcbParser};
+use logic_simulator::blueprint::VcbParser;
 use logic_simulator::logic::UpdateStrategy;
 use std::fs::read_to_string;
 use std::io::stdout;
@@ -14,7 +14,7 @@ enum RunMode {
     Print,
     /// Run and display state of board
     Run,
-    /// Run a number of iterations and print time (make sure to compile with `--release` and lto)
+    /// Run a number of iterations and print time
     Bench,
 }
 
@@ -25,15 +25,19 @@ enum RunMode {
 //    about,
     long_about = None,
 )]
-/// Logic simulator, currently the old VCB blueprints are implemented.
+/// Logic simulator, currently the VCB blueprints are implemented.
 struct Args {
-    /// Filepath to (old) VCB blueprint string
-    #[arg(long, group = "blueprint")]
+    /// Filepath to VCB blueprint string
+    #[arg(short = 'f', long, group = "blueprint")]
     blueprint_file: Option<PathBuf>,
 
     /// VCB blueprint string
-    #[arg(long, group = "blueprint")]
+    #[arg(short = 'b', long, group = "blueprint")]
     blueprint_string: Option<String>,
+
+    // Filepath to VCB world
+    #[arg(short = 'w', long, group = "blueprint")]
+    world_file: Option<PathBuf>,
 
     /// What mode to run the program in
     #[arg(value_enum, requires = "blueprint")]
@@ -44,7 +48,7 @@ struct Args {
     implementation: UpdateStrategy,
 
     /// Iterations to run in bench
-    #[arg(short, long, default_value_t = 10_000_000)]
+    #[arg(short = 'i', long, default_value_t = 10_000_000)]
     iterations: usize,
 }
 
@@ -52,9 +56,9 @@ fn main() {
     //colored::control::set_override(true);
     let args = Args::parse();
 
-    println!("File {:?}!", args.blueprint_file);
-    println!("String {:?}!", args.blueprint_string);
-    println!("Mode {:?}!", args.mode);
+    //println!("File {:?}!", args.blueprint_file);
+    //println!("String {:?}!", args.blueprint_string);
+    //println!("Mode {:?}!", args.mode);
 
     let string: String = match args.blueprint_string.clone() {
         Some(s) => s,
@@ -83,7 +87,7 @@ fn main() {
     }
 }
 
-fn handle_board<const STRATEGY: u8>(args: &Args, string: &str)  {
+fn handle_board<const STRATEGY: u8>(args: &Args, string: &str) {
     let mut board = { VcbParser::<STRATEGY>::parse_to_board(&string, true) };
     match args.mode {
         RunMode::Print => {

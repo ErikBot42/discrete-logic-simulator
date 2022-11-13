@@ -11,7 +11,7 @@ use std::io::{stdout, Write};
 #[derive(Default)]
 pub struct VcbParser<const STRATEGY: u8> {}
 impl<const STRATEGY: u8> VcbParser<STRATEGY> {
-    fn make_board_from_blueprint(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
+    fn make_plain_board_from_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
         let bytes = base64::decode_config(data.trim(), base64::STANDARD)?;
         let data_bytes = &bytes[..bytes.len() - Footer::SIZE];
         let footer_bytes: [u8; Footer::SIZE] =
@@ -21,10 +21,17 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         let data = zstd::bulk::decompress(data_bytes, 1 << 27)?;
         assert!(!data.is_empty());
         assert!(data.len() == footer.count * 4);
-
-        let plain_board = VcbPlainBoard::from_color_data(&data, footer.width, footer.height);
-
-        Ok(VcbBoard::new(plain_board, optimize))
+        Ok(VcbPlainBoard::from_color_data(
+            &data,
+            footer.width,
+            footer.height,
+        ))
+    }
+    fn make_board_from_blueprint(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
+        Ok(VcbBoard::new(
+            Self::make_plain_board_from_blueprint(data)?,
+            optimize,
+        ))
     }
     /// # Panics
     /// invalid base64 string, invalid zstd, invalid colors
