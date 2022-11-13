@@ -472,8 +472,8 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         let mut stdout = stdout();
         stdout.queue(Print("\n"))?;
         let (sx, sy) = crossterm::terminal::size().unwrap();
-        let max_print_width = self.width.max(sx as usize) - 2;
-        let max_print_height = self.height.max(sy as usize / 2) - 2 * 2;
+        let max_print_width = self.width.min(sx as usize) - 1;
+        let max_print_height = (self.height.min(sy as usize) - 2) * 2;
         for y in (0..max_print_height).step_by(2) {
             for x in 0..max_print_width {
                 let i = x + y * self.width;
@@ -496,6 +496,54 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         stdout.queue(ResetColor)?;
         stdout.flush()?;
         Ok(())
+    }
+    pub fn print_vcb_discord_emoji(&self) {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let i = x + y * self.width;
+                #[rustfmt::skip]
+                print!(
+                    "{}",
+                    match self.elements[i].kind {
+                        Trace::Gray =>        ":t00:",
+                        Trace::White =>       ":t01:",
+                        Trace::Red =>         ":t02:",
+                        Trace::Orange1 =>     ":t03:",
+                        Trace::Orange2 =>     ":t04:",
+                        Trace::Orange3 =>     ":t05:",
+                        Trace::Yellow =>      ":t06:",
+                        Trace::Green1 =>      ":t07:",
+                        Trace::Green2 =>      ":t08:",
+                        Trace::Cyan1 =>       ":t09:",
+                        Trace::Cyan2 =>       ":t10:",
+                        Trace::Blue1 =>       ":t11:",
+                        Trace::Blue2 =>       ":t12:",
+                        Trace::Purple =>      ":t13:",
+                        Trace::Magenta =>     ":t14:",
+                        Trace::Pink =>        ":t15:",
+                        Trace::Write =>       ":wr:",
+                        Trace::Empty =>       ":pd:",
+                        Trace::Cross =>       ":crs:",
+                        Trace::Read =>        ":rd:",
+                        Trace::Buffer =>      ":bfr:",
+                        Trace::And =>         ":and:",
+                        Trace::Or =>          ":or:",
+                        Trace::Xor =>         ":xor:",
+                        Trace::Not =>         ":not:",
+                        Trace::Nand =>        ":ina:",
+                        Trace::Nor =>         ":nor:",
+                        Trace::Xnor =>        ":xnr:",
+                        Trace::LatchOn =>     ":lt1:",
+                        Trace::LatchOff =>    ":lt0:",
+                        Trace::Clock =>       "CLOCK",
+                        Trace::Led =>         ":led:",
+                        Trace::Annotation =>  ":non:",
+                        Trace::Filler =>      ":fil:",
+                    }
+                );
+            }
+            println!();
+        }
     }
 
     pub fn print_debug(&self) {

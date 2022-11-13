@@ -10,6 +10,8 @@ use std::time::Duration;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 enum RunMode {
+    /// Print board using vcb emoji
+    Emoji,
     /// Print initial state of board
     Print,
     /// Run and display state of board
@@ -85,6 +87,9 @@ fn main() {
 fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbParseInput) {
     let mut board = { VcbParser::<STRATEGY>::parse(parser_input, true).unwrap() };
     match args.mode {
+        RunMode::Emoji => {
+            board.print_vcb_discord_emoji();
+        }
         RunMode::Print => {
             board.update();
             board.print();
