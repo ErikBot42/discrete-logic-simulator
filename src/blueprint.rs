@@ -46,30 +46,14 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
                     .collect::<Vec<_>>()
             });
         let bytes = s.next().unwrap();
-
         let data_bytes = &bytes[..bytes.len() - BoardFooter::SIZE];
         let footer_bytes: [u8; BoardFooter::SIZE] =
             bytes[bytes.len() - BoardFooter::SIZE..bytes.len()].try_into()?;
         let footer = BoardFooter::from_bytes(footer_bytes);
         dbg!(footer);
-
-        //let a = [0,1,2,3];
-        //let size = i32::from_le_bytes(a.map(|a| bytes[a]));
-        //let width = i32::from_le_bytes(a.map(|a| bytes[a]));
-        //let height = i32::from_le_bytes(a.map(|a| bytes[a]));
-
         let data = zstd::bulk::decompress(&data_bytes, 1 << 27)?;
 
-        //let s: Vec<_> = s.collect();
-        //for (i, s) in s.enumerate() {
-        //    println!("{i}: {s:?}");
-        //}
         Ok(VcbPlainBoard::from_color_data(&data, 2048, 2048))
-        //let v: serde_json::Result<serde_json::Value> = serde_json::from_str(maybe_json);
-        //println!("Decoded: {v:?}");
-        //println!("Decoded: {v:?}");
-
-        //todo!()
     }
     #[must_use]
     fn make_board_from_blueprint(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
