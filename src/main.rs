@@ -8,8 +8,12 @@ use std::io::stdout;
 use std::path::PathBuf;
 use std::time::Duration;
 
+
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
-enum RunMode {
+#[deny(missing_docs)]
+/// 
+pub enum RunMode {
     /// Print board using regular emojis
     Emoji,
     /// Print board using vcb emoji
@@ -30,34 +34,35 @@ enum RunMode {
     long_about = None,
 )]
 /// Logic simulator, currently the VCB blueprints are implemented.
-struct Args {
+#[deny(missing_docs)]
+pub struct Args {
     /// Filepath to VCB blueprint string
     #[arg(short = 'f', long, group = "blueprint")]
-    blueprint_file: Option<PathBuf>,
+    pub blueprint_file: Option<PathBuf>,
 
     /// VCB blueprint string
     #[arg(short = 'b', long, group = "blueprint")]
-    blueprint_string: Option<String>,
+    pub blueprint_string: Option<String>,
 
-    // Filepath to VCB world
+    /// Filepath to VCB world
     #[arg(short = 'w', long, group = "blueprint")]
-    world_file: Option<PathBuf>,
+    pub world_file: Option<PathBuf>,
 
     /// What mode to run the program in
     #[arg(value_enum, requires = "blueprint")]
-    mode: RunMode,
+    pub mode: RunMode,
 
     /// Print legend with emoji
     #[arg(short = 'l', long, requires = "blueprint")]
-    legend: bool,
+    pub legend: bool,
 
     /// What implementation to use
     #[arg(value_enum, requires = "blueprint", default_value_t = UpdateStrategy::default())]
-    implementation: UpdateStrategy,
+    pub implementation: UpdateStrategy,
 
     /// Iterations to run in bench
     #[arg(short = 'i', long, default_value_t = 10_000_000)]
-    iterations: usize,
+    pub iterations: usize,
 }
 
 fn main() {
