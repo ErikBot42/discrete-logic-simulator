@@ -24,6 +24,8 @@ pub enum RunMode {
     Bench,
     /// Copy image of board to clipboard.
     Clip,
+    /// Make an animated gif of the board
+    Gif,
 }
 
 #[derive(Parser, Debug)]
@@ -98,15 +100,10 @@ fn main() {
 fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbParseInput) {
     let mut board = { VcbParser::<STRATEGY>::parse(parser_input, true).unwrap() };
     match args.mode {
-        RunMode::Clip => {
-            board.print_to_clipboard();
-        },
-        RunMode::Emoji => {
-            board.print_regular_emoji(args.legend);
-        },
-        RunMode::EmojiVcb => {
-            board.print_vcb_discord_emoji(args.legend);
-        },
+        RunMode::Gif => board.print_to_gif(),
+        RunMode::Clip => board.print_to_clipboard(),
+        RunMode::Emoji => board.print_regular_emoji(args.legend),
+        RunMode::EmojiVcb => board.print_vcb_discord_emoji(args.legend),
         RunMode::Print => {
             board.update();
             board.print();

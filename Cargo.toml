@@ -80,6 +80,7 @@ anyhow = { version = "1.0.66", features = ["backtrace"] }
 serde_json = "1.0.87"
 image = "0.24.5"
 arboard = "3.2.0"
+tempfile = "3.3.0"
 #rand = "0.8.5"
 
 

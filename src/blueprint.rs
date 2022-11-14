@@ -546,16 +546,12 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         use arboard::*;
         use std::borrow::Cow;
 
-        let color_data = {
-            let ref this = self;
-            let color_data: Vec<u8> = this
-                .elements
-                .iter()
-                .map(|x| x.kind.to_color_on())
-                .flatten()
-                .collect();
-            color_data
-        };
+        let color_data: Vec<u8> = self
+            .elements
+            .iter()
+            .map(|x| x.kind.to_color_on())
+            .flatten()
+            .collect();
         let mut clipboard = Clipboard::new().unwrap();
         clipboard
             .set_image(ImageData {
@@ -567,8 +563,59 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         println!("Running infinite loop so that clipboard contents are preserved, CTRL-C to force exit...");
         loop {}
     }
+    pub fn print_to_gif(&mut self) {
+        use std::collections::HashMap;
+        type BoardColorData = Vec<u8>;
+        let mut v: Vec<BoardColorData> = Vec::new();
+        let mut i = 0;
+        let mut map: HashMap<BoardColorData, usize> = HashMap::new();
+        let limit = 500;
+        let a = loop {
+            let color_data: BoardColorData = self
+                .elements
+                .iter()
+                .map(|x| x.get_color(&self))
+                .flatten()
+                .collect();
+            v.push(color_data.clone()); // optimization is my passion
+            match map.insert(color_data, i) {
+                None => (),
+                Some(k) => {
+                    break k;
+                },
+            };
+            if i == limit {
+                break 0;
+            }
+            self.update();
+            i += 1;
+        };
+        use image::codecs::gif::*;
+        use image::*;
+        use tempfile::*;
+        let file: NamedTempFile = Builder::new().suffix(".gif").tempfile().unwrap();
+        let (file, path) = file.keep().unwrap();
 
-    
+        let frames = v
+            .into_iter()
+            .map(|x| {
+                let rgba: RgbaImage =
+                    ImageBuffer::from_raw(self.width as u32, self.height as u32, x).unwrap();
+                Frame::new(rgba)
+            })
+            .skip(a);
+
+        // 1 is slowest and highest quality
+        let mut gif_encoder = GifEncoder::new_with_speed(file, 1);
+        gif_encoder
+            .set_repeat(codecs::gif::Repeat::Infinite)
+            .unwrap();
+
+        gif_encoder.encode_frames(frames).unwrap();
+
+        //println!("file: {file:?}");
+        println!("path: {path:?}");
+    }
 }
 
 /// All color constants used by vcb
