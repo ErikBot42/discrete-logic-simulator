@@ -78,6 +78,8 @@ clap = { version = "4.0.19", features = ["derive"] }
 crossterm = "0.25.0"
 anyhow = { version = "1.0.66", features = ["backtrace"] }
 serde_json = "1.0.87"
+image = "0.24.5"
+arboard = "3.2.0"
 #rand = "0.8.5"
 
 

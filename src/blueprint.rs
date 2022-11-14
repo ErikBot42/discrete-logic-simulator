@@ -10,7 +10,6 @@ pub enum VcbParseInput {
     VcbBlueprint(String),
     VcbWorld(String),
 }
-
 #[derive(Default)]
 pub struct VcbParser<const STRATEGY: u8> {}
 impl<const STRATEGY: u8> VcbParser<STRATEGY> {
