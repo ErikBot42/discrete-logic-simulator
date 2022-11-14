@@ -1,10 +1,43 @@
 ![.](https://github.com/ErikBot42/discrete-logic-simulator/actions/workflows/rust.yml/badge.svg)
 # discrete-logic-simulator
-Logic simulator for tick based games such as VCB with a CLI
+Logic simulator for tick based games such as VCB with a CLI based viewer.
 
 ![clip](https://user-images.githubusercontent.com/63870842/201472068-4dfb62d5-0c28-48c0-ae3d-54ddf9415810.gif)
 
 (Video looks a bit weird because making gifs is hard)
+
+```
+Usage: logic_simulator [OPTIONS] <--blueprint-file <BLUEPRINT_FILE>|--blueprint-string <BLUEPRINT_STRING>|--world-file <WORLD_FILE>> <MODE> [IMPLEMENTATION]
+
+Arguments:
+  <MODE>
+          What mode to run the program in
+
+          Possible values:
+          - emoji:     Print board using regular emojis
+          - emoji-vcb: Print board using vcb emoji
+          - print:     Print initial state of board
+          - run:       Run and display state of board
+          - bench:     Run a number of iterations and print time
+
+  [IMPLEMENTATION]
+          What implementation to use
+
+          [default: reference]
+
+          Possible values:
+          - reference:   Used to compare performance and check correctness
+          - scalar-simd: Pack values inside single register instead of simd
+          - simd:        Update gates with simd
+
+Options:
+  -f, --blueprint-file <BLUEPRINT_FILE>      Filepath to VCB blueprint string
+  -b, --blueprint-string <BLUEPRINT_STRING>  VCB blueprint string
+  -w, --world-file <WORLD_FILE>              Filepath to VCB world
+  -l, --legend                               Print legend with emoji
+  -i, --iterations <ITERATIONS>              Iterations to run in bench [default: 10000000]
+  -h, --help                                 Print help information (use `--help` for more detail)
+```
 
 ## Simplified algorithm for a subset of the implementations
 It is an event based simulation.
