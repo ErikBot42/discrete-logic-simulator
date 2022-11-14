@@ -473,7 +473,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         stdout.queue(Print("\n"))?;
         let (sx, sy) = crossterm::terminal::size().unwrap();
         let max_print_width = self.width.min(sx as usize) - 1;
-        let max_print_height = (self.height.min(sy as usize) - 2) * 2;
+        let max_print_height = (self.height.min(sy as usize) - 2) * 1;
         for y in (0..max_print_height).step_by(2) {
             for x in 0..max_print_width {
                 let i = x + y * self.width;
@@ -497,63 +497,33 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         stdout.flush()?;
         Ok(())
     }
-    pub fn print_vcb_discord_emoji(&self) {
+    fn print_using_translation<F: Fn(Trace) -> &'static str>(&self, fun: F, legend: bool) {
         for y in 0..self.height {
             let mut min_print_width = 0;
             for x in 0..self.width {
                 let i = x + y * self.width;
-
                 if !matches!(self.elements[i].kind, Trace::Empty) {
                     min_print_width = x
                 }
             }
             min_print_width += 1;
-
             for x in 0..min_print_width {
                 let i = x + y * self.width;
-                #[rustfmt::skip]
-                print!(
-                    "{}",
-                    match self.elements[i].kind {
-                        Trace::Gray =>        ":t00:",
-                        Trace::White =>       ":t01:",
-                        Trace::Red =>         ":t02:",
-                        Trace::Orange1 =>     ":t03:",
-                        Trace::Orange2 =>     ":t04:",
-                        Trace::Orange3 =>     ":t05:",
-                        Trace::Yellow =>      ":t06:",
-                        Trace::Green1 =>      ":t07:",
-                        Trace::Green2 =>      ":t08:",
-                        Trace::Cyan1 =>       ":t09:",
-                        Trace::Cyan2 =>       ":t10:",
-                        Trace::Blue1 =>       ":t11:",
-                        Trace::Blue2 =>       ":t12:",
-                        Trace::Purple =>      ":t13:",
-                        Trace::Magenta =>     ":t14:",
-                        Trace::Pink =>        ":t15:",
-                        Trace::Write =>       ":wr:",
-                        Trace::Empty =>       ":pd:",
-                        Trace::Cross =>       ":crs:",
-                        Trace::Read =>        ":rd:",
-                        Trace::Buffer =>      ":bfr:",
-                        Trace::And =>         ":and:",
-                        Trace::Or =>          ":or:",
-                        Trace::Xor =>         ":xor:",
-                        Trace::Not =>         ":not:",
-                        Trace::Nand =>        ":ina:",
-                        Trace::Nor =>         ":nor:",
-                        Trace::Xnor =>        ":xnr:",
-                        Trace::LatchOn =>     ":lt1:",
-                        Trace::LatchOff =>    ":lt0:",
-                        Trace::Clock =>       "CLOCK",
-                        Trace::Led =>         ":led:",
-                        Trace::Annotation =>  ":non:",
-                        Trace::Filler =>      ":fil:",
-                    }
-                );
+                let trace = self.elements[i].kind;
+                let printed_str = fun(trace);
+                print!("{}", printed_str);
             }
             println!();
         }
+        if legend {
+            self.print_legend(|x| fun(x).to_string(), |x| format!("{x:?}"));
+        }
+    }
+    pub fn print_regular_emoji(&self, legend: bool) {
+        self.print_using_translation(|t| t.as_regular_emoji(), legend);
+    }
+    pub fn print_vcb_discord_emoji(&self, legend: bool) {
+        self.print_using_translation(|t| t.as_discord_emoji(), legend);
     }
 
     pub fn print_debug(&self) {
@@ -561,6 +531,22 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     }
     pub fn print(&self) {
         self.print_compact().unwrap();
+    }
+    fn print_legend<F: Fn(Trace) -> String, U: Fn(Trace) -> String>(&self, f1: F, f2: U) {
+        for t in self.get_current_traces() {
+            println!("{} = {}", f1(t), f2(t))
+        }
+    }
+    fn get_current_traces(&self) -> Vec<Trace> {
+        self.elements
+            .iter()
+            .map(|e| e.kind)
+            .fold(std::collections::HashSet::new(), |mut set, trace| {
+                set.insert(trace);
+                set
+            })
+            .into_iter()
+            .collect()
     }
 }
 
@@ -605,7 +591,7 @@ mod vcb_colors {
 }
 
 #[non_exhaustive]
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
 enum Trace {
     Gray,
     White,
@@ -815,6 +801,83 @@ impl Trace {
                 Trace::Xnor | Trace::LatchOn => GateType::Xnor,
                 _ => panic!("unsupported logic trace: {self:?}"),
             }
+        }
+    }
+    fn as_regular_emoji(self) -> &'static str {
+        match self {
+            Trace::Gray => "🔘",
+            Trace::White => "🔘",
+            Trace::Red => "🔘",
+            Trace::Orange1 => "🔘",
+            Trace::Orange2 => "🔘",
+            Trace::Orange3 => "🔘",
+            Trace::Yellow => "🔘",
+            Trace::Green1 => "🔘",
+            Trace::Green2 => "🔘",
+            Trace::Cyan1 => "🔘",
+            Trace::Cyan2 => "🔘",
+            Trace::Blue1 => "🔘",
+            Trace::Blue2 => "🔘",
+            Trace::Purple => "🔘",
+            Trace::Magenta => "🔘",
+            Trace::Pink => "🔘",
+            Trace::Write => "✏",
+            Trace::Empty => "⬛",
+            Trace::Cross => "➕",
+            Trace::Read => "👓",
+            Trace::Buffer => "🟣",
+            Trace::And => "🅰",
+            Trace::Or => "🅾",
+            Trace::Xor => "✖",
+            Trace::Not => "❕",
+            Trace::Nand => "🈲",
+            Trace::Nor => "🈳",
+            Trace::Xnor => "🔶",
+            Trace::LatchOn => "🔺",
+            Trace::LatchOff => "🔻",
+            Trace::Clock => "🥞",
+            Trace::Led => "🏁",
+            Trace::Annotation => "🥚",
+            Trace::Filler => "🌯",
+        }
+    }
+
+    fn as_discord_emoji(self) -> &'static str {
+        match self {
+            Trace::Gray => ":t00:",
+            Trace::White => ":t01:",
+            Trace::Red => ":t02:",
+            Trace::Orange1 => ":t03:",
+            Trace::Orange2 => ":t04:",
+            Trace::Orange3 => ":t05:",
+            Trace::Yellow => ":t06:",
+            Trace::Green1 => ":t07:",
+            Trace::Green2 => ":t08:",
+            Trace::Cyan1 => ":t09:",
+            Trace::Cyan2 => ":t10:",
+            Trace::Blue1 => ":t11:",
+            Trace::Blue2 => ":t12:",
+            Trace::Purple => ":t13:",
+            Trace::Magenta => ":t14:",
+            Trace::Pink => ":t15:",
+            Trace::Write => ":wr:",
+            Trace::Empty => ":pd:",
+            Trace::Cross => ":crs:",
+            Trace::Read => ":rd:",
+            Trace::Buffer => ":bfr:",
+            Trace::And => ":and:",
+            Trace::Or => ":or:",
+            Trace::Xor => ":xor:",
+            Trace::Not => ":not:",
+            Trace::Nand => ":ina:",
+            Trace::Nor => ":nor:",
+            Trace::Xnor => ":xnr:",
+            Trace::LatchOn => ":lt1:",
+            Trace::LatchOff => ":lt0:",
+            Trace::Clock => "CLOCK",
+            Trace::Led => ":led:",
+            Trace::Annotation => ":non:",
+            Trace::Filler => ":fil:",
         }
     }
 }

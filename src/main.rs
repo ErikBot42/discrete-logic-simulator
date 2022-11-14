@@ -10,8 +10,10 @@ use std::time::Duration;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 enum RunMode {
-    /// Print board using vcb emoji
+    /// Print board using regular emojis
     Emoji,
+    /// Print board using vcb emoji
+    EmojiVcb,
     /// Print initial state of board
     Print,
     /// Run and display state of board
@@ -45,6 +47,10 @@ struct Args {
     #[arg(value_enum, requires = "blueprint")]
     mode: RunMode,
 
+    /// Print legend with emoji
+    #[arg(short = 'l', long, requires = "blueprint")]
+    legend: bool,
+
     /// What implementation to use
     #[arg(value_enum, requires = "blueprint", default_value_t = UpdateStrategy::default())]
     implementation: UpdateStrategy,
@@ -59,7 +65,6 @@ fn main() {
     std::env::set_var("RUST_BACKTRACE", "1");
     let args = Args::parse();
 
-
     let read_file = |s: PathBuf| read_to_string(s).expect("File should exist");
     let parser_input: VcbParseInput = args
         .blueprint_string
@@ -70,7 +75,8 @@ fn main() {
             .world_file
             .clone()
             .map(read_file)
-            .map(VcbParseInput::VcbWorld)).unwrap();
+            .map(VcbParseInput::VcbWorld))
+        .unwrap();
 
     // branch to specific type here to remove overhead later.
     match args.implementation {
@@ -88,8 +94,11 @@ fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbParseInput) {
     let mut board = { VcbParser::<STRATEGY>::parse(parser_input, true).unwrap() };
     match args.mode {
         RunMode::Emoji => {
-            board.print_vcb_discord_emoji();
-        }
+            board.print_regular_emoji(args.legend);
+        },
+        RunMode::EmojiVcb => {
+            board.print_vcb_discord_emoji(args.legend);
+        },
         RunMode::Print => {
             board.update();
             board.print();
