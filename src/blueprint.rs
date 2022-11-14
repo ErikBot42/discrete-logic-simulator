@@ -570,6 +570,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         let mut i = 0;
         let mut map: HashMap<BoardColorData, usize> = HashMap::new();
         let limit = 500;
+
         let a = loop {
             let color_data: BoardColorData = self
                 .elements
@@ -577,6 +578,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                 .map(|x| x.get_color(&self))
                 .flatten()
                 .collect();
+
             v.push(color_data.clone()); // optimization is my passion
             match map.insert(color_data, i) {
                 None => (),
@@ -601,6 +603,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             .map(|x| {
                 let rgba: RgbaImage =
                     ImageBuffer::from_raw(self.width as u32, self.height as u32, x).unwrap();
+                let rgba: RgbaImage = imageops::resize(&rgba, 500, 500, imageops::Nearest);
                 Frame::new(rgba)
             })
             .skip(a);
@@ -610,11 +613,9 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         gif_encoder
             .set_repeat(codecs::gif::Repeat::Infinite)
             .unwrap();
-
         gif_encoder.encode_frames(frames).unwrap();
 
-        //println!("file: {file:?}");
-        println!("path: {path:?}");
+        println!("Gif stored at: {path:?}");
     }
 }
 
