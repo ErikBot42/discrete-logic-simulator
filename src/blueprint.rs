@@ -570,7 +570,8 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         let mut i = 0;
         let mut map: HashMap<BoardColorData, usize> = HashMap::new();
         let limit = 500;
-
+        
+        println!("Generating colors...");
         let a = loop {
             let color_data: BoardColorData = self
                 .elements
@@ -598,16 +599,23 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         let file: NamedTempFile = Builder::new().suffix(".gif").tempfile().unwrap();
         let (file, path) = file.keep().unwrap();
 
+        let image_width = 500 as u32;
+        let image_height = (image_width as f64 / self.width as f64 * self.height as f64) as u32;
+
         let frames = v
             .into_iter()
-            .map(|x| {
+            .enumerate()
+            .map(|(iframe,x)| {
+                println!("{iframe}/{i}");
                 let rgba: RgbaImage =
                     ImageBuffer::from_raw(self.width as u32, self.height as u32, x).unwrap();
-                let rgba: RgbaImage = imageops::resize(&rgba, 500, 500, imageops::Nearest);
+                let rgba: RgbaImage =
+                    imageops::resize(&rgba, image_width, image_height, imageops::Nearest);
                 Frame::new(rgba)
             })
             .skip(a);
 
+        println!("Encoding into gif");
         // 1 is slowest and highest quality
         let mut gif_encoder = GifEncoder::new_with_speed(file, 1);
         gif_encoder
