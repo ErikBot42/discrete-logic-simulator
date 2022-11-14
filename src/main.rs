@@ -8,11 +8,9 @@ use std::io::stdout;
 use std::path::PathBuf;
 use std::time::Duration;
 
-
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 #[deny(missing_docs)]
-/// 
+///
 pub enum RunMode {
     /// Print board using regular emojis
     Emoji,
@@ -24,6 +22,8 @@ pub enum RunMode {
     Run,
     /// Run a number of iterations and print time
     Bench,
+    /// Copy image of board to clipboard.
+    Clip,
 }
 
 #[derive(Parser, Debug)]
@@ -98,6 +98,9 @@ fn main() {
 fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbParseInput) {
     let mut board = { VcbParser::<STRATEGY>::parse(parser_input, true).unwrap() };
     match args.mode {
+        RunMode::Clip => {
+            board.print_to_clipboard();
+        },
         RunMode::Emoji => {
             board.print_regular_emoji(args.legend);
         },

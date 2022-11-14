@@ -68,25 +68,7 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             VcbParseInput::VcbBlueprint(b) => Self::make_plain_board_from_blueprint(&b)?,
             VcbParseInput::VcbWorld(w) => Self::make_plain_board_from_world(&w)?,
         };
-        {
-            //use arboard::*;
-            //use image::*;
-            //use std::borrow::Cow;
-            //let raw_data = plain_board.as_color_data();
-            ////let image: RgbaImage = ImageBuffer::from_raw(
-            ////    plain_board.width.try_into().unwrap(),
-            ////    plain_board.height.try_into().unwrap(),
-            ////    raw_data,
-            ////)
-            ////.unwrap();
-            //let mut clipboard = Clipboard::new().unwrap();
-            //clipboard.set_image(ImageData {
-            //    width: plain_board.width,
-            //    height: plain_board.height,
-            //    bytes: Cow::from(raw_data),
-            //}).unwrap();
-            //loop {}
-        };
+        {};
         Ok(VcbBoard::new(plain_board, optimize))
     }
     /// # Panics
@@ -538,7 +520,6 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     pub fn print_vcb_discord_emoji(&self, legend: bool) {
         self.print_using_translation(|t| t.as_discord_emoji(), legend);
     }
-
     pub fn print_debug(&self) {
         self.print_inner(true);
     }
@@ -561,6 +542,33 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             .into_iter()
             .collect()
     }
+    pub fn print_to_clipboard(&self) -> ! {
+        use arboard::*;
+        use std::borrow::Cow;
+
+        let color_data = {
+            let ref this = self;
+            let color_data: Vec<u8> = this
+                .elements
+                .iter()
+                .map(|x| x.kind.to_color_on())
+                .flatten()
+                .collect();
+            color_data
+        };
+        let mut clipboard = Clipboard::new().unwrap();
+        clipboard
+            .set_image(ImageData {
+                width: self.width,
+                height: self.height,
+                bytes: Cow::from(color_data),
+            })
+            .unwrap();
+        println!("Running infinite loop so that clipboard contents are preserved, CTRL-C to force exit...");
+        loop {}
+    }
+
+    
 }
 
 /// All color constants used by vcb
