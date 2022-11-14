@@ -68,6 +68,25 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             VcbParseInput::VcbBlueprint(b) => Self::make_plain_board_from_blueprint(&b)?,
             VcbParseInput::VcbWorld(w) => Self::make_plain_board_from_world(&w)?,
         };
+        {
+            //use arboard::*;
+            //use image::*;
+            //use std::borrow::Cow;
+            //let raw_data = plain_board.as_color_data();
+            ////let image: RgbaImage = ImageBuffer::from_raw(
+            ////    plain_board.width.try_into().unwrap(),
+            ////    plain_board.height.try_into().unwrap(),
+            ////    raw_data,
+            ////)
+            ////.unwrap();
+            //let mut clipboard = Clipboard::new().unwrap();
+            //clipboard.set_image(ImageData {
+            //    width: plain_board.width,
+            //    height: plain_board.height,
+            //    bytes: Cow::from(raw_data),
+            //}).unwrap();
+            //loop {}
+        };
         Ok(VcbBoard::new(plain_board, optimize))
     }
     /// # Panics
@@ -217,6 +236,13 @@ impl VcbPlainBoard {
             width,
             height,
         }
+    }
+    fn as_color_data(&self) -> Vec<u8> {
+        self.traces
+            .iter()
+            .map(|x| x.to_color_raw())
+            .flatten()
+            .collect()
     }
 }
 
@@ -453,10 +479,14 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     }
     fn print_compact(&self) -> Result<(), std::io::Error> {
         let mut stdout = stdout();
-        stdout.queue(Print("\n"))?;
         let (sx, sy) = crossterm::terminal::size().unwrap();
-        let max_print_width = self.width.min(sx as usize) - 1;
-        let max_print_height = (self.height.min(sy as usize) - 2) * 1;
+        stdout.queue(Print(format!(
+            "{:?} {:?}\n",
+            (sx, sy),
+            (self.width, self.height)
+        )))?;
+        let max_print_width = self.width.min(sx as usize);
+        let max_print_height = self.height.min(2 * sy as usize - 4);
         for y in (0..max_print_height).step_by(2) {
             for x in 0..max_print_width {
                 let i = x + y * self.width;
