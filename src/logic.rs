@@ -674,17 +674,17 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         // TODO: case where entire group of deltas is zero
         let status_packed_len = inner.status_packed.len();
 
-        dbg!(update_list_p);
+        //dbg!(update_list_p);
         //[0, 1, 2, 3, 4, 5, 6, 7]
-        let _: Vec<_> = dbg!(update_list_p
-            .iter()
-            .map(|i| {
-                (
-                    *i,
-                    [0, 1, 2, 3, 4, 5, 6, 7].map(|j| i * gate_status::PACKED_ELEMENTS as u32 + j),
-                )
-            })
-            .collect());
+        //let _: Vec<_> = dbg!(update_list_p
+        //    .iter()
+        //    .map(|i| {
+        //        (
+        //            *i,
+        //            [0, 1, 2, 3, 4, 5, 6, 7].map(|j| i * gate_status::PACKED_ELEMENTS as u32 + j),
+        //        )
+        //    })
+        //    .collect());
         for id_packed in 0..status_packed_len {
             //for id_packed in update_list_p.iter().map(|x| *x as usize) {
             //    debug_assert!(
@@ -695,7 +695,8 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
             let status_p = &mut inner.status_packed[id_packed];
             let acc_p = &inner.acc_packed[id_packed];
-            let is_cluster = [0, 1, 2, 3, 4, 5, 6, 7].map(|x| {
+            //core::array::from_fn(|i| i)
+            let is_cluster: [bool; gate_status::PACKED_ELEMENTS] = std::array::from_fn(|x| {
                 inner.kind[x + id_packed * gate_status::PACKED_ELEMENTS] == GateType::Cluster
             });
 
@@ -724,16 +725,17 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 acc_packed,
                 packed_output_indexes,
                 packed_outputs,
-                |id: IndexType| {
-                    let id_p = id / gate_status::PACKED_ELEMENTS as u32;
-                    let id_p_usize = id_p as usize;
-                    if !inner.in_update_list[id_p_usize] {
-                        unsafe {
-                            next_update_list_p.push(id_p);
-                        }
-                        inner.in_update_list[id_p_usize] = true;
-                    }
-                },
+                |_| {},
+                //|id: IndexType| {
+                //    let id_p = id / gate_status::PACKED_ELEMENTS as u32;
+                //    let id_p_usize = id_p as usize;
+                //    if !inner.in_update_list[id_p_usize] {
+                //        unsafe {
+                //            next_update_list_p.push(id_p);
+                //        }
+                //        inner.in_update_list[id_p_usize] = true;
+                //    }
+                //},
             );
             inner.in_update_list[id_packed] = false;
         }
@@ -833,7 +835,8 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     Simd::splat(0),
                 )
                 .cast();
-                let acc_new = Simd::gather_select(acc, Mask::splat(true), output_id, Simd::splat(0)) + delta;
+                let acc_new =
+                    Simd::gather_select(acc, Mask::splat(true), output_id, Simd::splat(0)) + delta;
                 acc_new.scatter_select(acc, not_done_mask, output_id);
                 curr_index += Simd::splat(1);
             }
