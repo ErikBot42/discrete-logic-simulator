@@ -5,6 +5,7 @@
 #![feature(generic_arg_infer)]
 #![feature(let_chains)]
 #![feature(iter_array_chunks)]
+#![feature(iter_next_chunk)]
 #![feature(is_sorted)]
 macro_rules! unwrap_or_else {
     ($expression:expr, $block:expr) => {
