@@ -667,52 +667,20 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         } else {
             (unsafe { gate_update_list.get_slice() }, cluster_update_list)
         };
-        //let update_list_p = dbg!(update_list_p);
 
         // this updates EVERY gate
-        // TODO: unchecked reads.
-        // TODO: case where entire group of deltas is zero
         let status_packed_len = inner.status_packed.len();
 
-        //dbg!(update_list_p);
-        //[0, 1, 2, 3, 4, 5, 6, 7]
-        //let _: Vec<_> = dbg!(update_list_p
-        //    .iter()
-        //    .map(|i| {
-        //        (
-        //            *i,
-        //            [0, 1, 2, 3, 4, 5, 6, 7].map(|j| i * gate_status::PACKED_ELEMENTS as u32 + j),
-        //        )
-        //    })
-        //    .collect());
-        for id_packed in 0..status_packed_len {
-            //for id_packed in update_list_p.iter().map(|x| *x as usize) {
-            //    debug_assert!(
-            //        inner.in_update_list[id_packed],
-            //        "{:?}",
-            //        inner.in_update_list
-            //    );
-
+        for id_packed in (0..status_packed_len).filter(|id_packed| {
+            CLUSTER == (GateType::Cluster == inner.kind[id_packed * gate_status::PACKED_ELEMENTS])
+        }) {
             let status_p = &mut inner.status_packed[id_packed];
             let acc_p = &inner.acc_packed[id_packed];
-            //core::array::from_fn(|i| i)
-            let is_cluster: [bool; gate_status::PACKED_ELEMENTS] = std::array::from_fn(|x| {
-                inner.kind[x + id_packed * gate_status::PACKED_ELEMENTS] == GateType::Cluster
-            });
-
-            assert!(
-                is_cluster.into_iter().is_sorted(),
-                "Scalar was not packed properly: {is_cluster:?}"
+            let delta_p = gate_status::eval_mut_scalar_masked::<CLUSTER>(
+                status_p,
+                *acc_p,
+                [CLUSTER; gate_status::PACKED_ELEMENTS],
             );
-
-            let is_cluster = [is_cluster[0]; gate_status::PACKED_ELEMENTS];
-
-            // very not robust...
-            //if is_cluster[0] != CLUSTER {continue}
-            //assert_eq!(is_cluster[0], CLUSTER);
-
-            let delta_p =
-                gate_status::eval_mut_scalar_masked::<CLUSTER>(status_p, *acc_p, is_cluster);
             if delta_p == 0 {
                 continue;
             }
@@ -726,20 +694,8 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 packed_output_indexes,
                 packed_outputs,
                 |_| {},
-                //|id: IndexType| {
-                //    let id_p = id / gate_status::PACKED_ELEMENTS as u32;
-                //    let id_p_usize = id_p as usize;
-                //    if !inner.in_update_list[id_p_usize] {
-                //        unsafe {
-                //            next_update_list_p.push(id_p);
-                //        }
-                //        inner.in_update_list[id_p_usize] = true;
-                //    }
-                //},
             );
-            inner.in_update_list[id_packed] = false;
         }
-        dbg!(next_update_list_p);
     }
 
     /// Update all gates in update list.
