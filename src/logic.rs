@@ -477,7 +477,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 let scalar_update_list: Vec<_> = scalar_in_update_list
                     .iter()
                     .enumerate()
-                    .filter_map(|(i, b)| b.then_some(dbg!(i) as IndexType))
+                    .filter_map(|(i, b)| b.then_some(i as IndexType))
                     .collect();
                 scalar_update_list
             } else {
@@ -513,7 +513,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         let mut in_update_list: Vec<bool> = (0..number_of_gates).map(|_| false).collect();
         unsafe { update_list.iter().enumerate() }.for_each(|(id, i)| {
             in_update_list[i as usize] = true;
-            dbg!(id);
+            //dbg!(id);
             //if let Some(i) = in_update_list.get_mut(i as usize) {
             //    dbg!(id);
             //    *i = true;
@@ -662,11 +662,11 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         gate_update_list: &mut UpdateList,
         cluster_update_list: &mut UpdateList,
     ) {
-        let (update_list_p, next_update_list_p) = if CLUSTER {
-            (unsafe { cluster_update_list.get_slice() }, gate_update_list)
-        } else {
-            (unsafe { gate_update_list.get_slice() }, cluster_update_list)
-        };
+        //let (update_list_p, next_update_list_p) = if CLUSTER {
+        //    (unsafe { cluster_update_list.get_slice() }, gate_update_list)
+        //} else {
+        //    (unsafe { gate_update_list.get_slice() }, cluster_update_list)
+        //};
 
         // this updates EVERY gate
         let status_packed_len = inner.status_packed.len();
@@ -674,10 +674,17 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         use arrayvec::ArrayVec;
         let mut sparse_vec: ArrayVec<(IndexType, AccType), { gate_status::PACKED_ELEMENTS }> =
             ArrayVec::new();
-
-        for id_packed in (0..status_packed_len).filter(|id_packed| {
-            CLUSTER == (GateType::Cluster == inner.kind[id_packed * gate_status::PACKED_ELEMENTS])
-        }) {
+        for id_packed in inner
+            .kind
+            .iter()
+            .map(|x| (*x == GateType::Cluster) == CLUSTER)
+            .step_by(gate_status::PACKED_ELEMENTS)
+            .zip(0..status_packed_len)
+            .filter_map(|(b,i)| b.then_some(i)) {
+        //for id_packed in (0..status_packed_len).filter(|id_packed| {
+        //    CLUSTER == (GateType::Cluster == inner.kind[id_packed * gate_status::PACKED_ELEMENTS])
+        //}) {
+            let group_offset = id_packed * gate_status::PACKED_ELEMENTS;
             let delta_p = gate_status::eval_mut_scalar::<CLUSTER>(
                 &mut inner.status_packed[id_packed],
                 inner.acc_packed[id_packed],
@@ -685,15 +692,39 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             if delta_p == 0 {
                 continue;
             }
-            Self::propagate_delta_to_accs_scalar(
-                delta_p,
-                id_packed,
-                &mut inner.acc_packed,
-                &inner.packed_output_indexes,
-                &inner.packed_outputs,
-                |_| {},
-            );
+            for el in gate_status::unpack_single(delta_p)
+                .into_iter()
+                .enumerate()
+                .map(|(i, d)| ((i + group_offset) as IndexType, d))
+                .filter(|(_, d)| *d != 0)
+            {
+                sparse_vec.push(el);
+                if sparse_vec.is_full() {
+                    Self::propagate_delta_sparse_vec_fixed(
+                        sparse_vec.as_slice().try_into().unwrap(),
+                        bytemuck::cast_slice_mut(&mut inner.acc_packed),
+                        &inner.packed_output_indexes,
+                        &inner.packed_outputs,
+                    );
+                    sparse_vec.clear();
+                }
+            }
+            //Self::propagate_delta_to_accs_scalar(
+            //    delta_p,
+            //    id_packed,
+            //    &mut inner.acc_packed,
+            //    &inner.packed_output_indexes,
+            //    &inner.packed_outputs,
+            //    |_| {},
+            //);
         }
+        // handle remaining
+        Self::propagate_delta_sparse_vec(
+            &sparse_vec,
+            bytemuck::cast_slice_mut(&mut inner.acc_packed),
+            &inner.packed_output_indexes,
+            &inner.packed_outputs,
+        );
     }
 
     /// Update all gates in update list.
@@ -732,70 +763,75 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
     }
 
-    fn propagate_delta_iter<T: Iterator<Item = (IndexType, AccType)>>(
-        it: T,
+    fn propagate_delta_sparse_vec(
+        packed: &[(IndexType, AccType)],
         acc: &mut [AccType],
         packed_output_indexes: &[IndexType],
         packed_outputs: &[IndexType],
     ) {
         //let it = it.filter(|(_, delta)| *delta != 0);
-        for (id, delta) in it.map(|(id, delta)| (id as usize, delta)) {
+        for (id, delta) in packed.into_iter().map(|(id, delta)| (*id as usize, *delta)) {
             debug_assert_ne!(delta, 0);
             let from_index = packed_output_indexes[id];
             let to_index = packed_output_indexes[id + 1];
             for id in (from_index..to_index).map(|i| packed_outputs[i as usize]) {
-                acc[id as usize] += delta;
+                acc[id as usize] = acc[id as usize].wrapping_add(delta);
                 // and add to update list...
             }
         }
     }
-    fn propagate_delta_iter_simd<T: Iterator<Item = (IndexType, AccType)>>(
-        mut it: T,
+    fn propagate_delta_sparse_vec_fixed(
+        packed: &[(IndexType, AccType); gate_status::PACKED_ELEMENTS],
+        acc: &mut [AccType],
+        packed_output_indexes: &[IndexType],
+        packed_outputs: &[IndexType],
+    ) {
+        Self::propagate_delta_sparse_vec(packed, acc, packed_output_indexes, packed_outputs)
+    }
+    fn propagate_delta_sparse_vec_simd(
+        packed: [(IndexType, AccType); gate_status::PACKED_ELEMENTS],
         acc: &mut [AccType],
         packed_output_indexes: &[IndexType],
         packed_outputs: &[IndexType],
     ) {
         //let it = it.filter(|(_, delta)| *delta != 0);
         const LANES: usize = gate_status::PACKED_ELEMENTS;
-        while let Ok(packed) = it.next_chunk::<LANES>() {
-            let idx = Simd::from_array(packed.map(|p| p.0)).cast();
-            let delta = Simd::from_array(packed.map(|p| p.1));
+        let idx = Simd::from_array(packed.map(|p| p.0)).cast();
+        let delta = Simd::from_array(packed.map(|p| p.1));
 
-            let from_index = Simd::gather_select(
-                packed_output_indexes,
-                Mask::splat(true),
-                idx,
-                Simd::splat(0),
-            )
-            .cast();
-            let to_index = Simd::gather_select(
-                packed_output_indexes,
-                Mask::splat(true),
-                idx + Simd::splat(1),
-                Simd::splat(0),
-            )
-            .cast();
-            let mut curr_index: Simd<usize, _> = from_index;
-            let mut not_done_mask: Mask<isize, LANES> = Mask::splat(true);
-            loop {
-                not_done_mask &= curr_index.simd_ne(to_index);
-                if not_done_mask == Mask::splat(false) {
-                    break;
-                }
-                let output_id = Simd::gather_select(
-                    packed_outputs,
-                    Mask::splat(true),
-                    curr_index,
-                    Simd::splat(0),
-                )
-                .cast();
-                let acc_new =
-                    Simd::gather_select(acc, Mask::splat(true), output_id, Simd::splat(0)) + delta;
-                acc_new.scatter_select(acc, not_done_mask, output_id);
-                curr_index += Simd::splat(1);
+        let from_index = Simd::gather_select(
+            packed_output_indexes,
+            Mask::splat(true),
+            idx,
+            Simd::splat(0),
+        )
+        .cast();
+        let to_index = Simd::gather_select(
+            packed_output_indexes,
+            Mask::splat(true),
+            idx + Simd::splat(1),
+            Simd::splat(0),
+        )
+        .cast();
+        let mut curr_index: Simd<usize, _> = from_index;
+        let mut not_done_mask: Mask<isize, LANES> = Mask::splat(true);
+        loop {
+            not_done_mask &= curr_index.simd_ne(to_index);
+            if not_done_mask == Mask::splat(false) {
+                break;
             }
+            let output_id = Simd::gather_select(
+                packed_outputs,
+                Mask::splat(true),
+                curr_index,
+                Simd::splat(0),
+            )
+            .cast();
+            let acc_new =
+                Simd::gather_select(acc, Mask::splat(true), output_id, Simd::splat(0)) + delta;
+            acc_new.scatter_select(acc, not_done_mask, output_id);
+            curr_index += Simd::splat(1);
         }
-        Self::propagate_delta_iter(it, acc, packed_output_indexes, packed_outputs);
     }
 
     /// NOTE: this assumes that all outputs are non overlapping.
