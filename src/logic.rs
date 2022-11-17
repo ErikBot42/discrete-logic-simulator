@@ -674,18 +674,18 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         use arrayvec::ArrayVec;
         let mut sparse_vec: ArrayVec<(IndexType, AccType), { gate_status::PACKED_ELEMENTS }> =
             ArrayVec::new();
-        for (id_packed, group_offset) in inner
+        for (id_packed, group_offset, status_mut) in inner
             .kind
             .iter()
             .map(|x| (*x == GateType::Cluster) == CLUSTER)
             .step_by(gate_status::PACKED_ELEMENTS)
-            .zip(0..status_packed_len)
-            .filter_map(|(b, i)| b.then_some((i, i * gate_status::PACKED_ELEMENTS)))
+            .enumerate()
+            .zip(inner.status_packed.iter_mut())
+            .filter_map(|((i, b), s)| b.then_some((i, i * gate_status::PACKED_ELEMENTS, s)))
         {
-            let delta_p = gate_status::eval_mut_scalar::<CLUSTER>(
-                &mut inner.status_packed[id_packed],
-                inner.acc_packed[id_packed],
-            );
+            let delta_p = gate_status::eval_mut_scalar::<CLUSTER>(status_mut, *unsafe {
+                inner.acc_packed.get_unchecked(id_packed)
+            });
             if delta_p == 0 {
                 continue;
             }
@@ -752,6 +752,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
     }
 
+    #[inline(always)]
     fn propagate_delta_sparse_vec(
         packed: &[(IndexType, AccType)],
         acc: &mut [AccType],
@@ -761,14 +762,19 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         //let it = it.filter(|(_, delta)| *delta != 0);
         for (id, delta) in packed.into_iter().map(|(id, delta)| (*id as usize, *delta)) {
             debug_assert_ne!(delta, 0);
-            let from_index = packed_output_indexes[id];
-            let to_index = packed_output_indexes[id + 1];
-            for id in (from_index..to_index).map(|i| packed_outputs[i as usize]) {
-                acc[id as usize] = acc[id as usize].wrapping_add(delta);
+            let from_index = *unsafe { packed_output_indexes.get_unchecked(id) } as usize;
+            let to_index = *unsafe { packed_output_indexes.get_unchecked(id + 1) } as usize;
+            for id in unsafe { packed_outputs.get_unchecked(from_index..to_index) }
+                .iter()
+                .map(|i| *i as usize)
+            {
+                let acc_mut = unsafe { acc.get_unchecked_mut(id) };
+                *acc_mut = acc_mut.wrapping_add(delta);
                 // and add to update list...
             }
         }
     }
+    #[inline(always)]
     fn propagate_delta_sparse_vec_fixed(
         packed: &[(IndexType, AccType); gate_status::PACKED_ELEMENTS],
         acc: &mut [AccType],
@@ -777,6 +783,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     ) {
         Self::propagate_delta_sparse_vec(packed, acc, packed_output_indexes, packed_outputs)
     }
+    #[inline(always)]
     fn propagate_delta_sparse_vec_simd(
         packed: [(IndexType, AccType); gate_status::PACKED_ELEMENTS],
         acc: &mut [AccType],
