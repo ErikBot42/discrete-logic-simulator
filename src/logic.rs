@@ -674,17 +674,14 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         use arrayvec::ArrayVec;
         let mut sparse_vec: ArrayVec<(IndexType, AccType), { gate_status::PACKED_ELEMENTS }> =
             ArrayVec::new();
-        for id_packed in inner
+        for (id_packed, group_offset) in inner
             .kind
             .iter()
             .map(|x| (*x == GateType::Cluster) == CLUSTER)
             .step_by(gate_status::PACKED_ELEMENTS)
             .zip(0..status_packed_len)
-            .filter_map(|(b,i)| b.then_some(i)) {
-        //for id_packed in (0..status_packed_len).filter(|id_packed| {
-        //    CLUSTER == (GateType::Cluster == inner.kind[id_packed * gate_status::PACKED_ELEMENTS])
-        //}) {
-            let group_offset = id_packed * gate_status::PACKED_ELEMENTS;
+            .filter_map(|(b, i)| b.then_some((i, i * gate_status::PACKED_ELEMENTS)))
+        {
             let delta_p = gate_status::eval_mut_scalar::<CLUSTER>(
                 &mut inner.status_packed[id_packed],
                 inner.acc_packed[id_packed],
@@ -709,14 +706,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     sparse_vec.clear();
                 }
             }
-            //Self::propagate_delta_to_accs_scalar(
-            //    delta_p,
-            //    id_packed,
-            //    &mut inner.acc_packed,
-            //    &inner.packed_output_indexes,
-            //    &inner.packed_outputs,
-            //    |_| {},
-            //);
         }
         // handle remaining
         Self::propagate_delta_sparse_vec(
