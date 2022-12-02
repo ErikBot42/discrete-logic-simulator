@@ -310,14 +310,12 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             .collect();
 
         let mut nodes = Vec::new();
-        let mut counter = 0;
         for x in 0..num_elements {
             Self::explore(
                 &mut elements,
                 &mut nodes,
                 width as i32,
                 x.try_into().unwrap(),
-                &mut counter,
             );
         }
 
@@ -414,7 +412,6 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         width: i32,
         this_x: i32,
         this_id: usize,
-        id_counter: &mut usize,
     ) {
         let this = &mut elements[TryInto::<usize>::try_into(this_x).unwrap()];
         let this_kind = this.kind;
@@ -433,7 +430,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                 _ => continue,
             };
             let other_id = unwrap_or_else!(other.id, {
-                Self::add_new_id(elements, nodes, width, other_x, id_counter)
+                Self::add_new_id(elements, nodes, width, other_x)
             });
             Self::add_connection(nodes, (this_id, other_id), dir);
         }
@@ -446,15 +443,13 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         nodes: &mut Vec<BoardNode>,
         width: i32,
         this_x: i32,
-        id_counter: &mut usize,
     ) -> usize {
         let this = &elements[TryInto::<usize>::try_into(this_x).unwrap()];
         assert!(this.kind.is_logic());
 
         // create a new id.
+        let this_id = nodes.len();
         nodes.push(BoardNode::new(this.kind));
-        let this_id = *id_counter;
-        *id_counter += 1;
 
         // fill with this_id
         Self::fill_id(nodes, elements, width, this_x, this_id);
@@ -467,7 +462,6 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         nodes: &mut Vec<BoardNode>,
         width: i32,
         this_x: i32,
-        id_counter: &mut usize,
     ) {
         // if prev_id is Some, merge should be done.
         // don't merge if id already exists, since that wouldn't make sense
@@ -481,7 +475,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         }
 
         let this_id = unwrap_or_else!(this.id, {
-            Self::add_new_id(elements, nodes, width, this_x, id_counter)
+            Self::add_new_id(elements, nodes, width, this_x)
         });
 
         assert!(this_kind.is_logic());
@@ -489,7 +483,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             return;
         }
 
-        Self::connect_id(elements, nodes, width, this_x, this_id, id_counter);
+        Self::connect_id(elements, nodes, width, this_x, this_id);
     }
 
     pub fn print_marked(&self, marked: &[usize]) {
