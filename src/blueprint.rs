@@ -5,9 +5,9 @@ use crossterm::style::{Color, Colors, Print, ResetColor, SetColors, Stylize};
 use crossterm::QueueableCommand;
 use std::collections::BTreeSet;
 use std::io::{stdout, Write};
+use std::mem::size_of;
 use std::thread::sleep;
 use std::time::Duration;
-use std::mem::size_of;
 
 pub enum VcbParseInput {
     VcbBlueprint(String),
@@ -16,7 +16,6 @@ pub enum VcbParseInput {
 #[derive(Default)]
 pub struct VcbParser<const STRATEGY: u8> {}
 impl<const STRATEGY: u8> VcbParser<STRATEGY> {
-    #[must_use]
     fn make_plain_board_from_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
         let bytes = base64::decode_config(data.trim(), base64::STANDARD)?;
         let data_bytes = &bytes[..bytes.len() - BlueprintFooter::SIZE];
@@ -33,11 +32,10 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             footer.height,
         ))
     }
-    #[must_use]
     fn make_plain_board_from_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
         // Godot uses a custom format, tscn, which cannot be parsed with a json formatter
-        let maybe_json = s.split("data = ").skip(1).next().unwrap();
-        let s = maybe_json.split("\"layers\": [").skip(1).next().unwrap();
+        let maybe_json = s.split("data = ").nth(1).unwrap();
+        let s = maybe_json.split("\"layers\": [").nth(1).unwrap();
         let s = s.split(']').next().unwrap();
         let mut s = s
             .split("PoolByteArray( ")
@@ -54,7 +52,7 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         let footer_bytes: [u8; BoardFooter::SIZE] =
             bytes[bytes.len() - BoardFooter::SIZE..bytes.len()].try_into()?;
         let footer = dbg!(BoardFooter::from_bytes(footer_bytes));
-        let data = zstd::bulk::decompress(&data_bytes, 1 << 27)?;
+        let data = zstd::bulk::decompress(data_bytes, 1 << 27)?;
 
         assert_eq!(footer.width, 2048);
         assert_eq!(footer.height, 2048);
@@ -65,14 +63,12 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             footer.height,
         ))
     }
-    #[must_use]
     fn make_board_from_blueprint(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
         Ok(VcbBoard::new(
             Self::make_plain_board_from_blueprint(data)?,
             optimize,
         ))
     }
-    #[must_use]
     pub fn parse(input: VcbParseInput, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
         let plain_board = match input {
             VcbParseInput::VcbBlueprint(b) => Self::make_plain_board_from_blueprint(&b)?,
@@ -87,7 +83,6 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
     pub fn parse_to_board(data: &str, optimize: bool) -> VcbBoard<STRATEGY> {
         Self::make_board_from_blueprint(data, optimize).unwrap()
     }
-    #[must_use]
     pub fn try_parse_to_board(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
         Self::make_board_from_blueprint(data, optimize)
     }
@@ -137,7 +132,10 @@ impl BoardFooterInfo {
         assert_eq!(footer.height_type, 2);
         assert_eq!(footer.width_type, 2);
         assert_eq!(footer.bytes_type, 2);
-        assert_eq!(footer.bytes, footer.height * footer.width * size_of::<u32>() as i32);
+        assert_eq!(
+            footer.bytes,
+            footer.height * footer.width * size_of::<u32>() as i32
+        );
         Self {
             width: footer.width.try_into().unwrap(),
             height: footer.height.try_into().unwrap(),
@@ -347,7 +345,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             compiled_network,
         }
     }
-    fn add_connection(nodes: &mut Vec<BoardNode>, connection: (usize, usize), swp_dir: bool) {
+    fn add_connection(nodes: &mut [BoardNode], connection: (usize, usize), swp_dir: bool) {
         let (start, end) = if swp_dir {
             (connection.1, connection.0)
         } else {
@@ -366,13 +364,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     /// floodfill with id at given index
     /// pre: logic trace, otherwise id could have been
     /// assigned to nothing, this_x valid
-    fn fill_id(
-        nodes: &mut Vec<BoardNode>,
-        elements: &mut Vec<BoardElement>,
-        width: i32,
-        this_x: i32,
-        id: usize,
-    ) {
+    fn fill_id(elements: &mut Vec<BoardElement>, width: i32, this_x: i32, id: usize) {
         let this = &mut elements[this_x as usize];
         let this_kind = this.kind;
         assert!(this_kind.is_logic());
@@ -393,7 +385,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                     continue 'forward;
                 }
                 if other_kind.is_same_as(this_kind) {
-                    Self::fill_id(nodes, elements, width, other_x, id);
+                    Self::fill_id(elements, width, other_x, id);
                 }
                 continue 'side;
             }
@@ -447,7 +439,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         nodes.push(BoardNode::new(this.kind));
 
         // fill with this_id
-        Self::fill_id(nodes, elements, width, this_x, this_id);
+        Self::fill_id(elements, width, this_x, this_id);
         this_id
     }
 
@@ -591,8 +583,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         let color_data: Vec<u8> = self
             .elements
             .iter()
-            .map(|x| x.kind.to_color_on())
-            .flatten()
+            .flat_map(|x| x.kind.to_color_on())
             .collect();
         let mut clipboard = Clipboard::new().unwrap();
         clipboard
@@ -817,7 +808,6 @@ impl Trace {
     // colors from file format
     #[rustfmt::skip]
     fn from_raw_color(color: [u8; 4]) -> Self {
-        let color: [u8; 4] = color.try_into().unwrap();
         match color {
             vcb_colors::COLOR_GRAY       => Trace::Gray,
             vcb_colors::COLOR_WHITE      => Trace::White,
@@ -1033,7 +1023,7 @@ impl BoardElement {
             if debug {
                 format!("{:>2}", id)
             } else {
-                format!("  ")
+                "  ".to_string()
             }
         };
 
