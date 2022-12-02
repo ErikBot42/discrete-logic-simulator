@@ -310,8 +310,6 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             .collect();
 
         let mut nodes = Vec::new();
-        let mut network = GateNetwork::default();
-        let mut compiled_network = CompiledNetwork::default();
         let mut counter = 0;
         for x in 0..num_elements {
             Self::explore(
@@ -322,6 +320,8 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                 &mut counter,
             );
         }
+
+        let mut network = GateNetwork::default();
         // add vertexes to network
         for node in &mut nodes {
             node.network_id = Some(network.add_vertex(node.kind));
@@ -343,18 +343,16 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
 
             network.add_inputs(node.kind, node.network_id.unwrap(), inputs);
         }
-        compiled_network = network.compiled(optimize);
 
-        let board = VcbBoard {
+        let compiled_network = network.compiled(optimize);
+        VcbBoard {
             elements,
             nodes,
             width,
             height,
             network,
             compiled_network,
-        };
-
-        board
+        }
     }
     fn add_connection(nodes: &mut Vec<BoardNode>, connection: (usize, usize), swp_dir: bool) {
         let (start, end) = if swp_dir {
@@ -452,8 +450,6 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     ) -> usize {
         let this = &elements[TryInto::<usize>::try_into(this_x).unwrap()];
         assert!(this.kind.is_logic());
-
-        // TODO: omit the id_counter
 
         // create a new id.
         nodes.push(BoardNode::new(this.kind));
