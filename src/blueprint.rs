@@ -31,7 +31,7 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         ))
     }
     fn make_plain_board_from_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
-        // Godot json cannot be parsed by standard parsers
+        // Godot uses a custom format, tscn, which cannot be parsed with a json formatter
         let maybe_json = s.split("data = ").skip(1).next().unwrap();
         let s = maybe_json.split("\"layers\": [").skip(1).next().unwrap();
         let s = s.split(']').next().unwrap();
