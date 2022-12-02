@@ -303,47 +303,56 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
 
         let num_elements = width * height;
 
-        let elements: Vec<_> = plain_board
+        let mut elements: Vec<_> = plain_board
             .traces
             .into_iter()
             .map(BoardElement::from_trace)
             .collect();
 
-        let mut board = VcbBoard {
-            elements,
-            nodes: Vec::new(),
-            width,
-            height,
-            network: GateNetwork::default(),
-            compiled_network: CompiledNetwork::default(),
-        };
+        let mut nodes = Vec::new();
+        let mut network = GateNetwork::default();
+        let mut compiled_network = CompiledNetwork::default();
         let mut counter = 0;
         for x in 0..num_elements {
-            board.explore(x.try_into().unwrap(), &mut counter);
+            Self::explore(
+                &mut elements,
+                &mut nodes,
+                width as i32,
+                x.try_into().unwrap(),
+                &mut counter,
+            );
         }
         // add vertexes to network
-        for node in &mut board.nodes {
-            node.network_id = Some(board.network.add_vertex(node.kind));
+        for node in &mut nodes {
+            node.network_id = Some(network.add_vertex(node.kind));
         }
         // add edges to network
-        for i in 0..board.nodes.len() {
-            let node = &board.nodes[i];
+        for i in 0..nodes.len() {
+            let node = &nodes[i];
             for input in &node.inputs {
-                assert!(board.nodes[*input].outputs.contains(&i));
+                assert!(nodes[*input].outputs.contains(&i));
             }
             let mut inputs: Vec<usize> = node
                 .inputs
                 .clone()
                 .into_iter()
-                .map(|x| board.nodes[x].network_id.unwrap())
+                .map(|x| nodes[x].network_id.unwrap())
                 .collect();
             inputs.sort_unstable();
             inputs.dedup();
-            board
-                .network
-                .add_inputs(node.kind, node.network_id.unwrap(), inputs);
+
+            network.add_inputs(node.kind, node.network_id.unwrap(), inputs);
         }
-        board.compiled_network = board.network.compiled(optimize);
+        compiled_network = network.compiled(optimize);
+
+        let board = VcbBoard {
+            elements,
+            nodes,
+            width,
+            height,
+            network,
+            compiled_network,
+        };
 
         board
     }
@@ -457,12 +466,18 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     }
 
     // this HAS to be recursive since gates have arbitrary shapes.
-    fn explore(&mut self, this_x: i32, id_counter: &mut usize) {
+    fn explore(
+        elements: &mut Vec<BoardElement>,
+        nodes: &mut Vec<BoardNode>,
+        width: i32,
+        this_x: i32,
+        id_counter: &mut usize,
+    ) {
         // if prev_id is Some, merge should be done.
         // don't merge if id already exists, since that wouldn't make sense
 
         // all here is correct
-        let this = &self.elements[TryInto::<usize>::try_into(this_x).unwrap()];
+        let this = &elements[TryInto::<usize>::try_into(this_x).unwrap()];
         let this_kind = this.kind;
 
         if !this_kind.is_logic() {
@@ -470,13 +485,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         }
 
         let this_id = unwrap_or_else!(this.id, {
-            Self::add_new_id(
-                &mut self.elements,
-                &mut self.nodes,
-                self.width as i32,
-                this_x,
-                id_counter,
-            )
+            Self::add_new_id(elements, nodes, width, this_x, id_counter)
         });
 
         assert!(this_kind.is_logic());
@@ -484,14 +493,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             return;
         }
 
-        Self::connect_id(
-            &mut self.elements,
-            &mut self.nodes,
-            self.width as i32,
-            this_x,
-            this_id,
-            id_counter,
-        );
+        Self::connect_id(elements, nodes, width, this_x, this_id, id_counter);
     }
 
     pub fn print_marked(&self, marked: &[usize]) {
