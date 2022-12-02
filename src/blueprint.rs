@@ -30,6 +30,7 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             footer.height,
         ))
     }
+    #[must_use]
     fn make_plain_board_from_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
         // Godot uses a custom format, tscn, which cannot be parsed with a json formatter
         let maybe_json = s.split("data = ").skip(1).next().unwrap();
@@ -49,11 +50,17 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         let data_bytes = &bytes[..bytes.len() - BoardFooter::SIZE];
         let footer_bytes: [u8; BoardFooter::SIZE] =
             bytes[bytes.len() - BoardFooter::SIZE..bytes.len()].try_into()?;
-        let footer = BoardFooter::from_bytes(footer_bytes);
-        dbg!(footer);
+        let footer = dbg!(BoardFooter::from_bytes(footer_bytes));
         let data = zstd::bulk::decompress(&data_bytes, 1 << 27)?;
 
-        Ok(VcbPlainBoard::from_color_data(&data, 2048, 2048))
+        assert_eq!(footer.width, 2048);
+        assert_eq!(footer.height, 2048);
+
+        Ok(VcbPlainBoard::from_color_data(
+            &data,
+            footer.width,
+            footer.height,
+        ))
     }
     #[must_use]
     fn make_board_from_blueprint(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
@@ -96,6 +103,7 @@ struct BoardFooter {
 }
 impl BoardFooter {
     const SIZE: usize = std::mem::size_of::<Self>();
+    #[must_use]
     fn from_bytes(bytes: [u8; Self::SIZE]) -> BoardFooterInfo {
         let read_int = |i: usize| i32::from_le_bytes([0, 1, 2, 3].map(|k| bytes[k + (i * 4)]));
 
@@ -121,6 +129,7 @@ struct BoardFooterInfo {
 }
 
 impl BoardFooterInfo {
+    #[must_use]
     fn new(footer: &BoardFooter) -> Self {
         assert_eq!(footer.height_type, 2);
         assert_eq!(footer.width_type, 2);
@@ -148,6 +157,7 @@ struct BlueprintFooter {
 }
 impl BlueprintFooter {
     const SIZE: usize = std::mem::size_of::<Self>();
+    #[must_use]
     fn from_bytes(bytes: [u8; Self::SIZE]) -> BlueprintFooterInfo {
         let read_int = |i: usize| i32::from_le_bytes([0, 1, 2, 3].map(|k| bytes[k + (i * 4)]));
 
@@ -175,6 +185,7 @@ struct BlueprintFooterInfo {
     layer: Layer,
 }
 impl BlueprintFooterInfo {
+    #[must_use]
     fn new(footer: &BlueprintFooter) -> Self {
         assert_eq!(footer.height_type, 2);
         assert_eq!(footer.width_type, 2);
@@ -207,6 +218,7 @@ struct VcbPlainBoard {
     height: usize,
 }
 impl VcbPlainBoard {
+    #[must_use]
     fn from_color_data(data: &[u8], width: usize, height: usize) -> Self {
         let traces: Vec<_> = data
             .chunks_exact(4)
@@ -219,6 +231,7 @@ impl VcbPlainBoard {
             height,
         }
     }
+    #[must_use]
     fn as_color_data(&self) -> Vec<u8> {
         self.traces
             .iter()
@@ -237,6 +250,7 @@ struct BoardNode {
     network_id: Option<usize>,
 }
 impl BoardNode {
+    #[must_use]
     fn new(trace: Trace) -> Self {
         BoardNode {
             inputs: BTreeSet::new(),
@@ -403,6 +417,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     }
 
     // pre: this trace is logic
+    #[must_use]
     fn add_new_id(&mut self, this_x: i32, id_counter: &mut usize) -> usize {
         let this = &self.elements[TryInto::<usize>::try_into(this_x).unwrap()];
         assert!(this.kind.is_logic());
