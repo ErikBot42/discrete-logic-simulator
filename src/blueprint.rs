@@ -366,8 +366,8 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     /// floodfill with id at given index
     /// pre: logic trace, otherwise id could have been
     /// assigned to nothing, this_x valid
-    fn fill_id(&mut self, this_x: i32, id: usize) {
-        Self::fill_id_i(
+    fn fill_id_w(&mut self, this_x: i32, id: usize) {
+        Self::fill_id(
             &mut self.nodes,
             &mut self.elements,
             self.width as i32,
@@ -375,7 +375,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             id,
         );
     }
-    fn fill_id_i(
+    fn fill_id(
         nodes: &mut Vec<BoardNode>,
         elements: &mut Vec<BoardElement>,
         width: i32,
@@ -402,7 +402,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                     continue 'forward;
                 }
                 if other_kind.is_same_as(this_kind) {
-                    Self::fill_id_i(nodes, elements, width, other_x, id);
+                    Self::fill_id(nodes, elements, width, other_x, id);
                 }
                 continue 'side;
             }
@@ -443,7 +443,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         *id_counter += 1;
 
         // fill with this_id
-        self.fill_id(this_x, this_id);
+        self.fill_id_w(this_x, this_id);
         this_id
     }
 
