@@ -401,17 +401,24 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     }
     // Connect gate with immediate neighbor
     // pre: this is gate, this_x valid, this has id.
-    fn connect_id(&mut self, this_x: i32, this_id: usize, id_counter: &mut usize) {
-        let this = &mut self.elements[TryInto::<usize>::try_into(this_x).unwrap()];
+    fn connect_id(
+        elements: &mut Vec<BoardElement>,
+        nodes: &mut Vec<BoardNode>,
+        width: i32,
+        this_x: i32,
+        this_id: usize,
+        id_counter: &mut usize,
+    ) {
+        let this = &mut elements[TryInto::<usize>::try_into(this_x).unwrap()];
         let this_kind = this.kind;
         assert!(this_kind.is_gate());
         assert!(this.id.is_some());
 
-        let width: i32 = self.width.try_into().unwrap();
+        //let width: i32 = self.width.try_into().unwrap();
         'side: for dx in [1, -1, width, -width] {
             //TODO: handle wrapping
             let other_x = this_x + dx;
-            let other = unwrap_or_else!(self.elements.get(other_x as usize), continue 'side);
+            let other = unwrap_or_else!(elements.get(other_x as usize), continue 'side);
 
             let dir = match other.kind {
                 Trace::Read => false,
@@ -419,15 +426,9 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                 _ => continue,
             };
             let other_id = unwrap_or_else!(other.id, {
-                Self::add_new_id(
-                    &mut self.elements,
-                    &mut self.nodes,
-                    self.width,
-                    other_x,
-                    id_counter,
-                )
+                Self::add_new_id(elements, nodes, width, other_x, id_counter)
             });
-            Self::add_connection(&mut self.nodes, (this_id, other_id), dir);
+            Self::add_connection(nodes, (this_id, other_id), dir);
         }
     }
 
@@ -436,7 +437,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     fn add_new_id(
         elements: &mut Vec<BoardElement>,
         nodes: &mut Vec<BoardNode>,
-        width: usize,
+        width: i32,
         this_x: i32,
         id_counter: &mut usize,
     ) -> usize {
@@ -451,7 +452,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         *id_counter += 1;
 
         // fill with this_id
-        Self::fill_id(nodes, elements, width as i32, this_x, this_id);
+        Self::fill_id(nodes, elements, width, this_x, this_id);
         this_id
     }
 
@@ -472,7 +473,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             Self::add_new_id(
                 &mut self.elements,
                 &mut self.nodes,
-                self.width,
+                self.width as i32,
                 this_x,
                 id_counter,
             )
@@ -483,7 +484,14 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             return;
         }
 
-        self.connect_id(this_x, this_id, id_counter);
+        Self::connect_id(
+            &mut self.elements,
+            &mut self.nodes,
+            self.width as i32,
+            this_x,
+            this_id,
+            id_counter,
+        );
     }
 
     pub fn print_marked(&self, marked: &[usize]) {
