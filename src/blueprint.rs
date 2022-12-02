@@ -347,19 +347,19 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
 
         board
     }
-    fn add_connection(&mut self, connection: (usize, usize), swp_dir: bool) {
+    fn add_connection(nodes: &mut Vec<BoardNode>, connection: (usize, usize), swp_dir: bool) {
         let (start, end) = if swp_dir {
             (connection.1, connection.0)
         } else {
             connection
         };
         assert!(start != end);
-        let a = self.nodes[start].inputs.insert(end);
-        let b = self.nodes[end].outputs.insert(start);
+        let a = nodes[start].inputs.insert(end);
+        let b = nodes[end].outputs.insert(start);
         assert!(a == b);
         assert_ne!(
-            (self.nodes[start].kind == GateType::Cluster),
-            (self.nodes[end].kind == GateType::Cluster)
+            nodes[start].kind == GateType::Cluster,
+            nodes[end].kind == GateType::Cluster
         );
     }
 
@@ -414,7 +414,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                 _ => continue,
             };
             let other_id = unwrap_or_else!(other.id, { self.add_new_id(other_x, id_counter) });
-            self.add_connection((this_id, other_id), dir);
+            Self::add_connection(&mut self.nodes, (this_id, other_id), dir);
         }
     }
 
