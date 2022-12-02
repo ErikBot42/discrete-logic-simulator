@@ -1,7 +1,7 @@
 //! A list that is just a raw array that is manipulated directly.
 //! Very unsafe but slightly faster than a normal vector
 //! This is needed because it's used in the innermost loop
-//#![allow(dead_code)]
+#![allow(dead_code)]
 #![allow(clippy::inline_always)]
 
 #[derive(Debug, Default, Clone)]
@@ -16,7 +16,7 @@ impl<T> RawList<T>
 where
     T: Default + Clone,
 {
-    pub fn collect_size(iter: impl Iterator<Item = T>, max_size: usize) -> Self {
+    pub(crate) fn collect_size(iter: impl Iterator<Item = T>, max_size: usize) -> Self {
         let mut list = Self::new(max_size);
         for el in iter {
             list.push_safe(el);
@@ -24,29 +24,29 @@ where
         list
     }
 
-    pub fn collect(&mut self, iter: impl Iterator<Item = T>) {
+    pub(crate) fn collect(&mut self, iter: impl Iterator<Item = T>) {
         self.clear();
         for el in iter {
             self.push_safe(el);
         }
     }
 
-    pub fn new(max_size: usize) -> Self {
+    pub(crate) fn new(max_size: usize) -> Self {
         RawList {
             list: vec![T::default(); max_size].into_boxed_slice(),
             len: 0,
         }
     }
-    pub fn push_safe(&mut self, el: T) {
+    pub(crate) fn push_safe(&mut self, el: T) {
         self.list[self.len] = el;
         self.len += 1;
     }
     #[inline(always)]
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.len = 0;
     }
     #[inline(always)]
-    pub unsafe fn push(&mut self, el: T) {
+    pub(crate) unsafe fn push(&mut self, el: T) {
         *unsafe { self.list.get_unchecked_mut(self.len) } = el;
         self.len += 1;
         debug_assert!(
@@ -57,7 +57,7 @@ where
         );
     }
     #[inline(always)]
-    pub unsafe fn get_slice(&self) -> &[T] {
+    pub(crate) unsafe fn get_slice(&self) -> &[T] {
         // &self.list[0..self.len]
         debug_assert!(
             self.list.len() > self.len,
@@ -68,7 +68,7 @@ where
         unsafe { self.list.get_unchecked(..self.len) }
     }
     #[inline(always)]
-    pub unsafe fn get_slice_mut(&mut self) -> &mut [T] {
+    pub(crate) unsafe fn get_slice_mut(&mut self) -> &mut [T] {
         // &self.list[0..self.len]
         debug_assert!(
             self.list.len() > self.len,
@@ -79,10 +79,10 @@ where
         unsafe { self.list.get_unchecked_mut(..self.len) }
     }
     #[inline(always)]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.len
     }
-    pub unsafe fn iter(&self) -> impl Iterator<Item = T> + '_ {
+    pub(crate) unsafe fn iter(&self) -> impl Iterator<Item = T> + '_ {
         unsafe { self.get_slice().iter().cloned() }
     }
 }

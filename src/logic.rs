@@ -385,7 +385,7 @@ impl UpdateStrategy {
 }
 
 /// Contains prepared datastructures to run the network.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct CompiledNetwork<const STRATEGY: u8> {
     pub(crate) i: CompiledNetworkInner,
 

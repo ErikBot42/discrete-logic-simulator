@@ -40,7 +40,6 @@ impl NetworkInfo for InitializedNetwork {
 
 /// Network that contains empty gate slots used for alignment
 /// Needed to separate cluster and non cluster in packed forms.
-#[derive(Debug)]
 pub(crate) struct NetworkWithGaps {
     pub(crate) gates: Vec<Option<Gate>>,
     pub(crate) translation_table: Vec<IndexType>,
@@ -367,7 +366,7 @@ impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
     /// Connection must be between cluster and a non cluster gate
     /// and a connection can only be made once for a given pair of gates.
     /// # Panics
-    /// If precondition is not held.
+    /// If preconditions are not held.
     pub(crate) fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
         let gate = &mut self.network.gates[gate_id];
         gate.add_inputs(inputs.len().try_into().unwrap());
@@ -377,7 +376,9 @@ impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
         }
         gate.inputs.append(&mut in2);
         gate.inputs.sort_unstable();
+        let len_before_dedup = gate.inputs.len();
         gate.inputs.dedup();
+        assert_eq!(len_before_dedup, gate.inputs.len());
         for input_id in inputs {
             assert!(
                 input_id < self.network.gates.len(),
