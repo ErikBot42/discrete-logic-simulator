@@ -367,7 +367,22 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     /// pre: logic trace, otherwise id could have been
     /// assigned to nothing, this_x valid
     fn fill_id(&mut self, this_x: i32, id: usize) {
-        let this = &mut self.elements[TryInto::<usize>::try_into(this_x).unwrap()];
+        Self::fill_id_i(
+            &mut self.nodes,
+            &mut self.elements,
+            self.width as i32,
+            this_x,
+            id,
+        );
+    }
+    fn fill_id_i(
+        nodes: &mut Vec<BoardNode>,
+        elements: &mut Vec<BoardElement>,
+        width: i32,
+        this_x: i32,
+        id: usize,
+    ) {
+        let this = &mut elements[this_x as usize];
         let this_kind = this.kind;
         assert!(this_kind.is_logic());
         match this.id {
@@ -377,18 +392,17 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                 return;
             },
         }
-        let width: i32 = self.width.try_into().unwrap();
         'side: for dx in [1, -1, width, -width] {
             'forward: for ddx in [1, 2] {
-                //TODO: handle wrapping
+                // TODO: handle wrapping
                 let other_x = this_x + dx * ddx;
                 let other_kind =
-                    unwrap_or_else!(self.elements.get(other_x as usize), continue 'side).kind;
+                    unwrap_or_else!(elements.get(other_x as usize), continue 'side).kind;
                 if other_kind == Trace::Cross {
                     continue 'forward;
                 }
                 if other_kind.is_same_as(this_kind) {
-                    self.fill_id(other_x, id);
+                    Self::fill_id_i(nodes, elements, width, other_x, id);
                 }
                 continue 'side;
             }
