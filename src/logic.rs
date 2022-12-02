@@ -66,7 +66,7 @@ impl LogicSim for LogicSims {
         }
     }
 
-    fn to_internal_id(&self, gate_id: usize) -> usize {
+    fn to_internal_id(&self, _gate_id: usize) -> usize {
         todo!()
     }
 }
@@ -577,10 +577,10 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     fn get_state_internal(&self, gate_id: usize) -> bool {
         match Self::STRATEGY {
             UpdateStrategy::ScalarSimd => {
-                gate_status::get_state_from_packed_slice(&self.i.status_packed, gate_id as usize)
+                gate_status::get_state_from_packed_slice(&self.i.status_packed, gate_id)
             },
             UpdateStrategy::Reference | UpdateStrategy::Simd => {
-                gate_status::state(self.i.status[gate_id as usize])
+                gate_status::state(self.i.status[gate_id])
             },
         }
     }
@@ -776,7 +776,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         packed_outputs: &[IndexType],
     ) {
         //let it = it.filter(|(_, delta)| *delta != 0);
-        for (id, delta) in packed.into_iter().map(|(id, delta)| (*id as usize, *delta)) {
+        for (id, delta) in packed.iter().map(|(id, delta)| (*id as usize, *delta)) {
             debug_assert_ne!(delta, 0);
             let from_index = *unsafe { packed_output_indexes.get_unchecked(id) } as usize;
             let to_index = *unsafe { packed_output_indexes.get_unchecked(id + 1) } as usize;

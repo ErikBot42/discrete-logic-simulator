@@ -5,6 +5,8 @@ use crossterm::style::{Color, Colors, Print, ResetColor, SetColors, Stylize};
 use crossterm::QueueableCommand;
 use std::collections::BTreeSet;
 use std::io::{stdout, Write};
+use std::thread::sleep;
+use std::time::Duration;
 
 pub enum VcbParseInput {
     VcbBlueprint(String),
@@ -576,7 +578,9 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             })
             .unwrap();
         println!("Running infinite loop so that clipboard contents are preserved, CTRL-C to force exit...");
-        loop {}
+        loop {
+            sleep(Duration::from_secs(1))
+        }
     }
     pub fn print_to_gif(&mut self) {
         use std::collections::HashMap;
@@ -591,8 +595,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             let color_data: BoardColorData = self
                 .elements
                 .iter()
-                .map(|x| x.get_color(&self))
-                .flatten()
+                .flat_map(|x| x.get_color(self))
                 .collect();
 
             v.push(color_data.clone()); // optimization is my passion
@@ -614,7 +617,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         let file: NamedTempFile = Builder::new().suffix(".gif").tempfile().unwrap();
         let (file, path) = file.keep().unwrap();
 
-        let image_width = 500 as u32;
+        let image_width = 500_u32;
         let image_height = (image_width as f64 / self.width as f64 * self.height as f64) as u32;
 
         let frames = v

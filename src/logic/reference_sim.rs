@@ -71,7 +71,7 @@ impl ReferenceLogicSim {
         let (old_update_list, new_update_list) = if cluster {
             (&self.cluster_update_list, &mut self.gate_update_list)
         } else {
-            (&self.cluster_update_list, &mut self.gate_update_list)
+            (&self.gate_update_list, &mut self.cluster_update_list)
         };
         assert_eq!(new_update_list.len(), 0);
         for id in old_update_list.iter().map(|x| *x as usize) {
