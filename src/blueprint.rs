@@ -418,29 +418,40 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                 Trace::Write => true,
                 _ => continue,
             };
-            let other_id = unwrap_or_else!(other.id, { self.add_new_id(other_x, id_counter) });
+            let other_id = unwrap_or_else!(other.id, {
+                Self::add_new_id(
+                    &mut self.elements,
+                    &mut self.nodes,
+                    self.width,
+                    other_x,
+                    id_counter,
+                )
+            });
             Self::add_connection(&mut self.nodes, (this_id, other_id), dir);
         }
     }
 
     // pre: this trace is logic
     #[must_use]
-    fn add_new_id(&mut self, this_x: i32, id_counter: &mut usize) -> usize {
-        let this = &self.elements[TryInto::<usize>::try_into(this_x).unwrap()];
+    fn add_new_id(
+        elements: &mut Vec<BoardElement>,
+        nodes: &mut Vec<BoardNode>,
+        width: usize,
+        this_x: i32,
+        id_counter: &mut usize,
+    ) -> usize {
+        let this = &elements[TryInto::<usize>::try_into(this_x).unwrap()];
         assert!(this.kind.is_logic());
+
+        // TODO: omit the id_counter
+
         // create a new id.
-        self.nodes.push(BoardNode::new(this.kind));
+        nodes.push(BoardNode::new(this.kind));
         let this_id = *id_counter;
         *id_counter += 1;
 
         // fill with this_id
-        Self::fill_id(
-            &mut self.nodes,
-            &mut self.elements,
-            self.width as i32,
-            this_x,
-            this_id,
-        );
+        Self::fill_id(nodes, elements, width as i32, this_x, this_id);
         this_id
     }
 
@@ -457,7 +468,15 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             return;
         }
 
-        let this_id = unwrap_or_else!(this.id, { self.add_new_id(this_x, id_counter) });
+        let this_id = unwrap_or_else!(this.id, {
+            Self::add_new_id(
+                &mut self.elements,
+                &mut self.nodes,
+                self.width,
+                this_x,
+                id_counter,
+            )
+        });
 
         assert!(this_kind.is_logic());
         if !this_kind.is_gate() {
