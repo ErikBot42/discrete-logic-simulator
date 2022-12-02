@@ -570,7 +570,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         let mut i = 0;
         let mut map: HashMap<BoardColorData, usize> = HashMap::new();
         let limit = 500;
-        
+
         println!("Generating colors...");
         let a = loop {
             let color_data: BoardColorData = self
@@ -605,7 +605,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         let frames = v
             .into_iter()
             .enumerate()
-            .map(|(iframe,x)| {
+            .map(|(iframe, x)| {
                 println!("{iframe}/{i}");
                 let rgba: RgbaImage =
                     ImageBuffer::from_raw(self.width as u32, self.height as u32, x).unwrap();

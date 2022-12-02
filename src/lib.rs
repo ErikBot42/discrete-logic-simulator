@@ -169,9 +169,7 @@ mod tests {
         other.print_debug();
         println!("REFERENCE:");
         reference.print_debug();
-        if diff.len() != 0
-        {
-
+        if diff.len() != 0 {
             panic!(
                 "diff ids: \n{}",
                 diff.iter()
