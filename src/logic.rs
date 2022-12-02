@@ -517,7 +517,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
 
         let mut in_update_list: Vec<bool> = (0..number_of_gates).map(|_| false).collect();
-        unsafe { update_list.iter().enumerate() }.for_each(|(id, i)| {
+        unsafe { update_list.iter().enumerate() }.for_each(|(_id, i)| {
             in_update_list[i as usize] = true;
             //dbg!(id);
             //if let Some(i) = in_update_list.get_mut(i as usize) {
@@ -665,8 +665,8 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     #[inline]
     fn update_gates_scalar<const CLUSTER: bool>(
         inner: &mut CompiledNetworkInner,
-        gate_update_list: &mut UpdateList,
-        cluster_update_list: &mut UpdateList,
+        _gate_update_list: &mut UpdateList,
+        _cluster_update_list: &mut UpdateList,
     ) {
         //let (update_list_p, next_update_list_p) = if CLUSTER {
         //    (unsafe { cluster_update_list.get_slice() }, gate_update_list)

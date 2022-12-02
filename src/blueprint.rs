@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 use std::io::{stdout, Write};
 use std::thread::sleep;
 use std::time::Duration;
+use std::mem::size_of;
 
 pub enum VcbParseInput {
     VcbBlueprint(String),
@@ -127,7 +128,7 @@ impl BoardFooter {
 struct BoardFooterInfo {
     width: usize,
     height: usize,
-    count: usize,
+    _count: usize,
 }
 
 impl BoardFooterInfo {
@@ -136,11 +137,11 @@ impl BoardFooterInfo {
         assert_eq!(footer.height_type, 2);
         assert_eq!(footer.width_type, 2);
         assert_eq!(footer.bytes_type, 2);
-        assert_eq!(footer.bytes, footer.height * footer.width * 4);
+        assert_eq!(footer.bytes, footer.height * footer.width * size_of::<u32>() as i32);
         Self {
             width: footer.width.try_into().unwrap(),
             height: footer.height.try_into().unwrap(),
-            count: (footer.width * footer.height).try_into().unwrap(),
+            _count: (footer.width * footer.height).try_into().unwrap(),
         }
     }
 }
@@ -233,14 +234,6 @@ impl VcbPlainBoard {
             height,
         }
     }
-    #[must_use]
-    fn as_color_data(&self) -> Vec<u8> {
-        self.traces
-            .iter()
-            .map(|x| x.to_color_raw())
-            .flatten()
-            .collect()
-    }
 }
 
 /// Represents one gate or trace
@@ -267,7 +260,6 @@ impl BoardNode {
 pub struct VcbBoard<const STRATEGY: u8> {
     elements: Vec<BoardElement>,
     nodes: Vec<BoardNode>,
-    pub(crate) network: GateNetwork<STRATEGY>,
     pub(crate) compiled_network: CompiledNetwork<STRATEGY>,
     pub width: usize,
     pub height: usize,
@@ -290,6 +282,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         a
     }
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn make_inner_state_vec(&self) -> Vec<bool> {
         self.compiled_network.get_state_vec()
     }
@@ -300,7 +293,6 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     fn new(plain_board: VcbPlainBoard, optimize: bool) -> Self {
         let height = plain_board.height;
         let width = plain_board.width;
-
         let num_elements = width * height;
 
         let mut nodes = Vec::new();
@@ -308,7 +300,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             let mut elements: Vec<_> = plain_board
                 .traces
                 .into_iter()
-                .map(BoardElement::from_trace)
+                .map(BoardElement::new)
                 .collect();
             for x in 0..num_elements {
                 Self::explore(
@@ -352,7 +344,6 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             nodes,
             width,
             height,
-            network,
             compiled_network,
         }
     }
@@ -1023,16 +1014,7 @@ struct BoardElement {
     id: Option<usize>,
 }
 impl BoardElement {
-    fn from_trace(trace: Trace) -> Self {
-        BoardElement {
-            color_on: trace.to_color_on(),
-            color_off: trace.to_color_off(),
-            kind: trace,
-            id: None,
-        }
-    }
-    fn new(color: [u8; 4]) -> Self {
-        let trace = Trace::from_raw_color(color);
+    fn new(trace: Trace) -> Self {
         BoardElement {
             color_on: trace.to_color_on(),
             color_off: trace.to_color_off(),
