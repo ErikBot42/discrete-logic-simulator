@@ -303,21 +303,24 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
 
         let num_elements = width * height;
 
-        let mut elements: Vec<_> = plain_board
-            .traces
-            .into_iter()
-            .map(BoardElement::from_trace)
-            .collect();
 
         let mut nodes = Vec::new();
-        for x in 0..num_elements {
-            Self::explore(
-                &mut elements,
-                &mut nodes,
-                width as i32,
-                x.try_into().unwrap(),
-            );
-        }
+        let elements = {
+            let mut elements: Vec<_> = plain_board
+                .traces
+                .into_iter()
+                .map(BoardElement::from_trace)
+                .collect();
+            for x in 0..num_elements {
+                Self::explore(
+                    &mut elements,
+                    &mut nodes,
+                    width as i32,
+                    x.try_into().unwrap(),
+                );
+            }
+            elements
+        };
 
         let mut network = GateNetwork::default();
         // add vertexes to network
