@@ -219,6 +219,12 @@ pub(crate) struct Gate {
     //TODO: "do not merge" flag for gates that are "volatile", for example handling IO
 }
 impl Gate {
+    fn has_overlapping_ids(&self, other: &Gate) -> bool {
+        self.outputs
+            .iter()
+            .zip(other.outputs.iter())
+            .any(|(a, b)| *a == *b)
+    }
     fn is_cluster_a_xor_is_cluster_b(&self, other: &Gate) -> bool {
         self.kind.is_cluster() != other.kind.is_cluster()
     }
@@ -689,23 +695,33 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             if delta_p == 0 {
                 continue;
             }
-            for el in gate_status::unpack_single(delta_p)
-                .into_iter()
-                .enumerate()
-                .map(|(i, d)| ((i + group_offset) as IndexType, d))
-                .filter(|(_, d)| *d != 0)
-            {
-                sparse_vec.push(el);
-                if sparse_vec.is_full() {
-                    Self::propagate_delta_sparse_vec_fixed(
-                        sparse_vec.as_slice().try_into().unwrap(),
-                        bytemuck::cast_slice_mut(&mut inner.acc_packed),
-                        &inner.packed_output_indexes,
-                        &inner.packed_outputs,
-                    );
-                    sparse_vec.clear();
-                }
-            }
+
+            Self::propagate_delta_to_accs_scalar(
+                delta_p,
+                id_packed,
+                &mut inner.acc_packed,
+                &inner.packed_output_indexes,
+                &inner.packed_outputs,
+                |_| {},
+            );
+
+            //for el in gate_status::unpack_single(delta_p)
+            //    .into_iter()
+            //    .enumerate()
+            //    .map(|(i, d)| ((i + group_offset) as IndexType, d))
+            //    .filter(|(_, d)| *d != 0)
+            //{
+            //    sparse_vec.push(el);
+            //    if sparse_vec.is_full() {
+            //        Self::propagate_delta_sparse_vec_fixed(
+            //            sparse_vec.as_slice().try_into().unwrap(),
+            //            bytemuck::cast_slice_mut(&mut inner.acc_packed),
+            //            &inner.packed_output_indexes,
+            //            &inner.packed_outputs,
+            //        );
+            //        sparse_vec.clear();
+            //    }
+            //}
         }
         // handle remaining
         Self::propagate_delta_sparse_vec(
@@ -799,14 +815,14 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             packed_output_indexes,
             Mask::splat(true),
             idx,
-            Simd::splat(0),
+            Simd::splat(u32::MAX),
         )
         .cast();
         let to_index = Simd::gather_select(
             packed_output_indexes,
             Mask::splat(true),
             idx + Simd::splat(1),
-            Simd::splat(0),
+            Simd::splat(u32::MAX),
         )
         .cast();
         let mut curr_index: Simd<usize, _> = from_index;
@@ -816,16 +832,24 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             if not_done_mask == Mask::splat(false) {
                 break;
             }
-            let output_id = Simd::gather_select(
-                packed_outputs,
-                Mask::splat(true),
-                curr_index,
-                Simd::splat(0),
-            )
-            .cast();
-            let acc_new =
-                Simd::gather_select(acc, Mask::splat(true), output_id, Simd::splat(0)) + delta;
-            acc_new.scatter_select(acc, not_done_mask, output_id);
+            let output_id: Simd<usize, _> =
+                Simd::gather_select(packed_outputs, not_done_mask, curr_index, Simd::splat(0))
+                    .cast();
+
+            for (id, d) in output_id
+                .as_array()
+                .iter()
+                .zip(delta.as_array())
+                .zip(not_done_mask.to_array())
+                .filter_map(|(a, m)| m.then_some(a))
+            {
+                let acc_mut = unsafe { acc.get_unchecked_mut(*id) };
+                *acc_mut = acc_mut.wrapping_add(*d);
+            }
+
+            //let acc_new =
+            //    Simd::gather_select(acc, Mask::splat(true), output_id, Simd::splat(0)) + delta;
+            //acc_new.scatter_select(acc, not_done_mask, output_id);
             curr_index += Simd::splat(1);
         }
     }
