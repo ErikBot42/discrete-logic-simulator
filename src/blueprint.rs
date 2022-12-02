@@ -303,7 +303,6 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
 
         let num_elements = width * height;
 
-
         let mut nodes = Vec::new();
         let elements = {
             let mut elements: Vec<_> = plain_board
@@ -322,28 +321,30 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             elements
         };
 
-        let mut network = GateNetwork::default();
-        // add vertexes to network
-        for node in &mut nodes {
-            node.network_id = Some(network.add_vertex(node.kind));
-        }
-        // add edges to network
-        for i in 0..nodes.len() {
-            let node = &nodes[i];
-            for input in &node.inputs {
-                assert!(nodes[*input].outputs.contains(&i));
-            }
-            let mut inputs: Vec<usize> = node
-                .inputs
-                .clone()
-                .into_iter()
-                .map(|x| nodes[x].network_id.unwrap())
-                .collect();
-            inputs.sort_unstable();
-            inputs.dedup();
+        let network = {
+            let mut network = GateNetwork::default();
 
-            network.add_inputs(node.kind, node.network_id.unwrap(), inputs);
-        }
+            // add vertexes to network
+            for node in &mut nodes {
+                node.network_id = Some(network.add_vertex(node.kind));
+            }
+            // add edges to network
+            for (i, node) in nodes.iter().enumerate() {
+                for input in &node.inputs {
+                    assert!(nodes[*input].outputs.contains(&i));
+                }
+                let mut inputs: Vec<usize> = node
+                    .inputs
+                    .clone()
+                    .into_iter()
+                    .map(|x| nodes[x].network_id.unwrap())
+                    .collect();
+                inputs.sort_unstable();
+                inputs.dedup();
+                network.add_inputs(node.kind, node.network_id.unwrap(), inputs);
+            }
+            network
+        };
 
         let compiled_network = network.compiled(optimize);
         VcbBoard {
