@@ -42,11 +42,10 @@ pub enum RunMode {
 /// Logic simulator, currently the VCB blueprints are implemented.
 #[deny(missing_docs)]
 pub struct Args {
-    
     /// Filepath to VCB blueprint string
     #[arg(short = 'f', long, group = "blueprint")]
     pub blueprint_file: Option<PathBuf>,
-    
+
     /// Filepath to legacy VCB blueprint string
     #[arg(long, group = "blueprint")]
     pub blueprint_file_legacy: Option<PathBuf>,
@@ -90,22 +89,27 @@ fn main() {
     let args = Args::parse();
 
     let read_file = |s: PathBuf| read_to_string(s).expect("File should exist");
-    let parser_input: VcbParseInput = args
+    let parser_input: VcbParseInput = (args
         .blueprint_string_legacy
         .clone()
         .or(args.blueprint_file_legacy.clone().map(read_file))
-        .map(VcbParseInput::VcbBlueprintLegacy)
-        .or(args
-            .world_file_legacy
-            .clone()
-            .map(read_file)
-            .map(VcbParseInput::VcbWorldLegacy))
-        .or(args
-            .world_file
-            .clone()
-            .map(read_file)
-            .map(VcbParseInput::VcbWorld))
-        .unwrap();
+        .map(VcbParseInput::VcbBlueprintLegacy))
+    .or(args
+        .blueprint_string
+        .clone()
+        .or(args.blueprint_file.clone().map(read_file))
+        .map(VcbParseInput::VcbBlueprint))
+    .or(args
+        .world_file_legacy
+        .clone()
+        .map(read_file)
+        .map(VcbParseInput::VcbWorldLegacy))
+    .or(args
+        .world_file
+        .clone()
+        .map(read_file)
+        .map(VcbParseInput::VcbWorld))
+    .unwrap();
 
     // branch to specific type here to remove overhead later.
     match args.implementation {
