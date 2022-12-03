@@ -34,21 +34,23 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         ))
     }
     fn make_plain_board_from_legacy_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
+        use anyhow::Context;
         // Godot uses a custom format, tscn, which cannot be parsed with a json formatter
-        let maybe_json = s.split("data = ").nth(1).unwrap();
-        let s = maybe_json.split("\"layers\": [").nth(1).unwrap();
-        let s = s.split(']').next().unwrap();
+        let maybe_json = s.split("data = ").nth(1).context("")?;
+        let s = maybe_json.split("\"layers\": [").nth(1).context("")?;
+        let s = s.split(']').next().context("")?;
         let mut s = s
             .split("PoolByteArray( ")
             .skip(1)
-            .map(|x| x.split(')').next().unwrap())
+            .map(|x| x.split(')').next())
             .map(|x| {
-                x.split(',')
-                    .map(|x| str::parse::<u8>(x.trim()))
-                    .map(|x| x.unwrap())
-                    .collect::<Vec<_>>()
+                x.map(|x| {
+                    x.split(',')
+                        .map(|x| str::parse::<u8>(x.trim()))
+                        .collect::<Result<Vec<_>, _>>()
+                })
             });
-        let bytes = s.next().unwrap();
+        let bytes = s.next().flatten().context("")??;
         let data_bytes = &bytes[..bytes.len() - BoardFooter::SIZE];
         let footer_bytes: [u8; BoardFooter::SIZE] =
             bytes[bytes.len() - BoardFooter::SIZE..bytes.len()].try_into()?;
@@ -64,10 +66,16 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             footer.height,
         ))
     }
+    //VCB+AAAAHb9Myo1PAAAALQAAACsAAAGqAAAAAAAAHjwotS/9YDwdpQwABAIAAGZ4jv+hmFYqNUFNOD7/Lkdd/5L/Y///xmP//2KK/4D3qMAlrQEQgxGSpukSgCIIwifwCBgCGiGECargCIhACYmACIxBBB09IZ3mToLnX2tjIKAdvqEBfGCkCXpwXDJ+nltWvplc/gWCP3dH/9HAM+NT1ZqRe5bHyvYMvZhEYGfoVOYAue/g84thtvgbPrZD3E4k8+5E6gE7GfTcGXaeO0PHc6bh+dye6pk4gxuBTYay0lwGNwKbDDjTQUQxXxkEteyejbf0uFKbBOYZ1dE02tHh6WQ5/mcyzQaqjXBODbb6tIYyB4m7SimDvYMT0nBUm2scv3xn6/PR7fm7oxsN4zUZy+zKKpKnxemKQxTb7Dk4UZyj7d2hi3ANdL5GfQV/+2I/oPEDb3r52E4BqLCvOzqNBA79bu+/rabx1jIsIt6Q+SMsUZfePzZMWpJ7W1BhYVb+tIYp81u7pwCnPpnWbomvXa0bsk9vxP7F6i7tq+Am4mvGirnFB93gqfOu0Vob5gK7IpDZK/1R7cTQcbo5CgkAAAAfAAAAAQAAHjwotS/9YDwdTQAAEAAAAQA33gMsAAAAHwAAAAIAAB48KLUv/WA8HU0AABAAAAEAN94DLA==
     fn make_plain_board_from_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
+        let parsed = json::parse(s)?;
+        let world_str: &json::JsonValue = &parsed["layers"][0];
 
-        
-        todo!()
+        if let json::JsonValue::String(data) = world_str {
+            todo!();
+        } else {
+            panic!()
+        }
     }
     fn make_board_from_blueprint(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
         Ok(VcbBoard::new(
