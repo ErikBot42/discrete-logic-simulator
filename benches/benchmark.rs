@@ -56,28 +56,31 @@ fn bench_pre_parsed<const STRATEGY: u8>(
     c_run.finish();
 }
 
-fn criterion_benchmark_parsing(c: &mut Criterion) {
-    use logic_simulator::logic::UpdateStrategy;
-    let input = input_data();
-    let mut c_run = c.benchmark_group("parsing");
+fn bench_parsing<const STRATEGY: u8>(
+    group_name: &'static str,
+    c: &mut Criterion,
+    input: &[(&'static str, &'static str)],
+) {
+    let mut c_run = c.benchmark_group(group_name);
     for (name, data) in input {
-        c_run.bench_function(name, |b| {
-            b.iter(|| {
-                black_box(
-                    VcbParser::<{ UpdateStrategy::Reference as u8 }>::parse_to_board(
-                        black_box(data),
-                        true,
-                    ),
-                )
-            })
+        c_run.bench_function(*name, |b| {
+            b.iter(|| black_box(VcbParser::<STRATEGY>::parse_to_board(black_box(data), true)))
         });
     }
     c_run.finish();
 }
 
+fn criterion_benchmark_parsing(c: &mut Criterion) {
+    use logic_simulator::logic::UpdateStrategy;
+    let input = input_data();
+    bench_parsing::<{ UpdateStrategy::Reference as u8 }>("parse_reference", c, &input);
+    bench_parsing::<{ UpdateStrategy::Simd as u8 }>("parse_simd", c, &input);
+    bench_parsing::<{ UpdateStrategy::ScalarSimd as u8 }>("parse_scalar", c, &input);
+}
+
 criterion_group!(
     benches,
-    criterion_benchmark_parsing,
-    criterion_benchmark_runtime
+    criterion_benchmark_runtime,
+    criterion_benchmark_parsing
 );
 criterion_main!(benches);
