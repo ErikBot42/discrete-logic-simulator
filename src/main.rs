@@ -42,15 +42,24 @@ pub enum RunMode {
 /// Logic simulator, currently the VCB blueprints are implemented.
 #[deny(missing_docs)]
 pub struct Args {
+    
     /// Filepath to VCB blueprint string
     #[arg(short = 'f', long, group = "blueprint")]
     pub blueprint_file: Option<PathBuf>,
+    
+    /// Filepath to legacy VCB blueprint string
+    #[arg(long, group = "blueprint")]
+    pub blueprint_file_legacy: Option<PathBuf>,
 
     /// VCB blueprint string
     #[arg(short = 'b', long, group = "blueprint")]
     pub blueprint_string: Option<String>,
 
-    /// Filepath to legacy VCB world
+    /// legacy VCB blueprint string
+    #[arg(long, group = "blueprint")]
+    pub blueprint_string_legacy: Option<String>,
+
+    /// Filepath to VCB world
     #[arg(short = 'w', long, group = "blueprint")]
     pub world_file: Option<PathBuf>,
 
@@ -82,10 +91,10 @@ fn main() {
 
     let read_file = |s: PathBuf| read_to_string(s).expect("File should exist");
     let parser_input: VcbParseInput = args
-        .blueprint_string
+        .blueprint_string_legacy
         .clone()
-        .or(args.blueprint_file.clone().map(read_file))
-        .map(VcbParseInput::VcbBlueprint)
+        .or(args.blueprint_file_legacy.clone().map(read_file))
+        .map(VcbParseInput::VcbBlueprintLegacy)
         .or(args
             .world_file_legacy
             .clone()

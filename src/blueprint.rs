@@ -10,6 +10,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 pub enum VcbParseInput {
+    VcbBlueprintLegacy(String),
     VcbBlueprint(String),
     VcbWorldLegacy(String),
     VcbWorld(String),
@@ -77,15 +78,21 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             panic!()
         }
     }
-    fn make_board_from_blueprint(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
+
+    fn make_board_from_legacy_blueprint(
+        data: &str,
+        optimize: bool,
+    ) -> anyhow::Result<VcbBoard<STRATEGY>> {
         Ok(VcbBoard::new(
             Self::make_plain_board_from_blueprint(data)?,
             optimize,
         ))
     }
+    #[must_use]
     pub fn parse(input: VcbParseInput, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
         let plain_board = match input {
-            VcbParseInput::VcbBlueprint(b) => Self::make_plain_board_from_blueprint(&b)?,
+            VcbParseInput::VcbBlueprintLegacy(b) => Self::make_plain_board_from_blueprint(&b)?,
+            VcbParseInput::VcbBlueprint(b) => todo!(),
             VcbParseInput::VcbWorldLegacy(w) => Self::make_plain_board_from_legacy_world(&w)?,
             VcbParseInput::VcbWorld(w) => Self::make_plain_board_from_world(&w)?,
         };
@@ -95,11 +102,13 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
     /// # Panics
     /// invalid base64 string, invalid zstd, invalid colors
     #[must_use]
+    #[deprecated(note = "use parse instead, it is more general")]
     pub fn parse_to_board(data: &str, optimize: bool) -> VcbBoard<STRATEGY> {
-        Self::make_board_from_blueprint(data, optimize).unwrap()
+        Self::make_board_from_legacy_blueprint(data, optimize).unwrap()
     }
+    #[deprecated(note = "use parse instead, it is more general")]
     pub fn try_parse_to_board(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
-        Self::make_board_from_blueprint(data, optimize)
+        Self::make_board_from_legacy_blueprint(data, optimize)
     }
 }
 
