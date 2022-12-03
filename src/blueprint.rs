@@ -1,6 +1,7 @@
 #![allow(clippy::cast_sign_loss)]
 
 use crate::logic::{CompiledNetwork, GateNetwork, GateType};
+use anyhow::{anyhow, Context};
 use crossterm::style::{Color, Colors, Print, ResetColor, SetColors, Stylize};
 use crossterm::QueueableCommand;
 use std::collections::BTreeSet;
@@ -8,6 +9,7 @@ use std::io::{stdout, Write};
 use std::mem::size_of;
 use std::thread::sleep;
 use std::time::Duration;
+use zstd::bulk::decompress;
 
 pub enum VcbParseInput {
     VcbBlueprintLegacy(String),
@@ -18,14 +20,14 @@ pub enum VcbParseInput {
 #[derive(Default)]
 pub struct VcbParser<const STRATEGY: u8> {}
 impl<const STRATEGY: u8> VcbParser<STRATEGY> {
-    fn make_plain_board_from_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
+    fn make_plain_board_from_legacy_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
         let bytes = base64::decode_config(data.trim(), base64::STANDARD)?;
         let data_bytes = &bytes[..bytes.len() - BlueprintFooter::SIZE];
         let footer_bytes: [u8; BlueprintFooter::SIZE] =
             bytes[bytes.len() - BlueprintFooter::SIZE..bytes.len()].try_into()?;
         let footer = BlueprintFooter::from_bytes(footer_bytes);
         assert!(footer.layer == Layer::Logic);
-        let data = zstd::bulk::decompress(data_bytes, 1 << 27)?;
+        let data = decompress(data_bytes, 1 << 27)?;
         assert!(!data.is_empty());
         assert!(data.len() == footer.count * 4);
         Ok(VcbPlainBoard::from_color_data(
@@ -34,8 +36,33 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             footer.height,
         ))
     }
+    fn make_plain_board_from_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
+        dbg!(&data);
+        assert!(&data[0..4] == "VCB+");
+        let bytes = base64::decode_config(data.trim(), base64::STANDARD)?;
+        let mut bytes_iter = bytes.iter();
+        let header = dbg!(BlueprintHeader::try_from_bytes(&mut bytes_iter).context("")?);
+        loop {
+            if bytes.len() == 0 {
+                break Err(anyhow!("out of bytes in blueprint string"));
+            }
+            let block_header =
+                dbg!(BlueprintBlockHeader::try_from_bytes(&mut bytes_iter).context("")?);
+            let (color_bytes, bytes) = bytes_iter
+                .as_slice()
+                .split_at(block_header.block_size as usize - BlueprintBlockHeader::SIZE);
+            bytes_iter = bytes.iter();
+            if block_header.layer == Layer::Logic {
+                let color_data = decompress(color_bytes, 1 << 27).unwrap();
+                break Ok(VcbPlainBoard::from_color_data(
+                    &color_data,
+                    header.width as usize,
+                    header.height as usize,
+                ));
+            }
+        }
+    }
     fn make_plain_board_from_legacy_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
-        use anyhow::Context;
         // Godot uses a custom format, tscn, which cannot be parsed with a json formatter
         let maybe_json = s.split("data = ").nth(1).context("")?;
         let s = maybe_json.split("\"layers\": [").nth(1).context("")?;
@@ -56,7 +83,7 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         let footer_bytes: [u8; BoardFooter::SIZE] =
             bytes[bytes.len() - BoardFooter::SIZE..bytes.len()].try_into()?;
         let footer = dbg!(BoardFooter::from_bytes(footer_bytes));
-        let data = zstd::bulk::decompress(data_bytes, 1 << 27)?;
+        let data = decompress(data_bytes, 1 << 27)?;
 
         assert_eq!(footer.width, 2048);
         assert_eq!(footer.height, 2048);
@@ -67,15 +94,23 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             footer.height,
         ))
     }
-    //VCB+AAAAHb9Myo1PAAAALQAAACsAAAGqAAAAAAAAHjwotS/9YDwdpQwABAIAAGZ4jv+hmFYqNUFNOD7/Lkdd/5L/Y///xmP//2KK/4D3qMAlrQEQgxGSpukSgCIIwifwCBgCGiGECargCIhACYmACIxBBB09IZ3mToLnX2tjIKAdvqEBfGCkCXpwXDJ+nltWvplc/gWCP3dH/9HAM+NT1ZqRe5bHyvYMvZhEYGfoVOYAue/g84thtvgbPrZD3E4k8+5E6gE7GfTcGXaeO0PHc6bh+dye6pk4gxuBTYay0lwGNwKbDDjTQUQxXxkEteyejbf0uFKbBOYZ1dE02tHh6WQ5/mcyzQaqjXBODbb6tIYyB4m7SimDvYMT0nBUm2scv3xn6/PR7fm7oxsN4zUZy+zKKpKnxemKQxTb7Dk4UZyj7d2hi3ANdL5GfQV/+2I/oPEDb3r52E4BqLCvOzqNBA79bu+/rabx1jIsIt6Q+SMsUZfePzZMWpJ7W1BhYVb+tIYp81u7pwCnPpnWbomvXa0bsk9vxP7F6i7tq+Am4mvGirnFB93gqfOu0Vob5gK7IpDZK/1R7cTQcbo5CgkAAAAfAAAAAQAAHjwotS/9YDwdTQAAEAAAAQA33gMsAAAAHwAAAAIAAB48KLUv/WA8HU0AABAAAAEAN94DLA==
+    // VCB+AAAAHb9Myo1PAAAALQAAACsAAAGqAAAAAAAAHjwotS/9YDwdpQwABAIAAGZ4jv+hmFYqNUFNOD7/Lkdd/5L/Y///xmP//2KK/4D3qMAlrQEQgxGSpukSgCIIwifwCBgCGiGECargCIhACYmACIxBBB09IZ3mToLnX2tjIKAdvqEBfGCkCXpwXDJ+nltWvplc/gWCP3dH/9HAM+NT1ZqRe5bHyvYMvZhEYGfoVOYAue/g84thtvgbPrZD3E4k8+5E6gE7GfTcGXaeO0PHc6bh+dye6pk4gxuBTYay0lwGNwKbDDjTQUQxXxkEteyejbf0uFKbBOYZ1dE02tHh6WQ5/mcyzQaqjXBODbb6tIYyB4m7SimDvYMT0nBUm2scv3xn6/PR7fm7oxsN4zUZy+zKKpKnxemKQxTb7Dk4UZyj7d2hi3ANdL5GfQV/+2I/oPEDb3r52E4BqLCvOzqNBA79bu+/rabx1jIsIt6Q+SMsUZfePzZMWpJ7W1BhYVb+tIYp81u7pwCnPpnWbomvXa0bsk9vxP7F6i7tq+Am4mvGirnFB93gqfOu0Vob5gK7IpDZK/1R7cTQcbo5CgkAAAAfAAAAAQAAHjwotS/9YDwdTQAAEAAAAQA33gMsAAAAHwAAAAIAAB48KLUv/WA8HU0AABAAAAEAN94DLA==
     fn make_plain_board_from_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
         let parsed = json::parse(s)?;
         let world_str: &json::JsonValue = &parsed["layers"][0];
 
         if let json::JsonValue::String(data) = world_str {
-            todo!();
+            let bytes = base64::decode_config(data.trim(), base64::STANDARD)?;
+            let (color_data, footer_bytes) = bytes.split_at(bytes.len() - 24);
+            let data = decompress(color_data, 1 << 27)?;
+            let footer = BoardFooter::from_bytes(footer_bytes.try_into().context("")?);
+            Ok(VcbPlainBoard::from_color_data(
+                &data,
+                footer.width,
+                footer.height,
+            ))
         } else {
-            panic!()
+            Err(anyhow!("json parsing went wrong"))
         }
     }
 
@@ -84,15 +119,17 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         optimize: bool,
     ) -> anyhow::Result<VcbBoard<STRATEGY>> {
         Ok(VcbBoard::new(
-            Self::make_plain_board_from_blueprint(data)?,
+            Self::make_plain_board_from_legacy_blueprint(data)?,
             optimize,
         ))
     }
     #[must_use]
     pub fn parse(input: VcbParseInput, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
         let plain_board = match input {
-            VcbParseInput::VcbBlueprintLegacy(b) => Self::make_plain_board_from_blueprint(&b)?,
-            VcbParseInput::VcbBlueprint(b) => todo!(),
+            VcbParseInput::VcbBlueprintLegacy(b) => {
+                Self::make_plain_board_from_legacy_blueprint(&b)?
+            },
+            VcbParseInput::VcbBlueprint(b) => Self::make_plain_board_from_blueprint(&b)?,
             VcbParseInput::VcbWorldLegacy(w) => Self::make_plain_board_from_legacy_world(&w)?,
             VcbParseInput::VcbWorld(w) => Self::make_plain_board_from_world(&w)?,
         };
@@ -109,6 +146,76 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
     #[deprecated(note = "use parse instead, it is more general")]
     pub fn try_parse_to_board(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
         Self::make_board_from_legacy_blueprint(data, optimize)
+    }
+}
+
+// New blueprints start with "VCB+".
+// Bytes are in big-endian order.
+//
+// # Header
+// 3-byte blueprint identifier (VCB+)
+// 3-byte blueprint version
+// 6-byte checksum (truncated SHA-1) of the remaining characters of the blueprint string
+// 4-byte width
+// 4-byte height
+//
+// 20 bytes???
+#[derive(Debug, Default)]
+#[repr(C)]
+struct BlueprintHeader {
+    identifier: [u8; 3],
+    version: [u8; 3],
+    checksum: [u8; 6],
+    width: usize,
+    height: usize,
+}
+impl BlueprintHeader {
+    fn try_from_bytes<'a>(data: &mut impl Iterator<Item = &'a u8>) -> Option<Self> {
+        let mut n = || data.next().map(|x| *x);
+        let identifier = [n()?, n()?, n()?];
+        let version = [n()?, n()?, n()?];
+        let checksum = [n()?, n()?, n()?, n()?, n()?, n()?];
+        let width = u32::from_be_bytes([n()?, n()?, n()?, n()?]) as usize;
+        let height = u32::from_be_bytes([n()?, n()?, n()?, n()?]) as usize;
+        Some(Self {
+            identifier,
+            version,
+            checksum,
+            width,
+            height,
+        })
+    }
+}
+
+// # Layer Block(s)
+// 4-byte block size
+// 4-byte layer id (Logic = 0, Deco On = 1, Deco Off = 2)
+// 4-byte uncompressed buffer size
+// N-byte zstd-compressed RGBA8 buffer
+//
+#[derive(Debug)]
+struct BlueprintBlockHeader {
+    block_size: u32,
+    layer: Layer,
+    buffer_size_uncompressed: u32,
+}
+impl BlueprintBlockHeader {
+    const SIZE: usize = size_of::<u32>() + size_of::<u32>() + size_of::<u32>();
+    fn try_from_bytes<'a>(data: &mut impl Iterator<Item = &'a u8>) -> Option<Self> {
+        let mut n = || data.next().map(|x| *x);
+        let block_size = u32::from_be_bytes([n()?, n()?, n()?, n()?]);
+        let layer = match u32::from_be_bytes([n()?, n()?, n()?, n()?]) {
+            0 => Some(Layer::Logic),
+            1 => Some(Layer::On),
+            2 => Some(Layer::Off),
+            _ => None,
+        }?;
+        let buffer_size_uncompressed = u32::from_be_bytes([n()?, n()?, n()?, n()?]);
+        Some(Self {
+            block_size,
+            layer,
+            buffer_size_uncompressed,
+        })
     }
 }
 
@@ -867,7 +974,7 @@ impl Trace {
             vcb_colors::COLOR_LED        => Trace::Led,
             vcb_colors::COLOR_ANNOTATION => Trace::Annotation,
             vcb_colors::COLOR_FILLER     => Trace::Filler,
-            _ => panic!("Invalid trace color"),
+            _ => panic!("Invalid trace color {color:?}"),
         }
     }
     fn is_wire(self) -> bool {

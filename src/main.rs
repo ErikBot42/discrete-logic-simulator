@@ -10,7 +10,7 @@ use logic_simulator::logic::UpdateStrategy;
 use std::fs::read_to_string;
 use std::io::stdout;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 #[deny(missing_docs)]
@@ -126,7 +126,9 @@ fn main() {
 }
 
 fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbParseInput) {
+    let now = Instant::now();
     let mut board = { VcbParser::<STRATEGY>::parse(parser_input, true).unwrap() };
+    println!("Parsed board in {:?}", now.elapsed());
     match args.mode {
         RunMode::Gif => board.print_to_gif(),
         RunMode::Clip => board.print_to_clipboard(),
@@ -187,6 +189,7 @@ fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbParseInput) {
             println!("ms/iteration: {millisecond_per_iteration}");
             println!("μs/iteration: {microsecond_per_iteration}");
             println!("ns/iteration: {nanosecond_per_iteration}");
+            println!("TPS: {}", iterations_per_second);
             println!(
                 "iteration/s: {} million",
                 iterations_per_second / 1_000_000.0
