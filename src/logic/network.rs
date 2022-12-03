@@ -68,7 +68,6 @@ impl InitializedNetwork {
     }
     fn create_from(network: EditableNetwork, optimize: bool) -> Self {
         assert_ne!(network.gates.len(), 0, "no gates where added.");
-        network.print_info();
 
         let mut new_network = InitializedNetwork {
             translation_table: (0..network.gates.len())
@@ -79,7 +78,6 @@ impl InitializedNetwork {
         };
         if optimize {
             new_network = new_network.optimized();
-            new_network.print_info();
         }
         assert_ne!(new_network.gates.len(), 0, "optimization removed all gates");
         new_network
