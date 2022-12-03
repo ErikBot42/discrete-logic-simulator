@@ -482,7 +482,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             // add edges to network
             for (i, node) in nodes.iter().enumerate() {
                 for input in &node.inputs {
-                    debug_assert!(nodes[*input].outputs.contains(&i));
+                    assert!(nodes[*input].outputs.contains(&i));
                 }
                 let mut inputs: Vec<usize> = node
                     .inputs
@@ -512,11 +512,11 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         } else {
             connection
         };
-        debug_assert!(start != end);
+        assert!(start != end);
         let a = nodes[start].inputs.insert(end);
         let b = nodes[end].outputs.insert(start);
-        debug_assert!(a == b);
-        debug_assert_ne!(
+        assert!(a == b);
+        assert_ne!(
             nodes[start].kind == GateType::Cluster,
             nodes[end].kind == GateType::Cluster
         );
@@ -528,11 +528,11 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     fn fill_id(elements: &mut Vec<BoardElement>, width: i32, this_x: i32, id: usize) {
         let this = &mut elements[this_x as usize];
         let this_kind = this.kind;
-        debug_assert!(this_kind.is_logic());
+        assert!(this_kind.is_logic());
         match this.id {
             None => this.id = Some(id),
             Some(this_id) => {
-                debug_assert_eq!(this_id, id);
+                assert_eq!(this_id, id);
                 return;
             },
         }
@@ -563,8 +563,8 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     ) {
         let this = &mut elements[TryInto::<usize>::try_into(this_x).unwrap()];
         let this_kind = this.kind;
-        debug_assert!(this_kind.is_gate());
-        debug_assert!(this.id.is_some());
+        assert!(this_kind.is_gate());
+        assert!(this.id.is_some());
 
         //let width: i32 = self.width.try_into().unwrap();
         'side: for dx in [1, -1, width, -width] {
@@ -593,7 +593,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         this_x: i32,
     ) -> usize {
         let this = &elements[TryInto::<usize>::try_into(this_x).unwrap()];
-        debug_assert!(this.kind.is_logic());
+        assert!(this.kind.is_logic());
 
         // create a new id.
         let this_id = nodes.len();
@@ -627,7 +627,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             Self::add_new_id(elements, nodes, width, this_x)
         });
 
-        debug_assert!(this_kind.is_logic());
+        assert!(this_kind.is_logic());
         if !this_kind.is_gate() {
             return;
         }

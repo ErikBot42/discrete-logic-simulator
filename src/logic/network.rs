@@ -340,8 +340,8 @@ pub(crate) struct EditableNetwork {
     pub(crate) gates: Vec<Gate>,
 }
 impl EditableNetwork {
-    pub(crate) fn initialized(&self, optimize: bool) -> InitializedNetwork {
-        InitializedNetwork::create_from(self.clone(), optimize)
+    pub(crate) fn initialized(self, optimize: bool) -> InitializedNetwork {
+        InitializedNetwork::create_from(self, optimize)
     }
 }
 
@@ -403,7 +403,7 @@ impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
     /// # Panics
     /// Should not panic.
     #[must_use]
-    pub(crate) fn compiled(&self, optimize: bool) -> CompiledNetwork<{ STRATEGY }> {
+    pub(crate) fn compiled(self, optimize: bool) -> CompiledNetwork<{ STRATEGY }> {
         CompiledNetwork::create(
             self.network
                 .initialized(optimize)
