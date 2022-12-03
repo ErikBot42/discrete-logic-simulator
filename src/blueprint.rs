@@ -8,13 +8,19 @@ use std::collections::BTreeSet;
 use std::io::{stdout, Write};
 use std::mem::size_of;
 use std::thread::sleep;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 fn zstd_decompress(data: &[u8]) -> std::io::Result<Vec<u8>> {
-    zstd::bulk::decompress(data, 1 << 27)
+    let now = Instant::now();
+    let decompressed = zstd::bulk::decompress(data, 1 << 27);
+    println!("zstd decompress in: {:?}", now.elapsed());
+    decompressed
 }
 fn base64_decode(data: &str) -> Result<Vec<u8>, base64::DecodeError> {
-    base64::decode_config(data.trim(), base64::STANDARD)
+    let now = Instant::now();
+    let decoded = base64::decode_config(data.trim(), base64::STANDARD);
+    println!("base64 decode in: {:?}", now.elapsed());
+    decoded
 }
 
 pub enum VcbParseInput {
