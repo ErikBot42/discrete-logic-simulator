@@ -335,7 +335,7 @@ impl InitializedNetwork {
 /// This network has no gaps in it's layout.
 /// This network can be edited from client code.
 /// Nodes cannot be removed.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub(crate) struct EditableNetwork {
     pub(crate) gates: Vec<Gate>,
 }
@@ -346,7 +346,7 @@ impl EditableNetwork {
 }
 
 /// The API for creating a gate network.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub(crate) struct GateNetwork<const STRATEGY: u8> {
     network: EditableNetwork,
 }
