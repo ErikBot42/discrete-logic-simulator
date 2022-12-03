@@ -148,9 +148,11 @@ impl InitializedNetwork {
     /// and a translation back to the old ids.
     /// O(n)
     fn create_nodes_optimized_from(old_gates: &[Gate]) -> (Vec<Gate>, Vec<IndexType>) {
-        let mut new_gates: Vec<Gate> = Vec::new();
-        let mut old_to_new_id: Vec<IndexType> = Vec::new();
-        let mut gate_key_to_new_id: HashMap<GateKey, usize> = HashMap::new();
+        let estimate_gates = old_gates.len();
+        let mut new_gates: Vec<Gate> = Vec::with_capacity(estimate_gates);
+        let mut old_to_new_id: Vec<IndexType> = Vec::with_capacity(estimate_gates);
+        let mut gate_key_to_new_id: HashMap<GateKey, usize> =
+            HashMap::with_capacity(estimate_gates);
         for (old_gate_id, old_gate) in old_gates.iter().enumerate() {
             let key = old_gate.calc_key();
             let new_id = new_gates.len();

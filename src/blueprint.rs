@@ -8,21 +8,31 @@ use std::collections::BTreeSet;
 use std::io::{stdout, Write};
 use std::mem::size_of;
 use std::thread::sleep;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+macro_rules! timed {
+    ($block:expr, $print_str:expr) => {{
+        let now = std::time::Instant::now();
+        let a = ($block);
+        println!($print_str, now.elapsed());
+        a
+    }};
+}
 
 fn zstd_decompress(data: &[u8]) -> std::io::Result<Vec<u8>> {
-    let now = Instant::now();
-    let decompressed = zstd::bulk::decompress(data, 1 << 27);
-    println!("zstd decompress in: {:?}", now.elapsed());
-    decompressed
+    timed!(
+        { zstd::bulk::decompress(data, 1 << 27) },
+        "zstd decompress in: {:?}"
+    )
 }
 fn base64_decode(data: &str) -> Result<Vec<u8>, base64::DecodeError> {
-    let now = Instant::now();
-    let decoded = base64::decode_config(data.trim(), base64::STANDARD);
-    println!("base64 decode in: {:?}", now.elapsed());
-    decoded
+    timed!(
+        base64::decode_config(data.trim(), base64::STANDARD),
+        "base64 decode in: {:?}"
+    )
 }
 
+#[derive(Clone)]
 pub enum VcbParseInput {
     VcbBlueprintLegacy(String),
     VcbBlueprint(String),
@@ -364,16 +374,21 @@ struct VcbPlainBoard {
 impl VcbPlainBoard {
     #[must_use]
     fn from_color_data(data: &[u8], width: usize, height: usize) -> Self {
-        let traces: Vec<_> = data
-            .chunks_exact(4)
-            .map(|x| Trace::from_raw_color(x.try_into().unwrap()))
-            .collect();
-        assert_eq!(traces.len(), width * height);
-        VcbPlainBoard {
-            traces,
-            width,
-            height,
-        }
+        timed!(
+            {
+                let traces: Vec<_> = data
+                    .chunks_exact(4)
+                    .map(|x| Trace::from_raw_color(x.try_into().unwrap()))
+                    .collect();
+                assert_eq!(traces.len(), width * height);
+                VcbPlainBoard {
+                    traces,
+                    width,
+                    height,
+                }
+            },
+            "make plain board in {:?}"
+        )
     }
 }
 
@@ -437,22 +452,25 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         let num_elements = width * height;
 
         let mut nodes = Vec::new();
-        let elements = {
-            let mut elements: Vec<_> = plain_board
-                .traces
-                .into_iter()
-                .map(BoardElement::new)
-                .collect();
-            for x in 0..num_elements {
-                Self::explore(
-                    &mut elements,
-                    &mut nodes,
-                    width as i32,
-                    x.try_into().unwrap(),
-                );
-            }
-            elements
-        };
+        let elements = timed!(
+            {
+                let mut elements: Vec<_> = plain_board
+                    .traces
+                    .into_iter()
+                    .map(BoardElement::new)
+                    .collect();
+                for x in 0..num_elements {
+                    Self::explore(
+                        &mut elements,
+                        &mut nodes,
+                        width as i32,
+                        x.try_into().unwrap(),
+                    );
+                }
+                elements
+            },
+            "create elements: {:?}"
+        );
 
         let network = {
             let mut network = GateNetwork::default();
@@ -479,7 +497,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             network
         };
 
-        let compiled_network = network.compiled(optimize);
+        let compiled_network = timed! { network.compiled(optimize), "compiled network in: {:?}"};
         VcbBoard {
             elements,
             nodes,
@@ -587,6 +605,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     }
 
     // this HAS to be recursive since gates have arbitrary shapes.
+    #[inline]
     fn explore(
         elements: &mut Vec<BoardElement>,
         nodes: &mut Vec<BoardNode>,
