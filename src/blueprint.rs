@@ -11,6 +11,7 @@ use std::time::Duration;
 
 pub enum VcbParseInput {
     VcbBlueprint(String),
+    VcbWorldLegacy(String),
     VcbWorld(String),
 }
 #[derive(Default)]
@@ -32,7 +33,7 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             footer.height,
         ))
     }
-    fn make_plain_board_from_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
+    fn make_plain_board_from_legacy_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
         // Godot uses a custom format, tscn, which cannot be parsed with a json formatter
         let maybe_json = s.split("data = ").nth(1).unwrap();
         let s = maybe_json.split("\"layers\": [").nth(1).unwrap();
@@ -63,6 +64,11 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             footer.height,
         ))
     }
+    fn make_plain_board_from_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
+
+        
+        todo!()
+    }
     fn make_board_from_blueprint(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
         Ok(VcbBoard::new(
             Self::make_plain_board_from_blueprint(data)?,
@@ -72,6 +78,7 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
     pub fn parse(input: VcbParseInput, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
         let plain_board = match input {
             VcbParseInput::VcbBlueprint(b) => Self::make_plain_board_from_blueprint(&b)?,
+            VcbParseInput::VcbWorldLegacy(w) => Self::make_plain_board_from_legacy_world(&w)?,
             VcbParseInput::VcbWorld(w) => Self::make_plain_board_from_world(&w)?,
         };
         {};

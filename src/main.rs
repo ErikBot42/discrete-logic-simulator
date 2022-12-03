@@ -50,9 +50,13 @@ pub struct Args {
     #[arg(short = 'b', long, group = "blueprint")]
     pub blueprint_string: Option<String>,
 
-    /// Filepath to VCB world
+    /// Filepath to legacy VCB world
     #[arg(short = 'w', long, group = "blueprint")]
     pub world_file: Option<PathBuf>,
+
+    /// Filepath to legacy VCB world
+    #[arg(long, group = "blueprint")]
+    pub world_file_legacy: Option<PathBuf>,
 
     /// What mode to run the program in
     #[arg(value_enum, requires = "blueprint")]
@@ -83,6 +87,11 @@ fn main() {
         .or(args.blueprint_file.clone().map(read_file))
         .map(VcbParseInput::VcbBlueprint)
         .or(args
+            .world_file_legacy
+            .clone()
+            .map(read_file)
+            .map(VcbParseInput::VcbWorldLegacy))
+        .or(args
             .world_file
             .clone()
             .map(read_file)
@@ -92,12 +101,14 @@ fn main() {
     // branch to specific type here to remove overhead later.
     match args.implementation {
         UpdateStrategy::Reference => {
-            handle_board::<{ UpdateStrategy::Reference as u8 }>(&args, parser_input)
+            handle_board::<{ UpdateStrategy::Reference as u8 }>(&args, parser_input);
         },
         UpdateStrategy::ScalarSimd => {
-            handle_board::<{ UpdateStrategy::ScalarSimd as u8 }>(&args, parser_input)
+            handle_board::<{ UpdateStrategy::ScalarSimd as u8 }>(&args, parser_input);
         },
-        UpdateStrategy::Simd => handle_board::<{ UpdateStrategy::Simd as u8 }>(&args, parser_input),
+        UpdateStrategy::Simd => {
+            handle_board::<{ UpdateStrategy::Simd as u8 }>(&args, parser_input);
+        },
     }
 }
 

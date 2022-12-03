@@ -1243,7 +1243,7 @@ impl<const STRATEGY: u8> LogicSim for CompiledNetwork<STRATEGY> {
     }
 
     fn update(&mut self) {
-        self.update()
+        self.update();
     }
 
     fn to_internal_id(&self, gate_id: usize) -> usize {
