@@ -30,6 +30,8 @@ pub enum RunMode {
     Clip,
     /// Make an animated gif of the board
     Gif,
+    /// Only parse board
+    Parse,
 }
 
 #[derive(Parser, Debug)]
@@ -130,6 +132,7 @@ fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbParseInput) {
     let mut board = { VcbParser::<STRATEGY>::parse(parser_input, true).unwrap() };
     println!("Parsed board in {:?}", now.elapsed());
     match args.mode {
+        RunMode::Parse => (),
         RunMode::Gif => board.print_to_gif(),
         RunMode::Clip => board.print_to_clipboard(),
         RunMode::Emoji => board.print_regular_emoji(args.legend),
@@ -180,12 +183,13 @@ fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbParseInput) {
             (0..iterations).for_each(|_| {
                 board.update();
             });
+            let elapsed_raw = now.elapsed();
             let elapsed = now.elapsed().as_millis() as f32 / 1000.0;
             let millisecond_per_iteration = elapsed / iterations_f32 * 1000.0;
             let microsecond_per_iteration = millisecond_per_iteration * 1000.0;
             let nanosecond_per_iteration = microsecond_per_iteration * 1000.0;
             let iterations_per_second = iterations_f32 / elapsed;
-            println!("Elapsed: {elapsed} seconds");
+            println!("Elapsed: {elapsed_raw:?}");
             println!("ms/iteration: {millisecond_per_iteration}");
             println!("μs/iteration: {microsecond_per_iteration}");
             println!("ns/iteration: {nanosecond_per_iteration}");

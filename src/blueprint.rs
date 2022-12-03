@@ -9,7 +9,13 @@ use std::io::{stdout, Write};
 use std::mem::size_of;
 use std::thread::sleep;
 use std::time::Duration;
-use zstd::bulk::decompress;
+
+fn zstd_decompress(data: &[u8]) -> std::io::Result<Vec<u8>> {
+    zstd::bulk::decompress(data, 1 << 27)
+}
+fn base64_decode(data: &str) -> Result<Vec<u8>, base64::DecodeError> {
+    base64::decode_config(data.trim(), base64::STANDARD)
+}
 
 pub enum VcbParseInput {
     VcbBlueprintLegacy(String),
@@ -21,13 +27,13 @@ pub enum VcbParseInput {
 pub struct VcbParser<const STRATEGY: u8> {}
 impl<const STRATEGY: u8> VcbParser<STRATEGY> {
     fn make_plain_board_from_legacy_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
-        let bytes = base64::decode_config(data.trim(), base64::STANDARD)?;
+        let bytes = base64_decode(data)?;
         let data_bytes = &bytes[..bytes.len() - BlueprintFooter::SIZE];
         let footer_bytes: [u8; BlueprintFooter::SIZE] =
             bytes[bytes.len() - BlueprintFooter::SIZE..bytes.len()].try_into()?;
         let footer = BlueprintFooter::from_bytes(footer_bytes);
         assert!(footer.layer == Layer::Logic);
-        let data = decompress(data_bytes, 1 << 27)?;
+        let data = zstd_decompress(data_bytes)?;
         assert!(!data.is_empty());
         assert!(data.len() == footer.count * 4);
         Ok(VcbPlainBoard::from_color_data(
@@ -39,7 +45,7 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
     fn make_plain_board_from_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
         dbg!(&data);
         assert!(&data[0..4] == "VCB+");
-        let bytes = base64::decode_config(data.trim(), base64::STANDARD)?;
+        let bytes = base64_decode(data)?;
         let mut bytes_iter = bytes.iter();
         let header = dbg!(BlueprintHeader::try_from_bytes(&mut bytes_iter).context("")?);
         loop {
@@ -53,7 +59,7 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
                 .split_at(block_header.block_size as usize - BlueprintBlockHeader::SIZE);
             bytes_iter = bytes.iter();
             if block_header.layer == Layer::Logic {
-                let color_data = decompress(color_bytes, 1 << 27).unwrap();
+                let color_data = zstd_decompress(color_bytes).unwrap();
                 break Ok(VcbPlainBoard::from_color_data(
                     &color_data,
                     header.width as usize,
@@ -83,7 +89,7 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         let footer_bytes: [u8; BoardFooter::SIZE] =
             bytes[bytes.len() - BoardFooter::SIZE..bytes.len()].try_into()?;
         let footer = dbg!(BoardFooter::from_bytes(footer_bytes));
-        let data = decompress(data_bytes, 1 << 27)?;
+        let data = zstd_decompress(data_bytes)?;
 
         assert_eq!(footer.width, 2048);
         assert_eq!(footer.height, 2048);
@@ -94,15 +100,14 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             footer.height,
         ))
     }
-    // VCB+AAAAHb9Myo1PAAAALQAAACsAAAGqAAAAAAAAHjwotS/9YDwdpQwABAIAAGZ4jv+hmFYqNUFNOD7/Lkdd/5L/Y///xmP//2KK/4D3qMAlrQEQgxGSpukSgCIIwifwCBgCGiGECargCIhACYmACIxBBB09IZ3mToLnX2tjIKAdvqEBfGCkCXpwXDJ+nltWvplc/gWCP3dH/9HAM+NT1ZqRe5bHyvYMvZhEYGfoVOYAue/g84thtvgbPrZD3E4k8+5E6gE7GfTcGXaeO0PHc6bh+dye6pk4gxuBTYay0lwGNwKbDDjTQUQxXxkEteyejbf0uFKbBOYZ1dE02tHh6WQ5/mcyzQaqjXBODbb6tIYyB4m7SimDvYMT0nBUm2scv3xn6/PR7fm7oxsN4zUZy+zKKpKnxemKQxTb7Dk4UZyj7d2hi3ANdL5GfQV/+2I/oPEDb3r52E4BqLCvOzqNBA79bu+/rabx1jIsIt6Q+SMsUZfePzZMWpJ7W1BhYVb+tIYp81u7pwCnPpnWbomvXa0bsk9vxP7F6i7tq+Am4mvGirnFB93gqfOu0Vob5gK7IpDZK/1R7cTQcbo5CgkAAAAfAAAAAQAAHjwotS/9YDwdTQAAEAAAAQA33gMsAAAAHwAAAAIAAB48KLUv/WA8HU0AABAAAAEAN94DLA==
     fn make_plain_board_from_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
         let parsed = json::parse(s)?;
         let world_str: &json::JsonValue = &parsed["layers"][0];
 
         if let json::JsonValue::String(data) = world_str {
-            let bytes = base64::decode_config(data.trim(), base64::STANDARD)?;
+            let bytes = base64_decode(data)?;
             let (color_data, footer_bytes) = bytes.split_at(bytes.len() - 24);
-            let data = decompress(color_data, 1 << 27)?;
+            let data = zstd_decompress(color_data)?;
             let footer = BoardFooter::from_bytes(footer_bytes.try_into().context("")?);
             Ok(VcbPlainBoard::from_color_data(
                 &data,
@@ -114,6 +119,7 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         }
     }
 
+    #[deprecated(note = "use parse instead, it is more general")]
     fn make_board_from_legacy_blueprint(
         data: &str,
         optimize: bool,
