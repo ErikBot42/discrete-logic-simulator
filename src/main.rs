@@ -1,6 +1,10 @@
 use clap::{Parser, ValueEnum};
+use crossterm::cursor::{Hide, MoveTo};
 use crossterm::execute;
-use crossterm::terminal::{ClearType, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, ClearType, DisableLineWrap, EnterAlternateScreen,
+    LeaveAlternateScreen,
+};
 use logic_simulator::blueprint::{VcbParseInput, VcbParser};
 use logic_simulator::logic::UpdateStrategy;
 use std::fs::read_to_string;
@@ -109,19 +113,13 @@ fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbParseInput) {
             board.print();
         },
         RunMode::Run => {
-            execute!(
-                stdout(),
-                EnterAlternateScreen,
-                crossterm::cursor::Hide,
-                crossterm::terminal::DisableLineWrap
-            )
-            .unwrap();
+            execute!(stdout(), EnterAlternateScreen, Hide, DisableLineWrap).unwrap();
 
             loop {
                 //use std::time::Instant;
-                execute!(stdout(), crossterm::cursor::MoveTo(0, 0),).unwrap();
+                execute!(stdout(), MoveTo(0, 0),).unwrap();
                 board.print();
-                crossterm::terminal::enable_raw_mode().unwrap();
+                enable_raw_mode().unwrap();
                 //let prev = Instant::now();
                 //while prev.elapsed().as_millis() < 16 {
                 board.update();
@@ -130,10 +128,10 @@ fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbParseInput) {
 
                 if crossterm::event::poll(Duration::from_secs(0)).unwrap() {
                     let term_event = crossterm::event::read().unwrap();
-                    crossterm::terminal::disable_raw_mode().unwrap();
+                    disable_raw_mode().unwrap();
                     match term_event {
                         crossterm::event::Event::Resize(..) => {
-                            execute!(stdout(), crossterm::terminal::Clear(ClearType::All),).unwrap()
+                            execute!(stdout(), crossterm::terminal::Clear(ClearType::All)).unwrap();
                         },
                         _ => break,
                     }
@@ -146,7 +144,7 @@ fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbParseInput) {
                 crossterm::cursor::Show,
                 crossterm::terminal::EnableLineWrap
             )
-            .unwrap()
+            .unwrap();
         },
         RunMode::Bench => {
             let iterations = args.iterations;
