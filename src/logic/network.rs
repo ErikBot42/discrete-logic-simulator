@@ -229,17 +229,22 @@ impl InitializedNetwork {
 
     /// Perform repeated optimization passes.
     fn optimized(&self) -> Self {
-        let mut prev_network_gate_count = self.gates.len();
-        let mut new_network = self.optimization_pass();
-        self.print_info();
-        loop {
-            new_network.print_info();
-            if new_network.gates.len() == prev_network_gate_count {
-                return new_network;
-            }
-            prev_network_gate_count = new_network.gates.len();
-            new_network = new_network.optimization_pass();
-        }
+        timed!(
+            {
+                let mut prev_network_gate_count = self.gates.len();
+                let mut new_network = self.optimization_pass();
+                self.print_info();
+                loop {
+                    new_network.print_info();
+                    if new_network.gates.len() == prev_network_gate_count {
+                        break new_network;
+                    }
+                    prev_network_gate_count = new_network.gates.len();
+                    new_network = new_network.optimization_pass();
+                }
+            },
+            "optimized network in: {:?}"
+        )
     }
 
     /// In order for scalar packing optimizations to be sound,

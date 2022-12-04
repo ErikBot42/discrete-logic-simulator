@@ -10,14 +10,6 @@ use std::mem::size_of;
 use std::thread::sleep;
 use std::time::Duration;
 
-macro_rules! timed {
-    ($block:expr, $print_str:expr) => {{
-        let now = std::time::Instant::now();
-        let a = ($block);
-        println!($print_str, now.elapsed());
-        a
-    }};
-}
 
 fn zstd_decompress(data: &[u8]) -> std::io::Result<Vec<u8>> {
     timed!(
@@ -805,8 +797,8 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                 println!("{iframe}/{i}");
                 let rgba: RgbaImage =
                     ImageBuffer::from_raw(self.width as u32, self.height as u32, x).unwrap();
-                let rgba: RgbaImage =
-                    imageops::resize(&rgba, image_width, image_height, imageops::Nearest);
+                //let rgba: RgbaImage =
+                //    imageops::resize(&rgba, image_width, image_height, imageops::Nearest);
                 Frame::new(rgba)
             })
             .skip(a);

@@ -7,6 +7,14 @@
 #![feature(iter_array_chunks)]
 #![feature(iter_next_chunk)]
 #![feature(is_sorted)]
+macro_rules! timed {
+    ($block:expr, $print_str:expr) => {{
+        let now = std::time::Instant::now();
+        let a = ($block);
+        println!($print_str, now.elapsed());
+        a
+    }};
+}
 macro_rules! unwrap_or_else {
     ($expression:expr, $block:expr) => {
         match $expression {
