@@ -155,13 +155,13 @@ impl InitializedNetwork {
     /// and a translation back to the old ids.
     /// O(n)
     fn create_nodes_optimized_from(old_gates: &[Gate]) -> (Vec<Gate>, Vec<IndexType>) {
-        {
-            let mut key_arr: Vec<_> = old_gates.iter().map(|g| g.calc_key()).collect();
-            key_arr.sort();
-            println!("before dedup: {}", key_arr.len());
-            key_arr.dedup();
-            println!("after dedup: {}", key_arr.len());
-        }
+        //{
+        //    let mut key_arr: Vec<_> = old_gates.iter().map(|g| g.calc_key()).collect();
+        //    key_arr.sort();
+        //    println!("before dedup: {}", key_arr.len());
+        //    key_arr.dedup();
+        //    println!("after dedup: {}", key_arr.len());
+        //}
         let estimate_gates = old_gates.len();
         let mut new_gates: Vec<Gate> = Vec::with_capacity(estimate_gates);
         let mut old_to_new_id: Vec<IndexType> = Vec::with_capacity(estimate_gates);
@@ -233,9 +233,9 @@ impl InitializedNetwork {
             {
                 let mut prev_network_gate_count = self.gates.len();
                 let mut new_network = self.optimization_pass();
-                self.print_info();
+                //self.print_info();
                 loop {
-                    new_network.print_info();
+                    //new_network.print_info();
                     if new_network.gates.len() == prev_network_gate_count {
                         break new_network;
                     }
