@@ -129,11 +129,6 @@ fn main() {
 
 fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbParseInput) {
     let now = Instant::now();
-    loop {
-        std::hint::black_box(
-            VcbParser::<STRATEGY>::parse(std::hint::black_box(parser_input.clone()), true).unwrap(),
-        );
-    }
     let mut board = { VcbParser::<STRATEGY>::parse(parser_input, true).unwrap() };
     println!("parsed entire board in {:?}", now.elapsed());
     match args.mode {

@@ -18,12 +18,19 @@ trait NetworkInfo {
             .collect();
         counts_vec.sort_unstable();
         let total_output_connections: usize = counts_vec.iter().map(|(_, count)| count).sum();
+        println!("-----");
         println!("Network info: ");
+        println!("Number of gates: {}", self.output_counts().len());
+        println!(
+            "Number of connections: {}",
+            self.output_counts().into_iter().sum::<usize>()
+        );
         println!("Output counts total: {total_output_connections}");
         println!("Number of outputs: gates with this number of outputs");
         for (value, count) in counts_vec {
             println!("{value}: {count}");
         }
+        println!("-----");
     }
 }
 impl NetworkInfo for EditableNetwork {
@@ -216,8 +223,10 @@ impl InitializedNetwork {
     /// Perform repeated optimization passes.
     fn optimized(&self) -> Self {
         let mut prev_network_gate_count = self.gates.len();
+        self.print_info();
         loop {
             let new_network = self.optimization_pass();
+            new_network.print_info();
             if new_network.gates.len() == prev_network_gate_count {
                 return new_network;
             }

@@ -337,6 +337,7 @@ impl Gate {
             },
             _ => kind,
         };
+        assert!(self.inputs.is_sorted());
         (kind, self.inputs.clone())
     }
 }
@@ -596,7 +597,8 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     /// Updates state of all gates.
     /// # Panics
     /// Not initialized (debug)
-    //#[inline(always)] //<- results in slight regression
+    #[inline(always)]
+    //
     pub(crate) fn update(&mut self) {
         //let iterations = self.i.iterations;
         //let t = Self::STRATEGY;
