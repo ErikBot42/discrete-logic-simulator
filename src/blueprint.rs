@@ -10,9 +10,11 @@ use std::mem::size_of;
 use std::thread::sleep;
 use std::time::Duration;
 
-fn zstd_decompress(data: &[u8]) -> std::io::Result<Vec<u8>> {
+const RGBA_SIZE: usize = 4;
+
+fn zstd_decompress(data: &[u8], num_traces: usize) -> std::io::Result<Vec<u8>> {
     timed!(
-        { zstd::bulk::decompress(data, 1 << 27) },
+        { zstd::bulk::decompress(data, num_traces * RGBA_SIZE) },
         "zstd decompress in: {:?}"
     )
 }
@@ -33,7 +35,7 @@ pub enum VcbParseInput {
 #[derive(Default)]
 pub struct VcbParser<const STRATEGY: u8> {}
 impl<const STRATEGY: u8> VcbParser<STRATEGY> {
-    fn make_plain_board_from_legacy_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
+    fn make_board_legacy_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
         let bytes = base64_decode(data)?;
         let data_bytes = &bytes
             .get(..bytes.len() - BlueprintFooter::SIZE)
@@ -46,30 +48,33 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         if footer.layer != Layer::Logic {
             return Err(anyhow!("Wrong blueprint layer"));
         };
-        let data = zstd_decompress(data_bytes)?;
+        let data = zstd_decompress(data_bytes, footer.count)?;
         if data.len() != footer.count * 4 {
             return Err(anyhow!("Mismatch between footer count and data length"));
         }
         VcbPlainBoard::from_color_data(&data, footer.width, footer.height)
     }
-    fn make_plain_board_from_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
-        dbg!(&data);
-        assert!(&data[0..4] == "VCB+");
+    fn make_board_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
+        if data.get(0..4).context("data too short")? != "VCB+" {
+            return Err(anyhow!("Wrong prefix"));
+        }
         let bytes = base64_decode(data)?;
         let mut bytes_iter = bytes.iter();
-        let header = dbg!(BlueprintHeader::try_from_bytes(&mut bytes_iter).context("")?);
+        let header = BlueprintHeader::try_from_bytes(&mut bytes_iter)
+            .context("Not enough bytes for header")?;
         loop {
             if bytes.len() == 0 {
                 break Err(anyhow!("out of bytes in blueprint string"));
             }
-            let block_header =
-                dbg!(BlueprintBlockHeader::try_from_bytes(&mut bytes_iter).context("")?);
+            let block_header = BlueprintBlockHeader::try_from_bytes(&mut bytes_iter)
+                .context("Not enough bytes for block header")?;
             let (color_bytes, bytes) = bytes_iter
                 .as_slice()
                 .split_at(block_header.block_size as usize - BlueprintBlockHeader::SIZE);
             bytes_iter = bytes.iter();
             if block_header.layer == Layer::Logic {
-                let color_data = zstd_decompress(color_bytes).unwrap();
+                let color_data =
+                    zstd_decompress(color_bytes, block_header.buffer_size_uncompressed)?;
                 break VcbPlainBoard::from_color_data(
                     &color_data,
                     header.width as usize,
@@ -78,7 +83,7 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
             }
         }
     }
-    fn make_plain_board_from_legacy_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
+    fn make_board_legacy_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
         // Godot uses a custom format, tscn, which cannot be parsed with a json formatter
         let maybe_json = s.split("data = ").nth(1).context("")?;
         let s = maybe_json.split("\"layers\": [").nth(1).context("")?;
@@ -95,26 +100,23 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
                 })
             });
         let bytes = s.next().flatten().context("")??;
-        let data_bytes = &bytes[..bytes.len() - BoardFooter::SIZE];
-        let footer_bytes: [u8; BoardFooter::SIZE] =
-            bytes[bytes.len() - BoardFooter::SIZE..bytes.len()].try_into()?;
-        let footer = dbg!(BoardFooter::from_bytes(footer_bytes));
-        let data = zstd_decompress(data_bytes)?;
-
-        assert_eq!(footer.width, 2048);
-        assert_eq!(footer.height, 2048);
-
+        let data_bytes = &bytes.get(..bytes.len() - BoardFooter::SIZE).context("")?;
+        let footer_bytes: [u8; BoardFooter::SIZE] = bytes
+            .get(bytes.len() - BoardFooter::SIZE..bytes.len())
+            .context("")?
+            .try_into()?;
+        let footer = BoardFooter::from_bytes(footer_bytes);
+        let data = zstd_decompress(data_bytes, footer.count)?;
         VcbPlainBoard::from_color_data(&data, footer.width, footer.height)
     }
-    fn make_plain_board_from_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
+    fn make_board_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
         let parsed = json::parse(s)?;
         let world_str: &json::JsonValue = &parsed["layers"][0];
-
         if let json::JsonValue::String(data) = world_str {
             let bytes = base64_decode(data)?;
-            let (color_data, footer_bytes) = bytes.split_at(bytes.len() - 24);
-            let data = zstd_decompress(color_data)?;
+            let (color_data, footer_bytes) = bytes.split_at(bytes.len() - BoardFooter::SIZE);
             let footer = BoardFooter::from_bytes(footer_bytes.try_into().context("")?);
+            let data = zstd_decompress(color_data, footer.count)?;
             VcbPlainBoard::from_color_data(&data, footer.width, footer.height)
         } else {
             Err(anyhow!("json parsing went wrong"))
@@ -127,19 +129,17 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         optimize: bool,
     ) -> anyhow::Result<VcbBoard<STRATEGY>> {
         Ok(VcbBoard::new(
-            Self::make_plain_board_from_legacy_blueprint(data)?,
+            Self::make_board_legacy_blueprint(data)?,
             optimize,
         ))
     }
     #[must_use]
     pub fn parse(input: VcbParseInput, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
         let plain_board = match input {
-            VcbParseInput::VcbBlueprintLegacy(b) => {
-                Self::make_plain_board_from_legacy_blueprint(&b)?
-            },
-            VcbParseInput::VcbBlueprint(b) => Self::make_plain_board_from_blueprint(&b)?,
-            VcbParseInput::VcbWorldLegacy(w) => Self::make_plain_board_from_legacy_world(&w)?,
-            VcbParseInput::VcbWorld(w) => Self::make_plain_board_from_world(&w)?,
+            VcbParseInput::VcbBlueprintLegacy(b) => Self::make_board_legacy_blueprint(&b)?,
+            VcbParseInput::VcbBlueprint(b) => Self::make_board_blueprint(&b)?,
+            VcbParseInput::VcbWorldLegacy(w) => Self::make_board_legacy_world(&w)?,
+            VcbParseInput::VcbWorld(w) => Self::make_board_world(&w)?,
         };
         {};
         Ok(VcbBoard::new(plain_board, optimize))
@@ -203,22 +203,26 @@ impl BlueprintHeader {
 //
 #[derive(Debug)]
 struct BlueprintBlockHeader {
-    block_size: u32,
+    block_size: usize,
     layer: Layer,
-    buffer_size_uncompressed: u32,
+    buffer_size_uncompressed: usize,
 }
 impl BlueprintBlockHeader {
     const SIZE: usize = size_of::<u32>() + size_of::<u32>() + size_of::<u32>();
     fn try_from_bytes<'a>(data: &mut impl Iterator<Item = &'a u8>) -> Option<Self> {
         let mut n = || data.next().map(|x| *x);
-        let block_size = u32::from_be_bytes([n()?, n()?, n()?, n()?]);
+        let block_size: usize = u32::from_be_bytes([n()?, n()?, n()?, n()?])
+            .try_into()
+            .ok()?;
         let layer = match u32::from_be_bytes([n()?, n()?, n()?, n()?]) {
             0 => Some(Layer::Logic),
             1 => Some(Layer::On),
             2 => Some(Layer::Off),
             _ => None,
         }?;
-        let buffer_size_uncompressed = u32::from_be_bytes([n()?, n()?, n()?, n()?]);
+        let buffer_size_uncompressed: usize = u32::from_be_bytes([n()?, n()?, n()?, n()?])
+            .try_into()
+            .ok()?;
         Some(Self {
             block_size,
             layer,
@@ -262,7 +266,7 @@ impl BoardFooter {
 struct BoardFooterInfo {
     width: usize,
     height: usize,
-    _count: usize,
+    count: usize,
 }
 
 impl BoardFooterInfo {
@@ -278,7 +282,7 @@ impl BoardFooterInfo {
         Self {
             width: footer.width.try_into().unwrap(),
             height: footer.height.try_into().unwrap(),
-            _count: (footer.width * footer.height).try_into().unwrap(),
+            count: (footer.width * footer.height).try_into().unwrap(),
         }
     }
 }
@@ -361,16 +365,23 @@ struct VcbPlainBoard {
 impl VcbPlainBoard {
     #[must_use]
     fn from_color_data(data: &[u8], width: usize, height: usize) -> anyhow::Result<Self> {
-        let traces: Vec<_> = data
+        let traces = data
             .array_chunks::<4>()
-            .map(|x| Trace::from_raw_color(*x).unwrap())
-            .collect();
-        assert_eq!(traces.len(), width * height);
-        Ok(VcbPlainBoard {
-            traces,
-            width,
-            height,
-        })
+            .map(|x| Trace::from_raw_color(*x))
+            .collect::<Option<Vec<_>>>()
+            .context("invalid color found")?;
+        if traces.len() == width * height {
+            Ok(VcbPlainBoard {
+                traces,
+                width,
+                height,
+            })
+        } else {
+            Err(anyhow!(
+                "Wrong trace len: len: {}, width: {width}, height: {height}",
+                traces.len()
+            ))
+        }
     }
 }
 
@@ -950,43 +961,43 @@ impl Trace {
     }
     // colors from file format
     #[rustfmt::skip]
-    fn from_raw_color(color: [u8; 4]) -> anyhow::Result<Self> {
+    fn from_raw_color(color: [u8; 4]) -> Option<Self> {
         match color {
-            vcb_colors::COLOR_GRAY       => Ok(Trace::Gray),
-            vcb_colors::COLOR_WHITE      => Ok(Trace::White),
-            vcb_colors::COLOR_RED        => Ok(Trace::Red),
-            vcb_colors::COLOR_ORANGE1    => Ok(Trace::Orange1),
-            vcb_colors::COLOR_ORANGE2    => Ok(Trace::Orange2),
-            vcb_colors::COLOR_ORANGE3    => Ok(Trace::Orange3),
-            vcb_colors::COLOR_YELLOW     => Ok(Trace::Yellow),
-            vcb_colors::COLOR_GREEN1     => Ok(Trace::Green1),
-            vcb_colors::COLOR_GREEN2     => Ok(Trace::Green2),
-            vcb_colors::COLOR_CYAN1      => Ok(Trace::Cyan1),
-            vcb_colors::COLOR_CYAN2      => Ok(Trace::Cyan2),
-            vcb_colors::COLOR_BLUE1      => Ok(Trace::Blue1),
-            vcb_colors::COLOR_BLUE2      => Ok(Trace::Blue2),
-            vcb_colors::COLOR_PURPLE     => Ok(Trace::Purple),
-            vcb_colors::COLOR_MAGENTA    => Ok(Trace::Magenta),
-            vcb_colors::COLOR_PINK       => Ok(Trace::Pink),
-            vcb_colors::COLOR_WRITE      => Ok(Trace::Write),
-            vcb_colors::COLOR_EMPTY      => Ok(Trace::Empty),
-            vcb_colors::COLOR_CROSS      => Ok(Trace::Cross),
-            vcb_colors::COLOR_READ       => Ok(Trace::Read),
-            vcb_colors::COLOR_BUFFER     => Ok(Trace::Buffer),
-            vcb_colors::COLOR_AND        => Ok(Trace::And),
-            vcb_colors::COLOR_OR         => Ok(Trace::Or),
-            vcb_colors::COLOR_XOR        => Ok(Trace::Xor),
-            vcb_colors::COLOR_NOT        => Ok(Trace::Not),
-            vcb_colors::COLOR_NAND       => Ok(Trace::Nand),
-            vcb_colors::COLOR_NOR        => Ok(Trace::Nor),
-            vcb_colors::COLOR_XNOR       => Ok(Trace::Xnor),
-            vcb_colors::COLOR_LATCHON    => Ok(Trace::LatchOn),
-            vcb_colors::COLOR_LATCHOFF   => Ok(Trace::LatchOff),
-            vcb_colors::COLOR_CLOCK      => Ok(Trace::Clock),
-            vcb_colors::COLOR_LED        => Ok(Trace::Led),
-            vcb_colors::COLOR_ANNOTATION => Ok(Trace::Annotation),
-            vcb_colors::COLOR_FILLER     => Ok(Trace::Filler),
-            _ => Err(anyhow!("Invalid trace color: {color:?}")), 
+            vcb_colors::COLOR_GRAY       => Some(Trace::Gray),
+            vcb_colors::COLOR_WHITE      => Some(Trace::White),
+            vcb_colors::COLOR_RED        => Some(Trace::Red),
+            vcb_colors::COLOR_ORANGE1    => Some(Trace::Orange1),
+            vcb_colors::COLOR_ORANGE2    => Some(Trace::Orange2),
+            vcb_colors::COLOR_ORANGE3    => Some(Trace::Orange3),
+            vcb_colors::COLOR_YELLOW     => Some(Trace::Yellow),
+            vcb_colors::COLOR_GREEN1     => Some(Trace::Green1),
+            vcb_colors::COLOR_GREEN2     => Some(Trace::Green2),
+            vcb_colors::COLOR_CYAN1      => Some(Trace::Cyan1),
+            vcb_colors::COLOR_CYAN2      => Some(Trace::Cyan2),
+            vcb_colors::COLOR_BLUE1      => Some(Trace::Blue1),
+            vcb_colors::COLOR_BLUE2      => Some(Trace::Blue2),
+            vcb_colors::COLOR_PURPLE     => Some(Trace::Purple),
+            vcb_colors::COLOR_MAGENTA    => Some(Trace::Magenta),
+            vcb_colors::COLOR_PINK       => Some(Trace::Pink),
+            vcb_colors::COLOR_WRITE      => Some(Trace::Write),
+            vcb_colors::COLOR_EMPTY      => Some(Trace::Empty),
+            vcb_colors::COLOR_CROSS      => Some(Trace::Cross),
+            vcb_colors::COLOR_READ       => Some(Trace::Read),
+            vcb_colors::COLOR_BUFFER     => Some(Trace::Buffer),
+            vcb_colors::COLOR_AND        => Some(Trace::And),
+            vcb_colors::COLOR_OR         => Some(Trace::Or),
+            vcb_colors::COLOR_XOR        => Some(Trace::Xor),
+            vcb_colors::COLOR_NOT        => Some(Trace::Not),
+            vcb_colors::COLOR_NAND       => Some(Trace::Nand),
+            vcb_colors::COLOR_NOR        => Some(Trace::Nor),
+            vcb_colors::COLOR_XNOR       => Some(Trace::Xnor),
+            vcb_colors::COLOR_LATCHON    => Some(Trace::LatchOn),
+            vcb_colors::COLOR_LATCHOFF   => Some(Trace::LatchOff),
+            vcb_colors::COLOR_CLOCK      => Some(Trace::Clock),
+            vcb_colors::COLOR_LED        => Some(Trace::Led),
+            vcb_colors::COLOR_ANNOTATION => Some(Trace::Annotation),
+            vcb_colors::COLOR_FILLER     => Some(Trace::Filler),
+            _ => None,
         }
     }
     #[inline]

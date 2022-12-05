@@ -8,6 +8,7 @@ pub mod network;
 pub mod reference_sim;
 pub(crate) use crate::logic::network::GateNetwork;
 use crate::logic::network::NetworkWithGaps;
+use std::array::from_fn;
 use std::mem::transmute;
 use std::simd::{Mask, Simd, SimdPartialEq};
 
