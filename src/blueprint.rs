@@ -365,23 +365,29 @@ struct VcbPlainBoard {
 impl VcbPlainBoard {
     #[must_use]
     fn from_color_data(data: &[u8], width: usize, height: usize) -> anyhow::Result<Self> {
-        let traces = data
-            .array_chunks::<4>()
-            .map(|x| Trace::from_raw_color(*x))
-            .collect::<Option<Vec<_>>>()
-            .context("invalid color found")?;
-        if traces.len() == width * height {
-            Ok(VcbPlainBoard {
-                traces,
-                width,
-                height,
-            })
-        } else {
-            Err(anyhow!(
-                "Wrong trace len: len: {}, width: {width}, height: {height}",
-                traces.len()
-            ))
-        }
+        timed!(
+            {
+                let traces = data
+                    .array_chunks::<4>()
+                    .cloned()
+                    .map(Trace::from_raw_color)
+                    .collect::<Option<Vec<_>>>()
+                    .context("invalid color found")?;
+                if traces.len() == width * height {
+                    Ok(VcbPlainBoard {
+                        traces,
+                        width,
+                        height,
+                    })
+                } else {
+                    Err(anyhow!(
+                        "Wrong trace len: len: {}, width: {width}, height: {height}",
+                        traces.len()
+                    ))
+                }
+            },
+            "Create plain board in {:?}"
+        )
     }
 }
 
