@@ -81,8 +81,8 @@ pub struct Args {
     pub implementation: UpdateStrategy,
 
     /// Iterations to run in bench
-    #[arg(short = 'i', long, default_value_t = 10_000_000)]
-    pub iterations: usize,
+    #[arg(short = 'i', long)]
+    pub iterations: Option<usize>,
 }
 
 fn main() {
@@ -133,7 +133,7 @@ fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbParseInput) {
     println!("parsed entire board in {:?}", now.elapsed());
     match args.mode {
         RunMode::Parse => (),
-        RunMode::Gif => board.print_to_gif(),
+        RunMode::Gif => board.print_to_gif(args.iterations.unwrap_or(100)),
         RunMode::Clip => board.print_to_clipboard(),
         RunMode::Emoji => board.print_regular_emoji(args.legend),
         RunMode::EmojiVcb => board.print_vcb_discord_emoji(args.legend),
@@ -176,7 +176,7 @@ fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbParseInput) {
             .unwrap();
         },
         RunMode::Bench => {
-            let iterations = args.iterations;
+            let iterations = args.iterations.unwrap_or(10_000_000);
             let iterations_f32: f32 = iterations as f32;
             println!("Running {iterations} iterations");
             let now = std::time::Instant::now();

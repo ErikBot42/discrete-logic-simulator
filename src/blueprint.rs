@@ -10,7 +10,6 @@ use std::mem::size_of;
 use std::thread::sleep;
 use std::time::Duration;
 
-
 fn zstd_decompress(data: &[u8]) -> std::io::Result<Vec<u8>> {
     timed!(
         { zstd::bulk::decompress(data, 1 << 27) },
@@ -34,16 +33,24 @@ pub enum VcbParseInput {
 #[derive(Default)]
 pub struct VcbParser<const STRATEGY: u8> {}
 impl<const STRATEGY: u8> VcbParser<STRATEGY> {
+
     fn make_plain_board_from_legacy_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
         let bytes = base64_decode(data)?;
-        let data_bytes = &bytes[..bytes.len() - BlueprintFooter::SIZE];
-        let footer_bytes: [u8; BlueprintFooter::SIZE] =
-            bytes[bytes.len() - BlueprintFooter::SIZE..bytes.len()].try_into()?;
+        let data_bytes = &bytes
+            .get(..bytes.len() - BlueprintFooter::SIZE)
+            .context("")?;
+        let footer_bytes: [u8; BlueprintFooter::SIZE] = bytes
+            .get(bytes.len() - BlueprintFooter::SIZE..bytes.len())
+            .context("")?
+            .try_into()?;
         let footer = BlueprintFooter::from_bytes(footer_bytes);
-        assert!(footer.layer == Layer::Logic);
+        if footer.layer != Layer::Logic {
+            return Err(anyhow!("Wrong blueprint layer"));
+        };
         let data = zstd_decompress(data_bytes)?;
-        assert!(!data.is_empty());
-        assert!(data.len() == footer.count * 4);
+        if data.len() == footer.count * 4 {
+            return Err(anyhow!("Mismatch between footer count and data length"));
+        }
         Ok(VcbPlainBoard::from_color_data(
             &data,
             footer.width,
@@ -304,6 +311,7 @@ struct BlueprintFooter {
 impl BlueprintFooter {
     const SIZE: usize = std::mem::size_of::<Self>();
     #[must_use]
+    /// Infalliable because of fixed size input
     fn from_bytes(bytes: [u8; Self::SIZE]) -> BlueprintFooterInfo {
         let read_int = |i: usize| i32::from_le_bytes([0, 1, 2, 3].map(|k| bytes[k + (i * 4)]));
 
@@ -370,7 +378,7 @@ impl VcbPlainBoard {
             {
                 let traces: Vec<_> = data
                     .chunks_exact(4)
-                    .map(|x| Trace::from_raw_color(x.try_into().unwrap()))
+                    .map(|x| Trace::from_raw_color(x.try_into().unwrap()).unwrap())
                     .collect();
                 assert_eq!(traces.len(), width * height);
                 VcbPlainBoard {
@@ -752,13 +760,12 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             sleep(Duration::from_secs(1))
         }
     }
-    pub fn print_to_gif(&mut self) {
+    pub fn print_to_gif(&mut self, limit: usize) {
         use std::collections::HashMap;
         type BoardColorData = Vec<u8>;
         let mut v: Vec<BoardColorData> = Vec::new();
         let mut i = 0;
         let mut map: HashMap<BoardColorData, usize> = HashMap::new();
-        let limit = 500;
 
         println!("Generating colors...");
         let a = loop {
@@ -961,43 +968,43 @@ impl Trace {
     }
     // colors from file format
     #[rustfmt::skip]
-    fn from_raw_color(color: [u8; 4]) -> Self {
+    fn from_raw_color(color: [u8; 4]) -> Option<Self> {
         match color {
-            vcb_colors::COLOR_GRAY       => Trace::Gray,
-            vcb_colors::COLOR_WHITE      => Trace::White,
-            vcb_colors::COLOR_RED        => Trace::Red,
-            vcb_colors::COLOR_ORANGE1    => Trace::Orange1,
-            vcb_colors::COLOR_ORANGE2    => Trace::Orange2,
-            vcb_colors::COLOR_ORANGE3    => Trace::Orange3,
-            vcb_colors::COLOR_YELLOW     => Trace::Yellow,
-            vcb_colors::COLOR_GREEN1     => Trace::Green1,
-            vcb_colors::COLOR_GREEN2     => Trace::Green2,
-            vcb_colors::COLOR_CYAN1      => Trace::Cyan1,
-            vcb_colors::COLOR_CYAN2      => Trace::Cyan2,
-            vcb_colors::COLOR_BLUE1      => Trace::Blue1,
-            vcb_colors::COLOR_BLUE2      => Trace::Blue2,
-            vcb_colors::COLOR_PURPLE     => Trace::Purple,
-            vcb_colors::COLOR_MAGENTA    => Trace::Magenta,
-            vcb_colors::COLOR_PINK       => Trace::Pink,
-            vcb_colors::COLOR_WRITE      => Trace::Write,
-            vcb_colors::COLOR_EMPTY      => Trace::Empty,
-            vcb_colors::COLOR_CROSS      => Trace::Cross,
-            vcb_colors::COLOR_READ       => Trace::Read,
-            vcb_colors::COLOR_BUFFER     => Trace::Buffer,
-            vcb_colors::COLOR_AND        => Trace::And,
-            vcb_colors::COLOR_OR         => Trace::Or,
-            vcb_colors::COLOR_XOR        => Trace::Xor,
-            vcb_colors::COLOR_NOT        => Trace::Not,
-            vcb_colors::COLOR_NAND       => Trace::Nand,
-            vcb_colors::COLOR_NOR        => Trace::Nor,
-            vcb_colors::COLOR_XNOR       => Trace::Xnor,
-            vcb_colors::COLOR_LATCHON    => Trace::LatchOn,
-            vcb_colors::COLOR_LATCHOFF   => Trace::LatchOff,
-            vcb_colors::COLOR_CLOCK      => Trace::Clock,
-            vcb_colors::COLOR_LED        => Trace::Led,
-            vcb_colors::COLOR_ANNOTATION => Trace::Annotation,
-            vcb_colors::COLOR_FILLER     => Trace::Filler,
-            _ => panic!("Invalid trace color {color:?}"),
+            vcb_colors::COLOR_GRAY       => Some(Trace::Gray),
+            vcb_colors::COLOR_WHITE      => Some(Trace::White),
+            vcb_colors::COLOR_RED        => Some(Trace::Red),
+            vcb_colors::COLOR_ORANGE1    => Some(Trace::Orange1),
+            vcb_colors::COLOR_ORANGE2    => Some(Trace::Orange2),
+            vcb_colors::COLOR_ORANGE3    => Some(Trace::Orange3),
+            vcb_colors::COLOR_YELLOW     => Some(Trace::Yellow),
+            vcb_colors::COLOR_GREEN1     => Some(Trace::Green1),
+            vcb_colors::COLOR_GREEN2     => Some(Trace::Green2),
+            vcb_colors::COLOR_CYAN1      => Some(Trace::Cyan1),
+            vcb_colors::COLOR_CYAN2      => Some(Trace::Cyan2),
+            vcb_colors::COLOR_BLUE1      => Some(Trace::Blue1),
+            vcb_colors::COLOR_BLUE2      => Some(Trace::Blue2),
+            vcb_colors::COLOR_PURPLE     => Some(Trace::Purple),
+            vcb_colors::COLOR_MAGENTA    => Some(Trace::Magenta),
+            vcb_colors::COLOR_PINK       => Some(Trace::Pink),
+            vcb_colors::COLOR_WRITE      => Some(Trace::Write),
+            vcb_colors::COLOR_EMPTY      => Some(Trace::Empty),
+            vcb_colors::COLOR_CROSS      => Some(Trace::Cross),
+            vcb_colors::COLOR_READ       => Some(Trace::Read),
+            vcb_colors::COLOR_BUFFER     => Some(Trace::Buffer),
+            vcb_colors::COLOR_AND        => Some(Trace::And),
+            vcb_colors::COLOR_OR         => Some(Trace::Or),
+            vcb_colors::COLOR_XOR        => Some(Trace::Xor),
+            vcb_colors::COLOR_NOT        => Some(Trace::Not),
+            vcb_colors::COLOR_NAND       => Some(Trace::Nand),
+            vcb_colors::COLOR_NOR        => Some(Trace::Nor),
+            vcb_colors::COLOR_XNOR       => Some(Trace::Xnor),
+            vcb_colors::COLOR_LATCHON    => Some(Trace::LatchOn),
+            vcb_colors::COLOR_LATCHOFF   => Some(Trace::LatchOff),
+            vcb_colors::COLOR_CLOCK      => Some(Trace::Clock),
+            vcb_colors::COLOR_LED        => Some(Trace::Led),
+            vcb_colors::COLOR_ANNOTATION => Some(Trace::Annotation),
+            vcb_colors::COLOR_FILLER     => Some(Trace::Filler),
+            _ => None, 
         }
     }
     #[inline]
