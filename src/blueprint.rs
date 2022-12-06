@@ -462,7 +462,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                     Self::explore(
                         &mut elements,
                         &mut nodes,
-                        width as i32,
+                        width.try_into().unwrap(),
                         x.try_into().unwrap(),
                     );
                 }
