@@ -672,8 +672,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                 let col2 = self
                     .elements
                     .get(i2)
-                    .map(|s| s.get_color(self))
-                    .unwrap_or(Trace::Empty.to_color_off());
+                    .map_or(Trace::Empty.to_color_off(), |s| s.get_color(self));
 
                 stdout.queue(SetColors(Colors::new(
                     (col2[0], col2[1], col2[2]).into(),
@@ -693,7 +692,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             for x in 0..self.width {
                 let i = x + y * self.width;
                 if !matches!(self.elements[i].kind, Trace::Empty) {
-                    min_print_width = x
+                    min_print_width = x;
                 }
             }
             min_print_width += 1;
@@ -701,7 +700,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
                 let i = x + y * self.width;
                 let trace = self.elements[i].kind;
                 let printed_str = fun(trace);
-                print!("{}", printed_str);
+                print!("{printed_str}");
             }
             println!();
         }
@@ -710,10 +709,10 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         }
     }
     pub fn print_regular_emoji(&self, legend: bool) {
-        self.print_using_translation(|t| t.as_regular_emoji(), legend);
+        self.print_using_translation(Trace::as_regular_emoji, legend);
     }
     pub fn print_vcb_discord_emoji(&self, legend: bool) {
-        self.print_using_translation(|t| t.as_discord_emoji(), legend);
+        self.print_using_translation(Trace::as_discord_emoji, legend);
     }
     pub fn print_debug(&self) {
         self.print_inner(true);
@@ -723,7 +722,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     }
     fn print_legend<F: Fn(Trace) -> String, U: Fn(Trace) -> String>(&self, f1: F, f2: U) {
         for t in self.get_current_traces() {
-            println!("{} = {}", f1(t), f2(t))
+            println!("{} = {}", f1(t), f2(t));
         }
     }
     fn get_current_traces(&self) -> Vec<Trace> {
@@ -738,7 +737,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             .collect()
     }
     pub fn print_to_clipboard(&self) -> ! {
-        use arboard::*;
+        use arboard::{Clipboard, ImageData};
         use std::borrow::Cow;
 
         let color_data: Vec<u8> = self
@@ -756,7 +755,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             .unwrap();
         println!("Running infinite loop so that clipboard contents are preserved, CTRL-C to force exit...");
         loop {
-            sleep(Duration::from_secs(1))
+            sleep(Duration::from_secs(1));
         }
     }
     pub fn print_to_gif(&mut self, limit: usize) {
@@ -787,9 +786,10 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             self.update();
             i += 1;
         };
-        use image::codecs::gif::*;
-        use image::*;
-        use tempfile::*;
+        use image::codecs::gif::GifEncoder;
+        use image::imageops::{resize, *};
+        use image::{codecs, Frame, GenericImageView, ImageBuffer, Pixel, RgbaImage, *};
+        use tempfile::{Builder, NamedTempFile};
         let file: NamedTempFile = Builder::new().suffix(".gif").tempfile().unwrap();
         let (file, path) = file.keep().unwrap();
 
@@ -801,10 +801,14 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             .enumerate()
             .map(|(iframe, x)| {
                 println!("{iframe}/{i}");
+                let rgba: RgbaImage = ImageBuffer::from_raw(
+                    self.width.try_into().unwrap(),
+                    self.height.try_into().unwrap(),
+                    x,
+                )
+                .unwrap();
                 let rgba: RgbaImage =
-                    ImageBuffer::from_raw(self.width as u32, self.height as u32, x).unwrap();
-                //let rgba: RgbaImage =
-                //    imageops::resize(&rgba, image_width, image_height, imageops::Nearest);
+                    imageops::resize(&rgba, image_width, image_height, imageops::Nearest);
                 Frame::new(rgba)
             })
             .skip(a);
@@ -1187,7 +1191,7 @@ impl BoardElement {
     ) {
         let format = |debug, id: usize| {
             if debug {
-                format!("{:>2}", id)
+                format!("{id:>2}")
             } else {
                 "  ".to_string()
             }

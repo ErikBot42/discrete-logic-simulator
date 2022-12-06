@@ -75,19 +75,18 @@ impl InitializedNetwork {
     }
     fn create_from(network: EditableNetwork, optimize: bool) -> Self {
         assert_ne!(network.gates.len(), 0, "no gates where added.");
-
-        let mut new_network = InitializedNetwork {
+        let new_network = InitializedNetwork {
             translation_table: (0..network.gates.len())
                 .into_iter()
-                .map(|x| x as IndexType)
+                .map(|x| x.try_into().unwrap())
                 .collect(),
             gates: network.gates,
         };
         if optimize {
-            new_network = new_network.optimized();
+            new_network.optimized()
+        } else {
+            new_network
         }
-        assert_ne!(new_network.gates.len(), 0, "optimization removed all gates");
-        new_network
     }
 
     /// Create input connections for the new gates, given the old gates.
