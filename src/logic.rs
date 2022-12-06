@@ -8,7 +8,6 @@ pub mod network;
 pub mod reference_sim;
 pub(crate) use crate::logic::network::GateNetwork;
 use crate::logic::network::NetworkWithGaps;
-use std::array::from_fn;
 use std::mem::transmute;
 use std::simd::{Mask, Simd, SimdPartialEq};
 
@@ -671,6 +670,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         _gate_update_list: &mut UpdateList,
         _cluster_update_list: &mut UpdateList,
     ) {
+        use arrayvec::ArrayVec;
         //let (update_list_p, next_update_list_p) = if CLUSTER {
         //    (unsafe { cluster_update_list.get_slice() }, gate_update_list)
         //} else {
@@ -680,7 +680,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         // this updates EVERY gate
         let status_packed_len = inner.status_packed.len();
 
-        use arrayvec::ArrayVec;
         let mut sparse_vec: ArrayVec<(IndexType, AccType), { gate_status::PACKED_ELEMENTS }> =
             ArrayVec::new();
         for (id_packed, group_offset, status_mut) in inner

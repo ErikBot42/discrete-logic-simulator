@@ -35,7 +35,7 @@ pub enum VcbParseInput {
 #[derive(Default)]
 pub struct VcbParser<const STRATEGY: u8> {}
 impl<const STRATEGY: u8> VcbParser<STRATEGY> {
-    fn make_board_legacy_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
+    fn parse_legacy_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
         let bytes = base64_decode(data)?;
         let data_bytes = &bytes
             .get(..bytes.len() - BlueprintFooter::SIZE)
@@ -54,7 +54,7 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         }
         VcbPlainBoard::from_color_data(&data, footer.width, footer.height)
     }
-    fn make_board_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
+    fn parse_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
         if data.get(0..4).context("data too short")? != "VCB+" {
             return Err(anyhow!("Wrong prefix"));
         }
@@ -70,20 +70,16 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
                 .context("Not enough bytes for block header")?;
             let (color_bytes, bytes) = bytes_iter
                 .as_slice()
-                .split_at(block_header.block_size as usize - BlueprintBlockHeader::SIZE);
+                .split_at(block_header.block_size - BlueprintBlockHeader::SIZE);
             bytes_iter = bytes.iter();
             if block_header.layer == Layer::Logic {
                 let color_data =
                     zstd_decompress(color_bytes, block_header.buffer_size_uncompressed)?;
-                break VcbPlainBoard::from_color_data(
-                    &color_data,
-                    header.width as usize,
-                    header.height as usize,
-                );
+                break VcbPlainBoard::from_color_data(&color_data, header.width, header.height);
             }
         }
     }
-    fn make_board_legacy_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
+    fn parse_legacy_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
         // Godot uses a custom format, tscn, which cannot be parsed with a json formatter
         let maybe_json = s.split("data = ").nth(1).context("")?;
         let s = maybe_json.split("\"layers\": [").nth(1).context("")?;
@@ -109,7 +105,7 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         let data = zstd_decompress(data_bytes, footer.count)?;
         VcbPlainBoard::from_color_data(&data, footer.width, footer.height)
     }
-    fn make_board_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
+    fn parse_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
         let parsed = json::parse(s)?;
         let world_str: &json::JsonValue = &parsed["layers"][0];
         if let json::JsonValue::String(data) = world_str {
@@ -123,23 +119,24 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         }
     }
 
-    #[deprecated(note = "use parse instead, it is more general")]
     fn make_board_from_legacy_blueprint(
         data: &str,
         optimize: bool,
     ) -> anyhow::Result<VcbBoard<STRATEGY>> {
         Ok(VcbBoard::new(
-            Self::make_board_legacy_blueprint(data)?,
+            Self::parse_legacy_blueprint(data)?,
             optimize,
         ))
     }
     #[must_use]
+    /// # Result
+    /// Returns Err if input is invalid or could not parse.
     pub fn parse(input: VcbParseInput, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
         let plain_board = match input {
-            VcbParseInput::VcbBlueprintLegacy(b) => Self::make_board_legacy_blueprint(&b)?,
-            VcbParseInput::VcbBlueprint(b) => Self::make_board_blueprint(&b)?,
-            VcbParseInput::VcbWorldLegacy(w) => Self::make_board_legacy_world(&w)?,
-            VcbParseInput::VcbWorld(w) => Self::make_board_world(&w)?,
+            VcbParseInput::VcbBlueprintLegacy(b) => Self::parse_legacy_blueprint(&b)?,
+            VcbParseInput::VcbBlueprint(b) => Self::parse_blueprint(&b)?,
+            VcbParseInput::VcbWorldLegacy(w) => Self::parse_legacy_world(&w)?,
+            VcbParseInput::VcbWorld(w) => Self::parse_world(&w)?,
         };
         {};
         Ok(VcbBoard::new(plain_board, optimize))
@@ -151,10 +148,10 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
     pub fn parse_to_board(data: &str, optimize: bool) -> VcbBoard<STRATEGY> {
         Self::make_board_from_legacy_blueprint(data, optimize).unwrap()
     }
-    #[deprecated(note = "use parse instead, it is more general")]
-    pub fn try_parse_to_board(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
-        Self::make_board_from_legacy_blueprint(data, optimize)
-    }
+    //#[deprecated(note = "use parse instead, it is more general")]
+    //pub fn try_parse_to_board(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
+    //    Self::make_board_from_legacy_blueprint(data, optimize)
+    //}
 }
 
 // New blueprints start with "VCB+".
@@ -369,7 +366,7 @@ impl VcbPlainBoard {
             {
                 let traces = data
                     .array_chunks::<4>()
-                    .cloned()
+                    .copied()
                     .map(Trace::from_raw_color)
                     .collect::<Option<Vec<_>>>()
                     .context("invalid color found")?;
@@ -500,9 +497,9 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         VcbBoard {
             elements,
             nodes,
+            compiled_network,
             width,
             height,
-            compiled_network,
         }
     }
     fn add_connection(nodes: &mut [BoardNode], connection: (usize, usize), swp_dir: bool) {
@@ -521,9 +518,9 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         );
     }
 
-    /// floodfill with id at given index
+    /// floodfill with `id` at `this_x`
     /// pre: logic trace, otherwise id could have been
-    /// assigned to nothing, this_x valid
+    /// assigned to nothing, `this_x` valid
     fn fill_id(elements: &mut Vec<BoardElement>, width: i32, this_x: i32, id: usize) {
         let this = &mut elements[this_x as usize];
         let this_kind = this.kind;
@@ -656,7 +653,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
     }
     fn print_compact(&self) -> Result<(), std::io::Error> {
         let mut stdout = stdout();
-        let (sx, sy) = crossterm::terminal::size().unwrap();
+        let (sx, sy) = crossterm::terminal::size()?;
         stdout.queue(Print(format!(
             "{:?} {:?}\n",
             (sx, sy),
@@ -759,7 +756,11 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         }
     }
     pub fn print_to_gif(&mut self, limit: usize) {
+        use image::codecs::gif::GifEncoder;
+        use image::{codecs, imageops, Frame, ImageBuffer, RgbaImage};
         use std::collections::HashMap;
+        use tempfile::{Builder, NamedTempFile};
+
         type BoardColorData = Vec<u8>;
         let mut v: Vec<BoardColorData> = Vec::new();
         let mut i = 0;
@@ -786,10 +787,6 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             self.update();
             i += 1;
         };
-        use image::codecs::gif::GifEncoder;
-        use image::imageops::{resize, *};
-        use image::{codecs, Frame, GenericImageView, ImageBuffer, Pixel, RgbaImage, *};
-        use tempfile::{Builder, NamedTempFile};
         let file: NamedTempFile = Builder::new().suffix(".gif").tempfile().unwrap();
         let (file, path) = file.keep().unwrap();
 
