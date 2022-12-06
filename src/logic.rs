@@ -257,7 +257,7 @@ impl Gate {
     }
     /// add inputs and handle internal logic for them
     fn add_inputs_vec(&mut self, inputs: &mut Vec<IndexType>) {
-        self.add_inputs(inputs.len() as i32);
+        self.add_inputs(inputs.len().try_into().unwrap());
         self.inputs.append(inputs);
     }
     #[inline]
@@ -449,7 +449,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             .filter_map(|(gate_id, gate)| {
                 gate.as_mut().map(|g| {
                     g.in_update_list = true;
-                    gate_id as IndexType
+                    gate_id.try_into().unwrap()
                 })
             })
             .collect();
@@ -485,7 +485,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 let scalar_update_list: Vec<_> = scalar_in_update_list
                     .iter()
                     .enumerate()
-                    .filter_map(|(i, b)| b.then_some(i as IndexType))
+                    .filter_map(|(i, b)| b.then_some(i.try_into().unwrap()))
                     .collect();
                 scalar_update_list
             } else {
@@ -800,7 +800,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         packed_output_indexes: &[IndexType],
         packed_outputs: &[IndexType],
     ) {
-        Self::propagate_delta_sparse_vec(packed, acc, packed_output_indexes, packed_outputs)
+        Self::propagate_delta_sparse_vec(packed, acc, packed_output_indexes, packed_outputs);
     }
     #[inline(always)]
     fn propagate_delta_sparse_vec_simd(
@@ -935,7 +935,11 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         packed_output_indexes: &[IndexType],
         packed_outputs: &[IndexType],
     ) {
-        use core::arch::x86_64::*;
+        use core::arch::x86_64::{
+            __m256i, _mm256_add_epi32, _mm256_and_si256, _mm256_andnot_si256, _mm256_cmpeq_epi32,
+            _mm256_i32gather_epi32, _mm256_loadu_si256, _mm256_movemask_epi8, _mm256_set1_epi32,
+            _mm256_setzero_si256,
+        };
         Self::assert_avx2();
         let zero_mm = unsafe { _mm256_setzero_si256() };
         let ones_mm = unsafe { _mm256_set1_epi32(-1) };

@@ -140,13 +140,10 @@ impl InitializedNetwork {
     /// O(n * k)
     fn create_output_connections(new_gates: &mut [Gate]) {
         for gate_id in 0..new_gates.len() {
-            let gate = &new_gates[gate_id];
-            for i in 0..gate.inputs.len() {
-                let gate = &new_gates[gate_id];
-                let input_gate_id = gate.inputs[i];
-                new_gates[input_gate_id as usize]
+            for i in 0..new_gates[gate_id].inputs.len() {
+                new_gates[new_gates[gate_id].inputs[i] as usize]
                     .outputs
-                    .push(gate_id as IndexType);
+                    .push(gate_id.try_into().unwrap());
             }
         }
     }
@@ -173,12 +170,12 @@ impl InitializedNetwork {
             if let Some(existing_new_id) = gate_key_to_new_id.get(&key) {
                 // this gate is same as other, so use other's id.
                 assert!(old_to_new_id.len() == old_gate_id);
-                old_to_new_id.push(*existing_new_id as IndexType);
+                old_to_new_id.push((*existing_new_id).try_into().unwrap());
                 assert!(existing_new_id < &new_gates.len());
             } else {
                 // this gate is new, so a fresh id is created.
                 assert!(old_to_new_id.len() == old_gate_id);
-                old_to_new_id.push(new_id as IndexType);
+                old_to_new_id.push(new_id.try_into().unwrap());
                 new_gates.push(Gate::from_gate_type(old_gate.kind));
                 gate_key_to_new_id.insert(key, new_id);
                 assert!(new_id < new_gates.len(), "new_id: {new_id}");
@@ -321,7 +318,7 @@ impl InitializedNetwork {
             .enumerate()
             .for_each(|(index, new)| {
                 if let Some(new) = new {
-                    translation_table[*new] = index as IndexType;
+                    translation_table[*new] = index.try_into().unwrap();
                 }
             });
         let gates: Vec<Option<Gate>> = gates

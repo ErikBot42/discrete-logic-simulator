@@ -184,7 +184,7 @@ fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbParseInput) {
                 board.update();
             });
             let elapsed_raw = now.elapsed();
-            let elapsed = now.elapsed().as_millis() as f32 / 1000.0;
+            let elapsed = now.elapsed().as_secs_f32();
             let millisecond_per_iteration = elapsed / iterations_f32 * 1000.0;
             let microsecond_per_iteration = millisecond_per_iteration * 1000.0;
             let nanosecond_per_iteration = microsecond_per_iteration * 1000.0;
@@ -193,7 +193,7 @@ fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbParseInput) {
             println!("ms/iteration: {millisecond_per_iteration}");
             println!("μs/iteration: {microsecond_per_iteration}");
             println!("ns/iteration: {nanosecond_per_iteration}");
-            println!("TPS: {}", iterations_per_second);
+            println!("TPS: {iterations_per_second}");
             println!(
                 "iteration/s: {} million",
                 iterations_per_second / 1_000_000.0
