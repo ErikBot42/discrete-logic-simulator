@@ -45,9 +45,9 @@ impl VcbParser {
             .get(bytes.len() - BlueprintFooter::SIZE..bytes.len())
             .context("")?
             .try_into()?;
-        let footer = BlueprintFooter::from_bytes(footer_bytes);
+        let footer = BlueprintFooter::from_bytes(footer_bytes)?;
         if footer.layer != Layer::Logic {
-            return Err(anyhow!("Wrong blueprint layer"));
+            return Err(anyhow!("Blueprint layer not logic"));
         };
         let data = zstd_decompress(data_bytes, footer.count)?;
         if data.len() != footer.count * 4 {
@@ -281,21 +281,20 @@ impl BlueprintFooter {
     const SIZE: usize = std::mem::size_of::<Self>();
     #[must_use]
     /// Infalliable because of fixed size input
-    fn from_bytes(bytes: [u8; Self::SIZE]) -> BlueprintFooterInfo {
-        let read_int = |i: usize| i32::from_le_bytes([0, 1, 2, 3].map(|k| bytes[k + (i * 4)]));
-
-        #[rustfmt::skip]
-        let footer = BlueprintFooterInfo::new(&(Self {
-            height_type: read_int(0),
-            height:      read_int(1),
-            width_type:  read_int(2),
-            width:       read_int(3),
-            bytes_type:  read_int(4),
-            bytes:       read_int(5),
-            layer_type:  read_int(6),
-            layer:       read_int(7),
-        }));
-        footer
+    fn from_bytes(bytes: [u8; Self::SIZE]) -> anyhow::Result<BlueprintFooterInfo> {
+        let read = |i: usize| i32::from_le_bytes(from_fn(|k| bytes[k + (i * size_of::<i32>())]));
+        BlueprintFooterInfo::new(
+            &(Self {
+                height_type: read(0),
+                height: read(1),
+                width_type: read(2),
+                width: read(3),
+                bytes_type: read(4),
+                bytes: read(5),
+                layer_type: read(6),
+                layer: read(7),
+            }),
+        )
     }
 }
 
@@ -309,21 +308,25 @@ struct BlueprintFooterInfo {
 }
 impl BlueprintFooterInfo {
     #[must_use]
-    fn new(footer: &BlueprintFooter) -> Self {
-        assert_eq!(footer.height_type, 2);
-        assert_eq!(footer.width_type, 2);
-        assert_eq!(footer.bytes_type, 2);
-        assert_eq!(footer.bytes, footer.height * footer.width * 4);
-        BlueprintFooterInfo {
-            width: footer.width.try_into().unwrap(),
-            height: footer.height.try_into().unwrap(),
-            count: (footer.width * footer.height).try_into().unwrap(),
-            layer: match footer.layer {
-                65_536 => Layer::Logic,
-                131_072 => Layer::On,
-                262_144 => Layer::Off,
-                _ => panic!(),
-            },
+    fn new(footer: &BlueprintFooter) -> anyhow::Result<BlueprintFooterInfo> {
+        if footer.bytes != footer.height * footer.width * size_of::<u32>() as i32
+            || footer.width_type != 2
+            || footer.bytes_type != 2
+            || footer.height_type != 2
+        {
+            Err(anyhow!("Footer data invalid: {footer:?}"))
+        } else {
+            Ok(BlueprintFooterInfo {
+                width: footer.width.try_into()?,
+                height: footer.height.try_into()?,
+                count: (footer.width * footer.height).try_into()?,
+                layer: match footer.layer {
+                    65_536 => Layer::Logic,
+                    131_072 => Layer::On,
+                    262_144 => Layer::Off,
+                    _ => Err(anyhow!("invalid footer layer"))?,
+                },
+            })
         }
     }
 }
