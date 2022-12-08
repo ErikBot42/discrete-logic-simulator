@@ -132,7 +132,6 @@ impl VcbParser {
             VcbInput::WorldLegacy(w) => Self::parse_legacy_world(&w)?,
             VcbInput::World(w) => Self::parse_world(&w)?,
         };
-        {};
         Ok(VcbBoard::new(plain_board, optimize))
     }
 }
