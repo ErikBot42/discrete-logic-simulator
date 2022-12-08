@@ -4,6 +4,7 @@ use crate::logic::{CompiledNetwork, GateNetwork, GateType};
 use anyhow::{anyhow, Context};
 use crossterm::style::{Color, Colors, Print, ResetColor, SetColors, Stylize};
 use crossterm::QueueableCommand;
+use std::array::from_fn;
 use std::collections::BTreeSet;
 use std::io::{stdout, Write};
 use std::mem::size_of;
@@ -101,7 +102,7 @@ impl VcbParser {
             .get(bytes.len() - BoardFooter::SIZE..bytes.len())
             .context("")?
             .try_into()?;
-        let footer = BoardFooter::from_bytes(footer_bytes);
+        let footer = BoardFooter::from_bytes(footer_bytes)?;
         let data = zstd_decompress(data_bytes, footer.count)?;
         VcbPlainBoard::from_color_data(&data, footer.width, footer.height)
     }
@@ -111,7 +112,7 @@ impl VcbParser {
         if let json::JsonValue::String(data) = world_str {
             let bytes = base64_decode(data)?;
             let (color_data, footer_bytes) = bytes.split_at(bytes.len() - BoardFooter::SIZE);
-            let footer = BoardFooter::from_bytes(footer_bytes.try_into().context("")?);
+            let footer = BoardFooter::from_bytes(footer_bytes.try_into().context("")?)?;
             let data = zstd_decompress(color_data, footer.count)?;
             VcbPlainBoard::from_color_data(&data, footer.width, footer.height)
         } else {
@@ -122,7 +123,10 @@ impl VcbParser {
     #[must_use]
     /// # Result
     /// Returns Err if input is invalid or could not parse.
-    pub fn parse_compile<const STRATEGY2: u8>(input: VcbInput, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY2>> {
+    pub fn parse_compile<const STRATEGY2: u8>(
+        input: VcbInput,
+        optimize: bool,
+    ) -> anyhow::Result<VcbBoard<STRATEGY2>> {
         let plain_board = match input {
             VcbInput::BlueprintLegacy(b) => Self::parse_legacy_blueprint(&b)?,
             VcbInput::Blueprint(b) => Self::parse_blueprint(&b)?,
@@ -220,8 +224,7 @@ impl BlueprintBlockHeader {
 }
 
 /// contains the raw footer data for worlds
-#[derive(Debug, Default)]
-#[repr(C)]
+#[derive(Debug)]
 struct BoardFooter {
     height_type: i32,
     height: i32,
@@ -233,19 +236,18 @@ struct BoardFooter {
 impl BoardFooter {
     const SIZE: usize = std::mem::size_of::<Self>();
     #[must_use]
-    fn from_bytes(bytes: [u8; Self::SIZE]) -> BoardFooterInfo {
-        let read_int = |i: usize| i32::from_le_bytes([0, 1, 2, 3].map(|k| bytes[k + (i * 4)]));
-
-        #[rustfmt::skip]
-        let footer = BoardFooterInfo::new(&(Self {
-            height_type: read_int(0),
-            height:      read_int(1),
-            width_type:  read_int(2),
-            width:       read_int(3),
-            bytes_type:  read_int(4),
-            bytes:       read_int(5),
-        }));
-        footer
+    fn from_bytes(bytes: [u8; Self::SIZE]) -> anyhow::Result<BoardFooterInfo> {
+        let read = |i: usize| i32::from_le_bytes(from_fn(|k| bytes[k + (i * size_of::<i32>())]));
+        BoardFooterInfo::new(
+            &(Self {
+                height_type: read(0),
+                height: read(1),
+                width_type: read(2),
+                width: read(3),
+                bytes_type: read(4),
+                bytes: read(5),
+            }),
+        )
     }
 }
 
@@ -259,18 +261,19 @@ struct BoardFooterInfo {
 
 impl BoardFooterInfo {
     #[must_use]
-    fn new(footer: &BoardFooter) -> Self {
-        assert_eq!(footer.height_type, 2);
-        assert_eq!(footer.width_type, 2);
-        assert_eq!(footer.bytes_type, 2);
-        assert_eq!(
-            footer.bytes,
-            footer.height * footer.width * size_of::<u32>() as i32
-        );
-        Self {
-            width: footer.width.try_into().unwrap(),
-            height: footer.height.try_into().unwrap(),
-            count: (footer.width * footer.height).try_into().unwrap(),
+    fn new(footer: &BoardFooter) -> anyhow::Result<Self> {
+        if footer.bytes != footer.height * footer.width * size_of::<u32>() as i32
+            || footer.width_type != 2
+            || footer.bytes_type != 2
+            || footer.height_type != 2
+        {
+            Err(anyhow!("Footer data invalid: {footer:?}"))
+        } else {
+            Ok(Self {
+                width: footer.width.try_into()?,
+                height: footer.height.try_into()?,
+                count: (footer.width * footer.height).try_into()?,
+            })
         }
     }
 }
