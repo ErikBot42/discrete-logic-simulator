@@ -25,7 +25,7 @@ fn pre_parse_tests<const STRATEGY: u8>() -> Vec<(&'static str, VcbBoard<STRATEGY
             .clone()
             .into_iter()
             //.map(|x| (x.0, black_box(Parser::parse(x.1, true))))
-            .map(|x| (x.0, black_box(VcbParser::parse_to_board(x.1, false))))
+            .map(|x| (x.0, black_box(VcbParser::parse(VcbInput::BlueprintLegacy(x.1.to_string()), false).unwrap())))
             .collect()
 }
 
@@ -64,7 +64,15 @@ fn bench_parsing<const STRATEGY: u8>(
     let mut c_run = c.benchmark_group(group_name);
     for (name, data) in input {
         c_run.bench_function(*name, |b| {
-            b.iter(|| black_box(VcbParser::<STRATEGY>::parse_to_board(black_box(data), true)))
+            b.iter(|| {
+                black_box(
+                    VcbParser::<STRATEGY>::parse(
+                        black_box(VcbInput::BlueprintLegacy(data.to_string())),
+                        true,
+                    )
+                    .unwrap(),
+                )
+            })
         });
     }
     c_run.finish();
