@@ -76,7 +76,7 @@ mod tests {
         cases
             .clone()
             .into_iter()
-            .map(|x| (x.0, VcbParser::parse(x.1, optimize).unwrap()))
+            .map(|x| (x.0, VcbParser::parse_compile(x.1, optimize).unwrap()))
             .collect::<Vec<(&str, VcbBoard<STRATEGY>)>>()
     }
 
@@ -255,7 +255,7 @@ mod tests {
 
     fn basic_gate_test<const STRATEGY: u8>(optimize: bool, add_all: bool) {
         //const STRATEGY: u8 = UpdateStrategy::Reference as u8;
-        let mut board: VcbBoard<STRATEGY> = VcbParser::parse(
+        let mut board: VcbBoard<STRATEGY> = VcbParser::parse_compile(
             VcbInput::BlueprintLegacy(include_str!("../test_files/gates.blueprint").to_string()),
             optimize,
         ).unwrap();

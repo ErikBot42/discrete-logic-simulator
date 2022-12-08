@@ -33,8 +33,8 @@ pub enum VcbInput {
     World(String),
 }
 #[derive(Default)]
-pub struct VcbParser<const STRATEGY: u8> {}
-impl<const STRATEGY: u8> VcbParser<STRATEGY> {
+pub struct VcbParser {}
+impl VcbParser {
     fn parse_legacy_blueprint(data: &str) -> anyhow::Result<VcbPlainBoard> {
         let bytes = base64_decode(data)?;
         let data_bytes = &bytes
@@ -119,19 +119,10 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         }
     }
 
-    fn make_board_from_legacy_blueprint(
-        data: &str,
-        optimize: bool,
-    ) -> anyhow::Result<VcbBoard<STRATEGY>> {
-        Ok(VcbBoard::new(
-            Self::parse_legacy_blueprint(data)?,
-            optimize,
-        ))
-    }
     #[must_use]
     /// # Result
     /// Returns Err if input is invalid or could not parse.
-    pub fn parse(input: VcbInput, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
+    pub fn parse_compile<const STRATEGY2: u8>(input: VcbInput, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY2>> {
         let plain_board = match input {
             VcbInput::BlueprintLegacy(b) => Self::parse_legacy_blueprint(&b)?,
             VcbInput::Blueprint(b) => Self::parse_blueprint(&b)?,
