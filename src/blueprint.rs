@@ -141,13 +141,13 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
         {};
         Ok(VcbBoard::new(plain_board, optimize))
     }
-    /// # Panics
-    /// invalid base64 string, invalid zstd, invalid colors
-    #[must_use]
-    #[deprecated(note = "use parse instead, it is more general")]
-    pub fn parse_to_board(data: &str, optimize: bool) -> VcbBoard<STRATEGY> {
-        Self::make_board_from_legacy_blueprint(data, optimize).unwrap()
-    }
+    // # Panics
+    // invalid base64 string, invalid zstd, invalid colors
+    //#[must_use]
+    //#[deprecated(note = "use parse instead, it is more general")]
+    //pub fn parse_to_board(data: &str, optimize: bool) -> VcbBoard<STRATEGY> {
+    //    Self::make_board_from_legacy_blueprint(data, optimize).unwrap()
+    //}
     //#[deprecated(note = "use parse instead, it is more general")]
     //pub fn try_parse_to_board(data: &str, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
     //    Self::make_board_from_legacy_blueprint(data, optimize)
