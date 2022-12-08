@@ -5,7 +5,7 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, ClearType, DisableLineWrap, EnterAlternateScreen,
     LeaveAlternateScreen,
 };
-use logic_simulator::blueprint::{VcbParseInput, VcbParser};
+use logic_simulator::blueprint::{VcbInput, VcbParser};
 use logic_simulator::logic::UpdateStrategy;
 use std::fs::read_to_string;
 use std::io::stdout;
@@ -91,26 +91,26 @@ fn main() {
     let args = Args::parse();
 
     let read_file = |s: PathBuf| read_to_string(s).expect("File should exist");
-    let parser_input: VcbParseInput = (args
+    let parser_input: VcbInput = (args
         .blueprint_string_legacy
         .clone()
         .or(args.blueprint_file_legacy.clone().map(read_file))
-        .map(VcbParseInput::VcbBlueprintLegacy))
+        .map(VcbInput::BlueprintLegacy))
     .or(args
         .blueprint_string
         .clone()
         .or(args.blueprint_file.clone().map(read_file))
-        .map(VcbParseInput::VcbBlueprint))
+        .map(VcbInput::Blueprint))
     .or(args
         .world_file_legacy
         .clone()
         .map(read_file)
-        .map(VcbParseInput::VcbWorldLegacy))
+        .map(VcbInput::WorldLegacy))
     .or(args
         .world_file
         .clone()
         .map(read_file)
-        .map(VcbParseInput::VcbWorld))
+        .map(VcbInput::World))
     .unwrap();
 
     // branch to specific type here to remove overhead later.
@@ -127,7 +127,7 @@ fn main() {
     }
 }
 
-fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbParseInput) {
+fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbInput) {
     let now = Instant::now();
     let mut board = { VcbParser::<STRATEGY>::parse(parser_input, true).unwrap() };
     println!("parsed entire board in {:?}", now.elapsed());

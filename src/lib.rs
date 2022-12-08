@@ -43,26 +43,40 @@ pub mod raw_list;
 
 #[cfg(test)]
 mod tests {
-    use crate::blueprint::{VcbBoard, VcbParser};
+    use crate::blueprint::{VcbBoard, VcbInput, VcbParser};
     use crate::logic::UpdateStrategy;
 
     fn prep_cases<const STRATEGY: u8>(optimize: bool) -> Vec<(&'static str, VcbBoard<STRATEGY>)> {
-        let cases: Vec<(&str, &str)> = vec![
-            ("gates", include_str!("../test_files/gates.blueprint")),
+        let cases: Vec<(&str, _)> = vec![
+            (
+                "gates",
+                VcbInput::BlueprintLegacy(
+                    include_str!("../test_files/gates.blueprint").to_string(),
+                ),
+            ),
             (
                 "big_decoder",
-                include_str!("../test_files/big_decoder.blueprint"),
+                VcbInput::BlueprintLegacy(
+                    include_str!("../test_files/big_decoder.blueprint").to_string(),
+                ),
             ),
-            ("intro", include_str!("../test_files/intro.blueprint")),
+            (
+                "intro",
+                VcbInput::BlueprintLegacy(
+                    include_str!("../test_files/intro.blueprint").to_string(),
+                ),
+            ),
             (
                 "bcd_count",
-                include_str!("../test_files/bcd_count.blueprint"),
+                VcbInput::BlueprintLegacy(
+                    include_str!("../test_files/bcd_count.blueprint").to_string(),
+                ),
             ),
         ];
         cases
             .clone()
             .into_iter()
-            .map(|x| (x.0, VcbParser::parse_to_board(x.1, optimize)))
+            .map(|x| (x.0, VcbParser::parse(x.1, optimize).unwrap()))
             .collect::<Vec<(&str, VcbBoard<STRATEGY>)>>()
     }
 
@@ -241,8 +255,10 @@ mod tests {
 
     fn basic_gate_test<const STRATEGY: u8>(optimize: bool, add_all: bool) {
         //const STRATEGY: u8 = UpdateStrategy::Reference as u8;
-        let mut board: VcbBoard<STRATEGY> =
-            VcbParser::parse_to_board(include_str!("../test_files/gates.blueprint"), optimize);
+        let mut board: VcbBoard<STRATEGY> = VcbParser::parse(
+            VcbInput::BlueprintLegacy(include_str!("../test_files/gates.blueprint").to_string()),
+            optimize,
+        ).unwrap();
         board.print_debug();
         assert_eq!(
             board.make_state_vec(),

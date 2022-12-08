@@ -26,11 +26,11 @@ fn base64_decode(data: &str) -> Result<Vec<u8>, base64::DecodeError> {
 }
 
 #[derive(Clone)]
-pub enum VcbParseInput {
-    VcbBlueprintLegacy(String),
-    VcbBlueprint(String),
-    VcbWorldLegacy(String),
-    VcbWorld(String),
+pub enum VcbInput {
+    BlueprintLegacy(String),
+    Blueprint(String),
+    WorldLegacy(String),
+    World(String),
 }
 #[derive(Default)]
 pub struct VcbParser<const STRATEGY: u8> {}
@@ -131,12 +131,12 @@ impl<const STRATEGY: u8> VcbParser<STRATEGY> {
     #[must_use]
     /// # Result
     /// Returns Err if input is invalid or could not parse.
-    pub fn parse(input: VcbParseInput, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
+    pub fn parse(input: VcbInput, optimize: bool) -> anyhow::Result<VcbBoard<STRATEGY>> {
         let plain_board = match input {
-            VcbParseInput::VcbBlueprintLegacy(b) => Self::parse_legacy_blueprint(&b)?,
-            VcbParseInput::VcbBlueprint(b) => Self::parse_blueprint(&b)?,
-            VcbParseInput::VcbWorldLegacy(w) => Self::parse_legacy_world(&w)?,
-            VcbParseInput::VcbWorld(w) => Self::parse_world(&w)?,
+            VcbInput::BlueprintLegacy(b) => Self::parse_legacy_blueprint(&b)?,
+            VcbInput::Blueprint(b) => Self::parse_blueprint(&b)?,
+            VcbInput::WorldLegacy(w) => Self::parse_legacy_world(&w)?,
+            VcbInput::World(w) => Self::parse_world(&w)?,
         };
         {};
         Ok(VcbBoard::new(plain_board, optimize))
