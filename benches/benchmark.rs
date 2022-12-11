@@ -66,7 +66,7 @@ fn bench_parsing<const STRATEGY: u8>(
         c_run.bench_function(*name, |b| {
             b.iter(|| {
                 black_box(
-                    VcbParser::<STRATEGY>::parse_compile(
+                    VcbParser::parse_compile::<STRATEGY>(
                         black_box(VcbInput::BlueprintLegacy(data.to_string())),
                         true,
                     )

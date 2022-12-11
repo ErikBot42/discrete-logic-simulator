@@ -397,8 +397,8 @@ pub struct VcbBoard<const STRATEGY: u8> {
     elements: Vec<BoardElement>,
     nodes: Vec<BoardNode>,
     pub(crate) compiled_network: CompiledNetwork<STRATEGY>,
-    pub width: usize,
-    pub height: usize,
+    pub(crate) width: usize,
+    pub(crate) height: usize,
 }
 
 impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
