@@ -122,10 +122,10 @@ impl VcbParser {
 
     /// # Result
     /// Returns Err if input is invalid or could not parse.
-    pub fn parse_compile<const STRATEGY: u8 >(
+    pub fn parse_compile<const STRATEGY: u8>(
         input: VcbInput,
         optimize: bool,
-    ) -> anyhow::Result<VcbBoard<STRATEGY, CompiledNetwork<STRATEGY>>> {
+    ) -> anyhow::Result<VcbBoard<CompiledNetwork<STRATEGY>>> {
         let plain_board = match input {
             VcbInput::BlueprintLegacy(b) => Self::parse_legacy_blueprint(&b)?,
             VcbInput::Blueprint(b) => Self::parse_blueprint(&b)?,
@@ -393,7 +393,7 @@ impl BoardNode {
 }
 
 #[derive(Debug)]
-pub struct VcbBoard<const STRATEGY: u8, T: LogicSim> {
+pub struct VcbBoard<T: LogicSim> {
     elements: Vec<BoardElement>,
     nodes: Vec<BoardNode>,
     pub(crate) compiled_network: T,
@@ -401,7 +401,7 @@ pub struct VcbBoard<const STRATEGY: u8, T: LogicSim> {
     pub(crate) height: usize,
 }
 
-impl<const STRATEGY: u8, T: LogicSim> VcbBoard<STRATEGY, T> {
+impl<T: LogicSim> VcbBoard<T> {
     /// For regression testing
     #[must_use]
     pub fn make_state_vec(&self) -> Vec<bool> {
@@ -453,7 +453,7 @@ impl<const STRATEGY: u8, T: LogicSim> VcbBoard<STRATEGY, T> {
         );
 
         let network = {
-            let mut network = GateNetwork::<STRATEGY>::default();
+            let mut network = GateNetwork::default();
 
             // add vertexes to network
             for node in &mut nodes {
@@ -1163,13 +1163,7 @@ impl BoardElement {
             id: None,
         }
     }
-    fn print<const STRATEGY: u8, T: LogicSim>(
-        &self,
-        board: &VcbBoard<STRATEGY, T>,
-        _i: usize,
-        _marked: bool,
-        debug: bool,
-    ) {
+    fn print<T: LogicSim>(&self, board: &VcbBoard<T>, _i: usize, _marked: bool, debug: bool) {
         let format = |debug, id: usize| {
             if debug {
                 format!("{id:>2}")
@@ -1194,7 +1188,7 @@ impl BoardElement {
 
         print!("{}", tmpstr.on(col1).with(col2));
     }
-    fn get_state<const STRATEGY: u8, T: LogicSim>(&self, board: &VcbBoard<STRATEGY, T>) -> bool {
+    fn get_state<T: LogicSim>(&self, board: &VcbBoard<T>) -> bool {
         self.id
             .map(|t| {
                 board.nodes[t]
@@ -1204,7 +1198,7 @@ impl BoardElement {
             })
             .unwrap_or_default()
     }
-    fn get_color<const STRATEGY: u8, T: LogicSim>(&self, board: &VcbBoard<STRATEGY, T>) -> [u8; 4] {
+    fn get_color<T: LogicSim>(&self, board: &VcbBoard<T>) -> [u8; 4] {
         if self.get_state(board) {
             self.color_on
         } else {

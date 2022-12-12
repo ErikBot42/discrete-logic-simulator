@@ -366,10 +366,10 @@ impl EditableNetwork {
 
 /// The API for creating a gate network.
 #[derive(Debug, Default)]
-pub(crate) struct GateNetwork<const STRATEGY: u8> {
+pub(crate) struct GateNetwork {
     network: EditableNetwork,
 }
-impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
+impl GateNetwork {
     /// Internally creates a vertex.
     /// Returns vertex id
     /// ids of gates are guaranteed to be unique
@@ -423,11 +423,10 @@ impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
     /// Should not panic.
     #[must_use]
     pub(crate) fn compiled<T: crate::logic::LogicSim>(self, optimize: bool) -> T {
-        assert_eq!(STRATEGY, T::strategy());
         T::create(
             self.network
                 .initialized(optimize)
-                .with_gaps(UpdateStrategy::from(STRATEGY)),
+                .with_gaps(UpdateStrategy::from(T::strategy())),
         )
     }
 }

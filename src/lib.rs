@@ -48,7 +48,7 @@ mod tests {
 
     fn prep_cases<const STRATEGY: u8>(
         optimize: bool,
-    ) -> Vec<(&'static str, VcbBoard<STRATEGY, CompiledNetwork<STRATEGY>>)> {
+    ) -> Vec<(&'static str, VcbBoard<CompiledNetwork<STRATEGY>>)> {
         let cases: Vec<(&str, _)> = vec![
             (
                 "gates",
@@ -79,7 +79,7 @@ mod tests {
             .clone()
             .into_iter()
             .map(|x| (x.0, VcbParser::parse_compile(x.1, optimize).unwrap()))
-            .collect::<Vec<(&str, VcbBoard<STRATEGY, CompiledNetwork<STRATEGY>>)>>()
+            .collect::<Vec<(&str, VcbBoard<CompiledNetwork<STRATEGY>>)>>()
     }
 
     #[test]
@@ -149,8 +149,7 @@ mod tests {
         const STRATEGY_REF: u8 = UpdateStrategy::Reference as u8;
         const STRATEGY_SCALAR: u8 = UpdateStrategy::ScalarSimd as u8;
         let optimized_board = prep_cases::<STRATEGY_REF>(optimized);
-        let optimized_scalar =
-            prep_cases::<STRATEGY_SCALAR>(optimized);
+        let optimized_scalar = prep_cases::<STRATEGY_SCALAR>(optimized);
         //let mut correct: bool = true;
         for ((name, mut optimized), (_, mut optimized_scalar)) in optimized_board
             .into_iter()
@@ -164,8 +163,8 @@ mod tests {
     }
 
     fn compare_boards_iter<const STRATEGY_REF: u8, const STRATEGY_OTHER: u8>(
-        reference: &mut VcbBoard<STRATEGY_REF, CompiledNetwork<STRATEGY_REF>>,
-        other: &mut VcbBoard<STRATEGY_OTHER, CompiledNetwork<STRATEGY_OTHER>>,
+        reference: &mut VcbBoard<CompiledNetwork<STRATEGY_REF>>,
+        other: &mut VcbBoard<CompiledNetwork<STRATEGY_OTHER>>,
         iterations: usize,
     ) {
         for _ in 0..iterations {
@@ -176,8 +175,8 @@ mod tests {
     }
 
     fn compare_boards<const STRATEGY_REF: u8, const STRATEGY_OTHER: u8>(
-        reference: &mut VcbBoard<STRATEGY_REF, CompiledNetwork<STRATEGY_REF>>,
-        other: &mut VcbBoard<STRATEGY_OTHER, CompiledNetwork<STRATEGY_OTHER>>,
+        reference: &mut VcbBoard<CompiledNetwork<STRATEGY_REF>>,
+        other: &mut VcbBoard<CompiledNetwork<STRATEGY_OTHER>>,
     ) {
         let acc_reference = reference.compiled_network.get_acc_test();
         let acc_other = other.compiled_network.get_acc_test();
@@ -258,7 +257,7 @@ mod tests {
 
     fn basic_gate_test<const STRATEGY: u8>(optimize: bool, add_all: bool) {
         //const STRATEGY: u8 = UpdateStrategy::Reference as u8;
-        let mut board: VcbBoard<STRATEGY, CompiledNetwork<STRATEGY>> = VcbParser::parse_compile(
+        let mut board: VcbBoard<CompiledNetwork<STRATEGY>> = VcbParser::parse_compile(
             VcbInput::BlueprintLegacy(include_str!("../test_files/gates.blueprint").to_string()),
             optimize,
         )
