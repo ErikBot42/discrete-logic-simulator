@@ -64,7 +64,7 @@ impl VcbParser {
         let header = BlueprintHeader::try_from_bytes(&mut bytes_iter)
             .context("Not enough bytes for header")?;
         loop {
-            if bytes.len() == 0 {
+            if bytes.is_empty() {
                 break Err(anyhow!("out of bytes in blueprint string"));
             }
             let block_header = BlueprintBlockHeader::try_from_bytes(&mut bytes_iter)
@@ -158,7 +158,7 @@ struct BlueprintHeader {
 }
 impl BlueprintHeader {
     fn try_from_bytes<'a>(data: &mut impl Iterator<Item = &'a u8>) -> Option<Self> {
-        let mut n = || data.next().map(|x| *x);
+        let mut n = || data.next().copied();
         let identifier = [n()?, n()?, n()?];
         let version = [n()?, n()?, n()?];
         let checksum = [n()?, n()?, n()?, n()?, n()?, n()?];
@@ -189,7 +189,7 @@ struct BlueprintBlockHeader {
 impl BlueprintBlockHeader {
     const SIZE: usize = size_of::<u32>() + size_of::<u32>() + size_of::<u32>();
     fn try_from_bytes<'a>(data: &mut impl Iterator<Item = &'a u8>) -> Option<Self> {
-        let mut n = || data.next().map(|x| *x);
+        let mut n = || data.next().copied();
         let block_size: usize = u32::from_be_bytes([n()?, n()?, n()?, n()?])
             .try_into()
             .ok()?;
