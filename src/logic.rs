@@ -103,6 +103,8 @@ type UpdateList = crate::raw_list::RawList<IndexType>;
 type GateKey = (GateType, Vec<IndexType>);
 
 pub trait LogicSim {
+    const STRATEGY: UpdateStrategy;
+
     // test: get acc optional
     // test: add all to update list
     /// Create `LogicSim` struct from non-optimized network
@@ -131,7 +133,6 @@ pub trait LogicSim {
             self.update();
         }
     }
-    fn strategy() -> u8;
 }
 
 /// data needed after processing network
@@ -1166,30 +1167,23 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
     }
 }
-impl<const STRATEGY: u8> LogicSim for CompiledNetwork<STRATEGY> {
+impl<const STRATEGY2: u8> LogicSim for CompiledNetwork<STRATEGY2> {
     fn create(network: NetworkWithGaps) -> Self {
         Self::create(network)
     }
-
     fn get_state_internal(&self, gate_id: usize) -> bool {
         self.get_state_internal(gate_id)
     }
-
     fn number_of_gates_external(&self) -> usize {
         self.i.translation_table.len()
     }
-
     fn update(&mut self) {
         self.update();
     }
-
     fn to_internal_id(&self, gate_id: usize) -> usize {
         self.i.translation_table[gate_id] as usize
     }
-
-    fn strategy() -> u8 {
-        STRATEGY
-    }
+    const STRATEGY: UpdateStrategy = UpdateStrategy::from(STRATEGY2);
 }
 
 #[cfg(test)]

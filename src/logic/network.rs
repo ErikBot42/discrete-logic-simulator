@@ -423,10 +423,6 @@ impl GateNetwork {
     /// Should not panic.
     #[must_use]
     pub(crate) fn compiled<T: crate::logic::LogicSim>(self, optimize: bool) -> T {
-        T::create(
-            self.network
-                .initialized(optimize)
-                .with_gaps(UpdateStrategy::from(T::strategy())),
-        )
+        T::create(self.network.initialized(optimize).with_gaps(T::STRATEGY))
     }
 }
