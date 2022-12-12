@@ -11,9 +11,9 @@ use crate::logic::network::NetworkWithGaps;
 use std::mem::transmute;
 use std::simd::{Mask, Simd, SimdPartialEq};
 
-pub(crate) type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
-pub(crate) type SimdSim = CompiledNetwork<{ UpdateStrategy::Simd as u8 }>;
-pub(crate) type ScalarSim = CompiledNetwork<{ UpdateStrategy::ScalarSimd as u8 }>;
+pub type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
+pub type SimdSim = CompiledNetwork<{ UpdateStrategy::Simd as u8 }>;
+pub type ScalarSim = CompiledNetwork<{ UpdateStrategy::ScalarSimd as u8 }>;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, PartialOrd, Ord, Default)]
 /// A = active inputs

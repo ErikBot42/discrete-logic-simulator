@@ -6,7 +6,9 @@ use crossterm::terminal::{
     LeaveAlternateScreen,
 };
 use logic_simulator::blueprint::{VcbInput, VcbParser};
-use logic_simulator::logic::{UpdateStrategy, CompiledNetwork};
+use logic_simulator::logic::{
+    CompiledNetwork, LogicSim, ReferenceSim, ScalarSim, SimdSim, UpdateStrategy,
+};
 use std::fs::read_to_string;
 use std::io::stdout;
 use std::path::PathBuf;
@@ -106,30 +108,26 @@ fn main() {
         .clone()
         .map(read_file)
         .map(VcbInput::WorldLegacy))
-    .or(args
-        .world_file
-        .clone()
-        .map(read_file)
-        .map(VcbInput::World))
+    .or(args.world_file.clone().map(read_file).map(VcbInput::World))
     .unwrap();
 
     // branch to specific type here to remove overhead later.
     match args.implementation {
         UpdateStrategy::Reference => {
-            handle_board::<{ UpdateStrategy::Reference as u8 }>(&args, parser_input);
+            handle_board::<ReferenceSim>(&args, parser_input);
         },
         UpdateStrategy::ScalarSimd => {
-            handle_board::<{ UpdateStrategy::ScalarSimd as u8 }>(&args, parser_input);
+            handle_board::<ScalarSim>(&args, parser_input);
         },
         UpdateStrategy::Simd => {
-            handle_board::<{ UpdateStrategy::Simd as u8 }>(&args, parser_input);
+            handle_board::<SimdSim>(&args, parser_input);
         },
     }
 }
 
-fn handle_board<const STRATEGY: u8>(args: &Args, parser_input: VcbInput) {
+fn handle_board<T: LogicSim>(args: &Args, parser_input: VcbInput) {
     let now = Instant::now();
-    let mut board = { VcbParser::parse_compile::<STRATEGY>(parser_input, true).unwrap() };
+    let mut board = { VcbParser::parse_compile::<T>(parser_input, true).unwrap() };
     println!("parsed entire board in {:?}", now.elapsed());
     match args.mode {
         RunMode::Parse => (),

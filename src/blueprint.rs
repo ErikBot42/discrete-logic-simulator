@@ -122,10 +122,10 @@ impl VcbParser {
 
     /// # Result
     /// Returns Err if input is invalid or could not parse.
-    pub fn parse_compile<const STRATEGY: u8>(
+    pub fn parse_compile<T: LogicSim>(
         input: VcbInput,
         optimize: bool,
-    ) -> anyhow::Result<VcbBoard<CompiledNetwork<STRATEGY>>> {
+    ) -> anyhow::Result<VcbBoard<T>> {
         let plain_board = match input {
             VcbInput::BlueprintLegacy(b) => Self::parse_legacy_blueprint(&b)?,
             VcbInput::Blueprint(b) => Self::parse_blueprint(&b)?,
