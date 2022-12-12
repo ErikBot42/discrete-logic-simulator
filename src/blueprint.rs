@@ -1,6 +1,6 @@
 #![allow(clippy::cast_sign_loss)]
 
-use crate::logic::{CompiledNetwork, GateNetwork, GateType};
+use crate::logic::{CompiledNetwork, GateNetwork, GateType, LogicSim};
 use anyhow::{anyhow, Context};
 use crossterm::style::{Color, Colors, Print, ResetColor, SetColors, Stylize};
 use crossterm::QueueableCommand;
@@ -122,10 +122,10 @@ impl VcbParser {
 
     /// # Result
     /// Returns Err if input is invalid or could not parse.
-    pub fn parse_compile<const STRATEGY2: u8>(
+    pub fn parse_compile<const STRATEGY: u8 >(
         input: VcbInput,
         optimize: bool,
-    ) -> anyhow::Result<VcbBoard<STRATEGY2>> {
+    ) -> anyhow::Result<VcbBoard<STRATEGY, CompiledNetwork<STRATEGY>>> {
         let plain_board = match input {
             VcbInput::BlueprintLegacy(b) => Self::parse_legacy_blueprint(&b)?,
             VcbInput::Blueprint(b) => Self::parse_blueprint(&b)?,
@@ -393,15 +393,15 @@ impl BoardNode {
 }
 
 #[derive(Debug)]
-pub struct VcbBoard<const STRATEGY: u8> {
+pub struct VcbBoard<const STRATEGY: u8, T: LogicSim> {
     elements: Vec<BoardElement>,
     nodes: Vec<BoardNode>,
-    pub(crate) compiled_network: CompiledNetwork<STRATEGY>,
+    pub(crate) compiled_network: T,
     pub(crate) width: usize,
     pub(crate) height: usize,
 }
 
-impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
+impl<const STRATEGY: u8, T: LogicSim> VcbBoard<STRATEGY, T> {
     /// For regression testing
     #[must_use]
     pub fn make_state_vec(&self) -> Vec<bool> {
@@ -453,7 +453,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
         );
 
         let network = {
-            let mut network = GateNetwork::default();
+            let mut network = GateNetwork::<STRATEGY>::default();
 
             // add vertexes to network
             for node in &mut nodes {
@@ -477,7 +477,7 @@ impl<const STRATEGY: u8> VcbBoard<STRATEGY> {
             network
         };
 
-        let compiled_network = timed! { network.compiled(optimize), "compiled network in: {:?}"};
+        let compiled_network = network.compiled(optimize);
         VcbBoard {
             elements,
             nodes,
@@ -1163,9 +1163,9 @@ impl BoardElement {
             id: None,
         }
     }
-    fn print<const STRATEGY: u8>(
+    fn print<const STRATEGY: u8, T: LogicSim>(
         &self,
-        board: &VcbBoard<STRATEGY>,
+        board: &VcbBoard<STRATEGY, T>,
         _i: usize,
         _marked: bool,
         debug: bool,
@@ -1184,7 +1184,7 @@ impl BoardElement {
                 .network_id
                 .map(|i| board.compiled_network.get_state(i))
                 .unwrap_or_default();
-            format(debug, board.compiled_network.get_inner_id(t) % 100)
+            format(debug, board.compiled_network.to_internal_id(t) % 100)
         } else {
             "  ".to_string()
         };
@@ -1194,7 +1194,7 @@ impl BoardElement {
 
         print!("{}", tmpstr.on(col1).with(col2));
     }
-    fn get_state<const STRATEGY: u8>(&self, board: &VcbBoard<STRATEGY>) -> bool {
+    fn get_state<const STRATEGY: u8, T: LogicSim>(&self, board: &VcbBoard<STRATEGY, T>) -> bool {
         self.id
             .map(|t| {
                 board.nodes[t]
@@ -1204,7 +1204,7 @@ impl BoardElement {
             })
             .unwrap_or_default()
     }
-    fn get_color<const STRATEGY: u8>(&self, board: &VcbBoard<STRATEGY>) -> [u8; 4] {
+    fn get_color<const STRATEGY: u8, T: LogicSim>(&self, board: &VcbBoard<STRATEGY, T>) -> [u8; 4] {
         if self.get_state(board) {
             self.color_on
         } else {

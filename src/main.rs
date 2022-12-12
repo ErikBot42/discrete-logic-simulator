@@ -6,7 +6,7 @@ use crossterm::terminal::{
     LeaveAlternateScreen,
 };
 use logic_simulator::blueprint::{VcbInput, VcbParser};
-use logic_simulator::logic::UpdateStrategy;
+use logic_simulator::logic::{UpdateStrategy, CompiledNetwork};
 use std::fs::read_to_string;
 use std::io::stdout;
 use std::path::PathBuf;

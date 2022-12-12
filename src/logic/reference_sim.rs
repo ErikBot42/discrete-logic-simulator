@@ -65,6 +65,10 @@ impl LogicSim for ReferenceLogicSim {
     fn to_internal_id(&self, gate_id: usize) -> usize {
         self.translation_table[gate_id] as usize
     }
+
+    fn strategy() -> u8 {
+        todo!()
+    }
 }
 impl ReferenceLogicSim {
     fn update_inner(&mut self, cluster: bool) {

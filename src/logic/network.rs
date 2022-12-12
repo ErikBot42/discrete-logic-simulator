@@ -47,7 +47,7 @@ impl NetworkInfo for InitializedNetwork {
 
 /// Network that contains empty gate slots used for alignment
 /// Needed to separate cluster and non cluster in packed forms.
-pub(crate) struct NetworkWithGaps {
+pub struct NetworkWithGaps {
     pub(crate) gates: Vec<Option<Gate>>,
     pub(crate) translation_table: Vec<IndexType>,
 }
@@ -421,8 +421,9 @@ impl<const STRATEGY: u8> GateNetwork<STRATEGY> {
     /// # Panics
     /// Should not panic.
     #[must_use]
-    pub(crate) fn compiled(self, optimize: bool) -> CompiledNetwork<{ STRATEGY }> {
-        CompiledNetwork::create(
+    pub(crate) fn compiled<T: crate::logic::LogicSim>(self, optimize: bool) -> T {
+        assert_eq!(STRATEGY, T::strategy());
+        T::create(
             self.network
                 .initialized(optimize)
                 .with_gaps(UpdateStrategy::from(STRATEGY)),
