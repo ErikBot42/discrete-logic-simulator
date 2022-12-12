@@ -122,7 +122,7 @@ pub trait LogicSim {
     /// Return vector of state from *external* perspective.
     fn get_state_vec(&self) -> Vec<bool> {
         (0..self.number_of_gates_external())
-            .map(|i| self.get_state_internal(i))
+            .map(|i| self.get_state(i))
             .collect()
     }
     /// Update network `iterations` times.

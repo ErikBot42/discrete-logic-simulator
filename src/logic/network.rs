@@ -246,6 +246,7 @@ impl InitializedNetwork {
     /// In order for scalar packing optimizations to be sound,
     /// cluster and non cluster cannot be mixed
     fn prepare_for_scalar_packing(&self) -> NetworkWithGaps {
+        println!("SCALAR PACKING RUNNING!!!!!!!!!!!");
         self.reordered_by(|v| {
             Self::aligned_by_inner(v, gate_status::PACKED_ELEMENTS, |a, b| {
                 Gate::is_cluster_a_xor_is_cluster_b(a, b)
