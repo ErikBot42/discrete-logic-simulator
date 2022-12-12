@@ -11,13 +11,9 @@ use crate::logic::network::NetworkWithGaps;
 use std::mem::transmute;
 use std::simd::{Mask, Simd, SimdPartialEq};
 
-
 pub(crate) type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
 pub(crate) type SimdSim = CompiledNetwork<{ UpdateStrategy::Simd as u8 }>;
 pub(crate) type ScalarSim = CompiledNetwork<{ UpdateStrategy::ScalarSimd as u8 }>;
-
-
-
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, PartialOrd, Ord, Default)]
 /// A = active inputs
@@ -109,34 +105,26 @@ type GateKey = (GateType, Vec<IndexType>);
 pub(crate) trait LogicSim {
     // test: get acc optional
     // test: add all to update list
-
     /// Create `LogicSim` struct from non-optimized network
     fn create(network: NetworkWithGaps) -> Self;
-
     /// Get state from *internal* id
     fn get_state_internal(&self, gate_id: usize) -> bool;
-
     /// Number of *external* gates
     fn number_of_gates_external(&self) -> usize;
-
     /// Run 1 tick
     fn update(&mut self);
-
     /// translate *external* to *internal* id
     fn to_internal_id(&self, gate_id: usize) -> usize;
-
     /// Get state from *external* id.
     fn get_state(&self, gate_id: usize) -> bool {
         self.get_state_internal(self.to_internal_id(gate_id))
     }
-
     /// Return vector of state from *external* perspective.
     fn get_state_vec(&self) -> Vec<bool> {
         (0..self.number_of_gates_external())
             .map(|i| self.get_state_internal(i))
             .collect()
     }
-
     /// Update network `iterations` times.
     fn update_i(&mut self, iterations: usize) {
         for _ in 0..iterations {
@@ -144,10 +132,6 @@ pub(crate) trait LogicSim {
         }
     }
 }
-
-
-
-
 
 /// data needed after processing network
 #[derive(Debug, Clone, Default)]
@@ -287,26 +271,6 @@ impl Gate {
     }
 }
 
-#[derive(Debug, Default, Clone)]
-pub(crate) struct CompiledNetworkInner {
-    packed_outputs: Vec<IndexType>,
-    packed_output_indexes: Vec<IndexType>,
-
-    //state: Vec<u8>,
-    in_update_list: Vec<bool>,
-    //runtime_gate_kind: Vec<RunTimeGateType>,
-    acc_packed: Vec<gate_status::Packed>,
-    acc: Vec<AccType>,
-
-    status_packed: Vec<gate_status::Packed>,
-    status: Vec<gate_status::Inner>,
-    translation_table: Vec<IndexType>,
-    pub iterations: usize,
-
-    //#[cfg(test)]
-    kind: Vec<GateType>,
-    number_of_gates: usize,
-}
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
 #[repr(u8)]
@@ -328,6 +292,27 @@ impl UpdateStrategy {
             _ => panic!(),
         }
     }
+}
+
+#[derive(Debug, Default, Clone)]
+pub(crate) struct CompiledNetworkInner {
+    packed_outputs: Vec<IndexType>,
+    packed_output_indexes: Vec<IndexType>,
+
+    //state: Vec<u8>,
+    in_update_list: Vec<bool>,
+    //runtime_gate_kind: Vec<RunTimeGateType>,
+    acc_packed: Vec<gate_status::Packed>,
+    acc: Vec<AccType>,
+
+    status_packed: Vec<gate_status::Packed>,
+    status: Vec<gate_status::Inner>,
+    translation_table: Vec<IndexType>,
+    pub iterations: usize,
+
+    //#[cfg(test)]
+    kind: Vec<GateType>,
+    number_of_gates: usize,
 }
 
 /// Contains prepared datastructures to run the network.
