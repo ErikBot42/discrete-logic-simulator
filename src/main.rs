@@ -7,7 +7,7 @@ use crossterm::terminal::{
 };
 use logic_simulator::blueprint::{VcbInput, VcbParser};
 use logic_simulator::logic::{
-    CompiledNetwork, LogicSim, ReferenceSim, ScalarSim, SimdSim, UpdateStrategy,
+    BitPackSim, LogicSim, ReferenceSim, ScalarSim, SimdSim, UpdateStrategy,
 };
 use std::fs::read_to_string;
 use std::io::stdout;
@@ -121,6 +121,9 @@ fn main() {
         },
         UpdateStrategy::Simd => {
             handle_board::<SimdSim>(&args, parser_input);
+        },
+        UpdateStrategy::BitPack => {
+            handle_board::<BitPackSim>(&args, parser_input);
         },
     }
 }

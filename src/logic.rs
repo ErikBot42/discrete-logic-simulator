@@ -103,8 +103,6 @@ type UpdateList = crate::raw_list::RawList<IndexType>;
 type GateKey = (GateType, Vec<IndexType>);
 
 pub trait LogicSim {
-    const STRATEGY: UpdateStrategy;
-
     // test: get acc optional
     // test: add all to update list
     /// Create `LogicSim` struct from non-optimized network
@@ -133,6 +131,7 @@ pub trait LogicSim {
             self.update();
         }
     }
+    const STRATEGY: UpdateStrategy;
 }
 
 /// data needed after processing network
@@ -146,7 +145,7 @@ pub(crate) struct Gate {
     // variable:
     acc: AccType,
     state: bool,
-    in_update_list: bool,
+    //in_update_list: bool,
     //TODO: "do not merge" flag for gates that are "volatile", for example handling IO
 }
 impl Gate {
@@ -170,7 +169,7 @@ impl Gate {
             acc: start_acc,
             kind,
             state: false, // all gates/clusters initialize to off
-            in_update_list: false,
+                          //in_update_list: false,
         }
     }
     fn from_gate_type(kind: GateType) -> Self {
@@ -273,7 +272,6 @@ impl Gate {
     }
 }
 
-
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
 #[repr(u8)]
 pub enum UpdateStrategy {
@@ -284,6 +282,8 @@ pub enum UpdateStrategy {
     ScalarSimd = 1,
     /// Update gates with simd
     Simd = 2,
+    /// Bit
+    BitPack = 3,
 }
 impl UpdateStrategy {
     const fn from(value: u8) -> Self {
@@ -291,6 +291,7 @@ impl UpdateStrategy {
             0 => UpdateStrategy::Reference,
             1 => UpdateStrategy::ScalarSimd,
             2 => UpdateStrategy::Simd,
+            3 => UpdateStrategy::BitPack,
             _ => panic!(),
         }
     }
@@ -342,6 +343,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     .map(|x| gate_status::unpack_single(x))
                     .flatten(),
             ),
+            _ => panic!(),
         }
     }
 
@@ -368,6 +370,8 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     fn create(mut network: NetworkWithGaps) -> Self {
         let number_of_gates = network.gates.len();
 
+        let mut in_update_list: Vec<bool> = network.gates.iter().map(|_| false).collect();
+
         let update_list: Vec<IndexType> = network
             .gates
             .iter_mut()
@@ -379,7 +383,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             })
             .filter_map(|(gate_id, gate)| {
                 gate.as_mut().map(|g| {
-                    g.in_update_list = true;
+                    in_update_list[gate_id] = true;
                     gate_id.try_into().unwrap()
                 })
             })
@@ -390,10 +394,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         let runtime_gate_kind: Vec<RunTimeGateType> = gates
             .iter()
             .map(|gate| RunTimeGateType::new(gate.as_ref().map(|g| g.kind).unwrap_or_default()))
-            .collect();
-        let in_update_list: Vec<bool> = gates
-            .iter()
-            .map(|gate| gate.as_ref().map(|g| g.in_update_list).unwrap_or_default())
             .collect();
         let state: Vec<u8> = gates
             .iter()
@@ -515,6 +515,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             UpdateStrategy::Reference | UpdateStrategy::Simd => {
                 gate_status::state(self.i.status[gate_id])
             },
+            _ => panic!(),
         }
     }
     pub(crate) fn get_state_vec(&self) -> Vec<bool> {
@@ -578,6 +579,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     &mut self.cluster_update_list,
                 );
             },
+            _ => panic!(),
         }
     }
     #[inline]
@@ -1184,6 +1186,30 @@ impl<const STRATEGY2: u8> LogicSim for CompiledNetwork<STRATEGY2> {
         self.i.translation_table[gate_id] as usize
     }
     const STRATEGY: UpdateStrategy = UpdateStrategy::from(STRATEGY2);
+}
+
+pub struct BitPackSim {
+    number_of_gates_external: usize,
+}
+impl LogicSim for BitPackSim {
+    fn create(network: NetworkWithGaps) -> Self {
+        let number_of_gates = network.gates.len();
+
+        todo!()
+    }
+    fn get_state_internal(&self, gate_id: usize) -> bool {
+        todo!()
+    }
+    fn number_of_gates_external(&self) -> usize {
+        self.number_of_gates_external
+    }
+    fn update(&mut self) {
+        todo!()
+    }
+    fn to_internal_id(&self, gate_id: usize) -> usize {
+        todo!()
+    }
+    const STRATEGY: UpdateStrategy = UpdateStrategy::BitPack;
 }
 
 #[cfg(test)]
