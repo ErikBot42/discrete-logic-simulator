@@ -62,9 +62,9 @@ impl NetworkWithGaps {
 
 /// Contains translation table and can no longer be edited by client.
 /// Can be edited for optimizations.
-pub(crate) struct InitializedNetwork {
-    gates: Vec<Gate>,
-    translation_table: Vec<IndexType>,
+pub struct InitializedNetwork {
+    pub(crate) gates: Vec<Gate>,
+    pub(crate) translation_table: Vec<IndexType>,
 }
 impl InitializedNetwork {
     pub(crate) fn with_gaps(self, strategy: UpdateStrategy) -> NetworkWithGaps {
@@ -429,6 +429,6 @@ impl GateNetwork {
     /// Should not panic.
     #[must_use]
     pub(crate) fn compiled<T: crate::logic::LogicSim>(self, optimize: bool) -> T {
-        T::create(self.network.initialized(optimize).with_gaps(T::STRATEGY))
+        T::create(self.network.initialized(optimize))
     }
 }
