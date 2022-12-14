@@ -1207,15 +1207,26 @@ fn pack_sparse_matrix(
 }
 
 type BitInt = u32;
-
+#[must_use]
+fn bit_set(int: BitInt, index: usize, set: bool) -> BitInt {
+    int | ((set as BitInt) << index)
+}
+#[must_use]
+fn bit_get(int: BitInt, index: usize) -> bool {
+    int & (1 << index) != 0
+}
+#[must_use]
+fn wrapping_bit_get(int: BitInt, index: usize) -> bool {
+    int & (1 as BitInt).wrapping_shl(index as BitInt) != 0
+}
 fn pack_bits(arr: [bool; BitPackSim::BITS]) -> BitInt {
     let mut tmp_int: BitInt = 0;
     for (i, b) in arr.into_iter().enumerate() {
-        tmp_int |= (b as BitInt) << i;
+        tmp_int = bit_set(tmp_int, i, b);
     }
     tmp_int
 }
-
+#[derive(Debug)]
 pub struct BitPackSim {
     translation_table: Vec<IndexType>,
     acc: Vec<AccType>,
@@ -1229,7 +1240,13 @@ pub struct BitPackSim {
 impl BitPackSim {
     const BITS: usize = BitInt::BITS as usize;
     const INDEXING_BITS: usize = Self::BITS.ilog2() as usize;
+    fn calc_state(acc: [u8; Self::BITS], is_xor: &u32, is_inverted: &u32) -> u32 {
+        let acc_zero = pack_bits(acc.map(|a| a != 0));
+        let acc_parity = pack_bits(acc.map(|a| a & 1 == 1));
+        ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
+    }
     fn update_inner<const CLUSTER: bool>(&mut self) {
+        //dbg!(CLUSTER);
         for (group_id, ((state, is_inverted), is_xor)) in self
             .state
             .iter_mut()
@@ -1246,10 +1263,13 @@ impl BitPackSim {
             let acc =
                 <&[u8] as TryInto<[u8; Self::BITS]>>::try_into(&self.acc[group_range.clone()])
                     .unwrap();
-            let acc_zero = pack_bits(acc.map(|a| a == 0));
-            let acc_parity = pack_bits(acc.map(|a| a & 1 == 1));
-            let new_state = !is_xor & (acc_zero ^ is_inverted) | is_xor & acc_parity;
+            let new_state = Self::calc_state(acc, is_xor, is_inverted);
             let changed = *state ^ new_state;
+            //println!(
+            //    "state: {:b}, new: {new_state:b}, changed: {changed:b}",
+            //    *state
+            //);
+
             *state = new_state;
 
             for (i, (outputs_start, outputs_end)) in self.packed_output_indexes[group_range]
@@ -1261,13 +1281,14 @@ impl BitPackSim {
                         .map(|&i| i as usize),
                 )
                 .enumerate()
-                .filter(|(i, _)| (changed & (1 << i)) == 1)
+                .filter(|&(i, _)| bit_get(changed, i))
             {
-                let delta = if new_state & (1 << i) == 1 {
+                let delta = if bit_get(new_state, i) {
                     1
                 } else {
                     (0 as AccType).wrapping_sub(1)
                 };
+                //dbg!((i, delta));
                 for output in self.packed_outputs[outputs_start..outputs_end]
                     .iter()
                     .map(|&i| i as usize)
@@ -1276,8 +1297,10 @@ impl BitPackSim {
                 }
             }
         }
+        //dbg!(&self.state);
     }
 }
+
 impl LogicSim for BitPackSim {
     fn create(network: InitializedNetwork) -> Self {
         let network = network.prepare_for_bitpack_packing(Self::BITS);
@@ -1326,8 +1349,8 @@ impl LogicSim for BitPackSim {
         }
     }
     fn get_state_internal(&self, gate_id: usize) -> bool {
-        let index = gate_id << Self::INDEXING_BITS;
-        self.state[index].wrapping_shl(gate_id as u32) & 1 == 1
+        let index = gate_id >> Self::INDEXING_BITS;
+        wrapping_bit_get(self.state[index], gate_id)
     }
     fn number_of_gates_external(&self) -> usize {
         self.translation_table.len()

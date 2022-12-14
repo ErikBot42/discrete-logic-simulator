@@ -255,13 +255,14 @@ mod tests {
     }
 
     fn generic_basic_gate_test_w<SIM: LogicSim>() {
-        basic_gate_test::<SIM>(true, false);
-        basic_gate_test::<SIM>(true, true);
         basic_gate_test::<SIM>(false, false);
         basic_gate_test::<SIM>(false, true);
+        basic_gate_test::<SIM>(true, false);
+        basic_gate_test::<SIM>(true, true);
     }
 
     fn basic_gate_test<SIM: LogicSim>(optimize: bool, add_all: bool) {
+        dbg!(optimize, add_all);
         //const STRATEGY: u8 = UpdateStrategy::Reference as u8;
         let mut board: VcbBoard<SIM> = VcbParser::parse_compile(
             VcbInput::BlueprintLegacy(include_str!("../test_files/gates.blueprint").to_string()),
