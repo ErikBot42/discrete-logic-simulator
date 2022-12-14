@@ -6,9 +6,8 @@
 pub mod gate_status;
 pub mod network;
 pub mod reference_sim;
-pub(crate) use crate::logic::network::GateNetwork;
-pub(crate) use crate::logic::network::InitializedNetwork;
 use crate::logic::network::NetworkWithGaps;
+pub(crate) use crate::logic::network::{GateNetwork, InitializedNetwork};
 use std::mem::transmute;
 use std::simd::{Mask, Simd, SimdPartialEq};
 
@@ -79,6 +78,15 @@ impl RunTimeGateType {
             GateType::And | GateType::Nor => RunTimeGateType::AndNor,
             GateType::Or | GateType::Nand | GateType::Cluster => RunTimeGateType::OrNand,
             GateType::Xor | GateType::Xnor => RunTimeGateType::XorXnor,
+        }
+    }
+
+    const fn calc_flags(kind: RunTimeGateType) -> (bool, bool) {
+        match kind {
+            // (is_inverted, is_xor)
+            RunTimeGateType::OrNand => (false, false),
+            RunTimeGateType::AndNor => (true, false),
+            RunTimeGateType::XorXnor => (false, true),
         }
     }
 }
@@ -241,15 +249,6 @@ impl Gate {
         let acc_term = not_xor & (is_inverted ^ acc_not_zero); //0|1
         let new_state = acc_term | xor_term; //0|1
         (new_state, old_state ^ new_state)
-    }
-
-    const fn calc_flags(kind: RunTimeGateType) -> (bool, bool) {
-        match kind {
-            // (is_inverted, is_xor)
-            RunTimeGateType::OrNand => (false, false),
-            RunTimeGateType::AndNor => (true, false),
-            RunTimeGateType::XorXnor => (false, true),
-        }
     }
 
     /// calculate a key that is used to determine if the gate
@@ -1191,12 +1190,71 @@ impl<const STRATEGY2: u8> LogicSim for CompiledNetwork<STRATEGY2> {
     const STRATEGY: UpdateStrategy = UpdateStrategy::from(STRATEGY2);
 }
 
+fn pack_sparse_matrix(
+    outputs_list: impl Iterator<Item = Vec<IndexType>>,
+) -> (Vec<IndexType>, Vec<IndexType>) {
+    // TODO: potentially optimized overlapping outputs/indexes
+    // (requires 2 pointers/gate)
+    // TODO: pack into single array
+    let mut packed_output_indexes: Vec<IndexType> = Vec::new();
+    let mut packed_outputs: Vec<IndexType> = Vec::new();
+    for outputs in outputs_list {
+        packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
+        packed_outputs.append(&mut outputs.clone());
+    }
+    packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
+    (packed_output_indexes, packed_outputs)
+}
+
+type BitInt = u32;
+
+fn collect_bit_int(iter: impl Iterator<Item = [bool; BitPackSim::BITS]>) -> Vec<BitInt> {
+    iter.map(|arr| {
+        let mut tmp_int: BitInt = 0;
+        for (i, b) in arr.into_iter().enumerate() {
+            tmp_int |= (b as BitInt) << i;
+        }
+        tmp_int
+    })
+    .collect()
+}
+
 pub struct BitPackSim {
-    number_of_gates_external: usize,
+    translation_table: Vec<u32>,
+}
+impl BitPackSim {
+    const BITS: usize = BitInt::BITS as usize;
 }
 impl LogicSim for BitPackSim {
     fn create(network: InitializedNetwork) -> Self {
-        let number_of_gates = network.gates.len();
+        let network = network.prepare_for_bitpack_packing(Self::BITS);
+        let number_of_gates_with_padding = network.gates.len();
+        assert_eq!(number_of_gates_with_padding % Self::BITS, 0);
+        let number_of_buckets = number_of_gates_with_padding / Self::BITS;
+        let gates = network.gates;
+        let translation = network.translation_table;
+        let (packed_output_indexes, packed_outputs) = pack_sparse_matrix(gates.iter().map(|g| {
+            g.as_ref()
+                .map(|g| g.outputs.clone())
+                .unwrap_or_else(|| Vec::new())
+        }));
+        let state = collect_bit_int(
+            gates
+                .iter()
+                .map(|g| g.as_ref().map(|g| g.state).unwrap_or(false))
+                .array_chunks(),
+        );
+        assert_eq!(state.len(), number_of_buckets);
+        let acc: Vec<_> = gates
+            .iter()
+            .map(|g| g.as_ref().map(|g| g.acc).unwrap_or(0))
+            .collect();
+        let kind: Vec<_> = gates
+            .iter()
+            .map(|g| g.as_ref().map(|g| g.kind).unwrap_or(GateType::Cluster))
+            .collect();
+
+        kind.iter().cloned().map(RunTimeGateType::new);
 
         todo!()
     }
@@ -1204,7 +1262,7 @@ impl LogicSim for BitPackSim {
         todo!()
     }
     fn number_of_gates_external(&self) -> usize {
-        self.number_of_gates_external
+        self.translation_table.len()
     }
     fn update(&mut self) {
         todo!()
@@ -1234,7 +1292,7 @@ mod tests {
                 2,
             ] {
                 for state in [true, false] {
-                    let flags = Gate::calc_flags(kind);
+                    let flags = RunTimeGateType::calc_flags(kind);
                     let in_update_list = true;
                     let mut status = gate_status::new(in_update_list, state, kind);
                     let status_delta = if cluster {

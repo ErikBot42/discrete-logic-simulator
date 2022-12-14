@@ -252,13 +252,13 @@ impl InitializedNetwork {
             })
         })
     }
-    //fn prepare_for_bitpack_packing(&self) -> NetworkWithGaps {
-    //    self.reordered_by(|v| {
-    //        Self::aligned_by_inner(v, i32::BITS as usize, |a, b| {
-    //            Gate::is_cluster_a_xor_is_cluster_b(a, b)
-    //        })
-    //    })
-    //}
+    pub(crate) fn prepare_for_bitpack_packing(&self, bits: usize) -> NetworkWithGaps {
+        self.reordered_by(|v| {
+            Self::aligned_by_inner(v, bits, |a, b| {
+                Gate::is_cluster_a_xor_is_cluster_b(a, b)
+            })
+        })
+    }
 
     /// List will have each group of `elements` in such that cmp will return false.
     /// Will also make sure list is a multiple of `elements`

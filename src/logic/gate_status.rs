@@ -1,5 +1,5 @@
 //use super::*;
-use super::{AccType, Gate, RunTimeGateType, SimdLogicType};
+use super::{AccType, RunTimeGateType, SimdLogicType};
 use std::simd::{LaneCount, Mask, Simd, SimdPartialEq, SupportedLaneCount};
 //TODO: this only uses 4 bits, 2 adjacent gates could share their
 //      in_update_list flag and be updated at the same time.
@@ -24,7 +24,7 @@ const FLAGS_MASK: Inner = FLAG_IS_INVERTED | FLAG_IS_XOR;
 pub(crate) fn new(in_update_list: bool, state: bool, kind: RunTimeGateType) -> Inner {
     //let in_update_list = in_update_list as u8;
     //let state = state as u8;
-    let (is_inverted, is_xor) = Gate::calc_flags(kind);
+    let (is_inverted, is_xor) = RunTimeGateType::calc_flags(kind);
 
     ((state as Inner) << STATE)
         | ((in_update_list as Inner) << IN_UPDATE_LIST)
