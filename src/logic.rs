@@ -1279,7 +1279,6 @@ impl BitPackSim {
             debug_assert_eq!(self.kind[offset] == GateType::Cluster, CLUSTER);
 
             let group_range = offset..(offset + Self::BITS);
-            let group_range_1 = (offset + 1)..(offset + Self::BITS + 1);
             let acc =
                 <&[u8] as TryInto<[u8; Self::BITS]>>::try_into(&self.acc[group_range.clone()])
                     .unwrap();
@@ -1294,34 +1293,43 @@ impl BitPackSim {
 
             //TODO: intrinsics to obtain first 1
 
-            for (i, (outputs_start, outputs_end)) in self.packed_output_indexes[group_range]
-                .iter()
-                .map(|&i| i as usize)
-                .zip(
-                    self.packed_output_indexes[group_range_1]
-                        .iter()
-                        .map(|&i| i as usize),
-                )
-                .enumerate()
-                .filter(|&(i, _)| bit_get(changed, i))
-            {
+            for i in 0..Self::BITS {
+                let outputs_start = *unsafe {
+                    self.packed_output_indexes
+                        .get_unchecked(offset as usize + i)
+                } as usize;
+                let outputs_end = *unsafe {
+                    self.packed_output_indexes
+                        .get_unchecked(offset as usize + i + 1)
+                } as usize;
+
+                if !bit_get(changed, i) {
+                    continue;
+                }
+
                 let delta = if bit_get(new_state, i) {
                     1
                 } else {
                     (0 as AccType).wrapping_sub(1)
                 };
 
-                for output in self.packed_outputs[outputs_start..outputs_end]
-                    .iter()
-                    .map(|&i| i as usize)
+                for output in unsafe {
+                    self.packed_outputs
+                        .get_unchecked(outputs_start..outputs_end)
+                }
+                .iter()
                 {
+                    let output = *output as usize;
                     let acc_mut = unsafe { self.acc.get_unchecked_mut(output) };
                     *acc_mut = acc_mut.wrapping_add(delta);
                     let output_group_id = Self::calc_group_id(output);
 
-                    if !self.in_update_list[output_group_id] {
+                    let in_update_list_mut =
+                        unsafe { self.in_update_list.get_unchecked_mut(output_group_id) };
+
+                    if !*in_update_list_mut {
                         unsafe { next_update_list.push(output_group_id as IndexType) };
-                        self.in_update_list[output_group_id] = true;
+                        *in_update_list_mut = true;
                     }
                 }
             }
