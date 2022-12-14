@@ -82,6 +82,11 @@ where
     pub(crate) fn len(&self) -> usize {
         self.len
     }
+    #[inline(always)]
+    pub(crate) fn capacity(&self) -> usize {
+        self.list.len()
+    }
+
     pub(crate) unsafe fn iter(&self) -> impl Iterator<Item = T> + '_ {
         unsafe { self.get_slice().iter().cloned() }
     }

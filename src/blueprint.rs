@@ -422,6 +422,9 @@ impl<T: LogicSim> VcbBoard<T> {
     pub(crate) fn make_inner_state_vec(&self) -> Vec<bool> {
         self.compiled_network.get_state_vec()
     }
+    pub fn update_i(&mut self, iterations: usize) {
+        self.compiled_network.update_i(iterations); 
+    }
     #[inline(always)]
     pub fn update(&mut self) {
         self.compiled_network.update();

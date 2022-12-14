@@ -181,9 +181,7 @@ fn handle_board<T: LogicSim>(args: &Args, parser_input: VcbInput) {
             let iterations_f32: f32 = iterations as f32;
             println!("Running {iterations} iterations");
             let now = std::time::Instant::now();
-            (0..iterations).for_each(|_| {
-                board.update();
-            });
+            board.update_i(iterations);
             let elapsed_raw = now.elapsed();
             let elapsed = now.elapsed().as_secs_f32();
             let millisecond_per_iteration = elapsed / iterations_f32 * 1000.0;

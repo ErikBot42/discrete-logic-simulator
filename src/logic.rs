@@ -1181,6 +1181,7 @@ impl<const STRATEGY2: u8> LogicSim for CompiledNetwork<STRATEGY2> {
     fn number_of_gates_external(&self) -> usize {
         self.i.translation_table.len()
     }
+    #[inline(always)]
     fn update(&mut self) {
         self.update();
     }
@@ -1237,52 +1238,46 @@ pub struct BitPackSim {
     packed_output_indexes: Vec<IndexType>,
     packed_outputs: Vec<IndexType>,
 
-    update_list: Vec<IndexType>,
-    cluster_update_list: Vec<IndexType>,
+    update_list: UpdateList,
+    cluster_update_list: UpdateList,
     in_update_list: Vec<bool>,
 }
 impl BitPackSim {
     const BITS: usize = BitInt::BITS as usize;
-    const INDEXING_BITS: usize = Self::BITS.ilog2() as usize;
+    #[inline(always)]
     fn calc_group_id(id: usize) -> usize {
         id / Self::BITS
     }
-    fn calc_gate_id(group_id: usize, inner_offset: usize) -> usize {
-        group_id * Self::BITS + inner_offset
-    }
+    #[inline(always)]
     fn calc_state(acc: [u8; Self::BITS], is_xor: &u32, is_inverted: &u32) -> u32 {
         let acc_zero = pack_bits(acc.map(|a| a != 0));
         let acc_parity = pack_bits(acc.map(|a| a & 1 == 1));
         ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
     }
+    #[inline(always)]
     fn update_inner<const CLUSTER: bool>(&mut self) {
         let (update_list, next_update_list) = if CLUSTER {
             (&mut self.cluster_update_list, &mut self.update_list)
         } else {
             (&mut self.update_list, &mut self.cluster_update_list)
         };
-
-        //for (group_id, ((state, is_inverted), is_xor)) in self
-        //    .state
-        //    .iter_mut()
-        //    .zip(self.is_inverted.iter())
-        //    .zip(self.is_xor.iter())
-        //    .enumerate()
-        for (group_id, is_inverted, is_xor) in
-            update_list.iter().map(|g| *g as usize).map(|group_id| {
+        for (group_id, is_inverted, is_xor) in unsafe { update_list.iter() }
+            .map(|g| g as usize)
+            .map(|group_id| {
                 (
                     group_id,
-                    &self.is_inverted[group_id],
-                    &self.is_xor[group_id],
+                    unsafe { self.is_inverted.get_unchecked(group_id) },
+                    unsafe { self.is_xor.get_unchecked(group_id) },
                 )
             })
         {
-            let state = &mut self.state[group_id];
+            *unsafe { self.in_update_list.get_unchecked_mut(group_id) } = false;
+
+            let state = unsafe { self.state.get_unchecked_mut(group_id) };
 
             let offset = group_id * Self::BITS;
-            if (self.kind[offset] == GateType::Cluster) != CLUSTER {
-                continue;
-            }
+            debug_assert_eq!(self.kind[offset] == GateType::Cluster, CLUSTER);
+
             let group_range = offset..(offset + Self::BITS);
             let group_range_1 = (offset + 1)..(offset + Self::BITS + 1);
             let acc =
@@ -1292,6 +1287,12 @@ impl BitPackSim {
             let changed = *state ^ new_state;
 
             *state = new_state;
+
+            if changed == 0 {
+                continue;
+            }
+
+            //TODO: intrinsics to obtain first 1
 
             for (i, (outputs_start, outputs_end)) in self.packed_output_indexes[group_range]
                 .iter()
@@ -1314,16 +1315,16 @@ impl BitPackSim {
                     .iter()
                     .map(|&i| i as usize)
                 {
-                    self.acc[output] = self.acc[output].wrapping_add(delta);
+                    let acc_mut = unsafe { self.acc.get_unchecked_mut(output) };
+                    *acc_mut = acc_mut.wrapping_add(delta);
                     let output_group_id = Self::calc_group_id(output);
 
                     if !self.in_update_list[output_group_id] {
-                        next_update_list.push(output_group_id as IndexType);
+                        unsafe { next_update_list.push(output_group_id as IndexType) };
                         self.in_update_list[output_group_id] = true;
                     }
                 }
             }
-            self.in_update_list[group_id] = false;
         }
         update_list.clear();
     }
@@ -1365,14 +1366,16 @@ impl LogicSim for BitPackSim {
             .array_chunks::<{ Self::BITS }>()
             .map(|arr| (pack_bits(arr.map(|a| a.0)), pack_bits(arr.map(|a| a.1))))
             .unzip();
-        let update_list = kind
-            .iter()
-            .step_by(Self::BITS)
-            .map(|k| *k != GateType::Cluster)
-            .enumerate()
-            .filter_map(|(i, b)| b.then_some(i as IndexType))
-            .collect();
+        let update_list = UpdateList::collect_size(
+            kind.iter()
+                .step_by(Self::BITS)
+                .map(|k| *k != GateType::Cluster)
+                .enumerate()
+                .filter_map(|(i, b)| b.then_some(i as IndexType)),
+            number_of_buckets,
+        );
         let in_update_list = (0..gates.len()).map(|_| false).collect();
+        let cluster_update_list = UpdateList::new(update_list.capacity());
         Self {
             translation_table,
             acc,
@@ -1383,7 +1386,7 @@ impl LogicSim for BitPackSim {
             packed_output_indexes,
             packed_outputs,
             update_list,
-            cluster_update_list: Vec::new(),
+            cluster_update_list,
             in_update_list,
         }
     }
