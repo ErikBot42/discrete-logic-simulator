@@ -1236,24 +1236,49 @@ pub struct BitPackSim {
     is_inverted: Vec<BitInt>,
     packed_output_indexes: Vec<IndexType>,
     packed_outputs: Vec<IndexType>,
+
+    update_list: Vec<IndexType>,
+    cluster_update_list: Vec<IndexType>,
+    in_update_list: Vec<bool>,
 }
 impl BitPackSim {
     const BITS: usize = BitInt::BITS as usize;
     const INDEXING_BITS: usize = Self::BITS.ilog2() as usize;
+    fn calc_group_id(id: usize) -> usize {
+        id / Self::BITS
+    }
+    fn calc_gate_id(group_id: usize, inner_offset: usize) -> usize {
+        group_id * Self::BITS + inner_offset
+    }
     fn calc_state(acc: [u8; Self::BITS], is_xor: &u32, is_inverted: &u32) -> u32 {
         let acc_zero = pack_bits(acc.map(|a| a != 0));
         let acc_parity = pack_bits(acc.map(|a| a & 1 == 1));
         ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
     }
     fn update_inner<const CLUSTER: bool>(&mut self) {
-        //dbg!(CLUSTER);
-        for (group_id, ((state, is_inverted), is_xor)) in self
-            .state
-            .iter_mut()
-            .zip(self.is_inverted.iter())
-            .zip(self.is_xor.iter())
-            .enumerate()
+        let (update_list, next_update_list) = if CLUSTER {
+            (&mut self.cluster_update_list, &mut self.update_list)
+        } else {
+            (&mut self.update_list, &mut self.cluster_update_list)
+        };
+
+        //for (group_id, ((state, is_inverted), is_xor)) in self
+        //    .state
+        //    .iter_mut()
+        //    .zip(self.is_inverted.iter())
+        //    .zip(self.is_xor.iter())
+        //    .enumerate()
+        for (group_id, is_inverted, is_xor) in
+            update_list.iter().map(|g| *g as usize).map(|group_id| {
+                (
+                    group_id,
+                    &self.is_inverted[group_id],
+                    &self.is_xor[group_id],
+                )
+            })
         {
+            let state = &mut self.state[group_id];
+
             let offset = group_id * Self::BITS;
             if (self.kind[offset] == GateType::Cluster) != CLUSTER {
                 continue;
@@ -1265,10 +1290,6 @@ impl BitPackSim {
                     .unwrap();
             let new_state = Self::calc_state(acc, is_xor, is_inverted);
             let changed = *state ^ new_state;
-            //println!(
-            //    "state: {:b}, new: {new_state:b}, changed: {changed:b}",
-            //    *state
-            //);
 
             *state = new_state;
 
@@ -1288,16 +1309,23 @@ impl BitPackSim {
                 } else {
                     (0 as AccType).wrapping_sub(1)
                 };
-                //dbg!((i, delta));
+
                 for output in self.packed_outputs[outputs_start..outputs_end]
                     .iter()
                     .map(|&i| i as usize)
                 {
                     self.acc[output] = self.acc[output].wrapping_add(delta);
+                    let output_group_id = Self::calc_group_id(output);
+
+                    if !self.in_update_list[output_group_id] {
+                        next_update_list.push(output_group_id as IndexType);
+                        self.in_update_list[output_group_id] = true;
+                    }
                 }
             }
+            self.in_update_list[group_id] = false;
         }
-        //dbg!(&self.state);
+        update_list.clear();
     }
 }
 
@@ -1337,6 +1365,14 @@ impl LogicSim for BitPackSim {
             .array_chunks::<{ Self::BITS }>()
             .map(|arr| (pack_bits(arr.map(|a| a.0)), pack_bits(arr.map(|a| a.1))))
             .unzip();
+        let update_list = kind
+            .iter()
+            .step_by(Self::BITS)
+            .map(|k| *k != GateType::Cluster)
+            .enumerate()
+            .filter_map(|(i, b)| b.then_some(i as IndexType))
+            .collect();
+        let in_update_list = (0..gates.len()).map(|_| false).collect();
         Self {
             translation_table,
             acc,
@@ -1346,10 +1382,13 @@ impl LogicSim for BitPackSim {
             is_inverted,
             packed_output_indexes,
             packed_outputs,
+            update_list,
+            cluster_update_list: Vec::new(),
+            in_update_list,
         }
     }
     fn get_state_internal(&self, gate_id: usize) -> bool {
-        let index = gate_id >> Self::INDEXING_BITS;
+        let index = Self::calc_group_id(gate_id);
         wrapping_bit_get(self.state[index], gate_id)
     }
     fn number_of_gates_external(&self) -> usize {
