@@ -48,9 +48,7 @@ mod tests {
         BitPackSim, CompiledNetwork, LogicSim, ReferenceSim, ScalarSim, SimdSim, UpdateStrategy,
     };
 
-    fn prep_cases<const STRATEGY: u8>(
-        optimize: bool,
-    ) -> Vec<(&'static str, VcbBoard<CompiledNetwork<STRATEGY>>)> {
+    fn prep_cases<SIM: LogicSim>(optimize: bool) -> Vec<(&'static str, VcbBoard<SIM>)> {
         let cases: Vec<(&str, _)> = vec![
             (
                 "gates",
@@ -81,16 +79,15 @@ mod tests {
             .clone()
             .into_iter()
             .map(|x| (x.0, VcbParser::parse_compile(x.1, optimize).unwrap()))
-            .collect::<Vec<(&str, VcbBoard<CompiledNetwork<STRATEGY>>)>>()
+            .collect::<Vec<(&str, VcbBoard<SIM>)>>()
     }
 
     #[test]
     fn optimization_regression_test() {
         for add_all_optimized in [true, false] {
             for add_all_unoptimized in [true, false] {
-                const STRATEGY: u8 = UpdateStrategy::Reference as u8;
-                let unoptimized = prep_cases::<STRATEGY>(false);
-                let optimized = prep_cases::<STRATEGY>(true);
+                let unoptimized = prep_cases::<ReferenceSim>(false);
+                let optimized = prep_cases::<ReferenceSim>(true);
                 for ((name, mut unoptimized), (_, mut optimized)) in
                     unoptimized.into_iter().zip(optimized.into_iter())
                 {
@@ -115,10 +112,8 @@ mod tests {
     }
 
     fn simd_test(optimized: bool) -> bool {
-        const STRATEGY_REF: u8 = UpdateStrategy::Reference as u8;
-        const STRATEGY_SIMD: u8 = UpdateStrategy::Simd as u8;
-        let optimized_board = prep_cases::<STRATEGY_REF>(optimized);
-        let optimized_simd = prep_cases::<STRATEGY_SIMD>(optimized);
+        let optimized_board = prep_cases::<ReferenceSim>(optimized);
+        let optimized_simd = prep_cases::<SimdSim>(optimized);
         //let mut correct: bool = true;
         for ((name, mut optimized), (_, mut optimized_simd)) in
             optimized_board.into_iter().zip(optimized_simd.into_iter())
@@ -147,26 +142,22 @@ mod tests {
         //correct
         true
     }
-    fn scalar_test(optimized: bool) -> bool {
-        const STRATEGY_REF: u8 = UpdateStrategy::Reference as u8;
-        const STRATEGY_SCALAR: u8 = UpdateStrategy::ScalarSimd as u8;
-        let optimized_board = prep_cases::<STRATEGY_REF>(optimized);
-        let optimized_scalar = prep_cases::<STRATEGY_SCALAR>(optimized);
-        //let mut correct: bool = true;
+
+    fn run_test<Reference: LogicSim, Other: LogicSim>(optimized: bool, iterations: usize) {
+        let optimized_board = prep_cases::<Reference>(optimized);
+        let optimized_scalar = prep_cases::<Other>(optimized);
         for ((name, mut optimized), (_, mut optimized_scalar)) in optimized_board
             .into_iter()
             .zip(optimized_scalar.into_iter())
         {
-            //let width = optimized.width;
-            compare_boards_iter(&mut optimized, &mut optimized_scalar, 20);
+            dbg!(name);
+            compare_boards_iter(&mut optimized, &mut optimized_scalar, iterations);
         }
-        //correct
-        true
     }
 
-    fn compare_boards_iter<const STRATEGY_REF: u8, const STRATEGY_OTHER: u8>(
-        reference: &mut VcbBoard<CompiledNetwork<STRATEGY_REF>>,
-        other: &mut VcbBoard<CompiledNetwork<STRATEGY_OTHER>>,
+    fn compare_boards_iter(
+        reference: &mut VcbBoard<impl LogicSim>,
+        other: &mut VcbBoard<impl LogicSim>,
         iterations: usize,
     ) {
         for _ in 0..iterations {
@@ -176,20 +167,20 @@ mod tests {
         }
     }
 
-    fn compare_boards<const STRATEGY_REF: u8, const STRATEGY_OTHER: u8>(
-        reference: &mut VcbBoard<CompiledNetwork<STRATEGY_REF>>,
-        other: &mut VcbBoard<CompiledNetwork<STRATEGY_OTHER>>,
+    fn compare_boards(
+        reference: &mut VcbBoard<impl LogicSim>,
+        other: &mut VcbBoard<impl LogicSim>,
     ) {
-        let acc_reference = reference.compiled_network.get_acc_test();
-        let acc_other = other.compiled_network.get_acc_test();
+        //let acc_reference = reference.compiled_network.get_acc_test();
+        //let acc_other = other.compiled_network.get_acc_test();
         let state_reference = reference.make_inner_state_vec();
         let state_other = other.make_inner_state_vec();
         let diff: Vec<_> = state_reference
             .into_iter()
             .zip(state_other)
-            .zip(acc_reference.zip(acc_other))
+            //.zip(acc_reference.zip(acc_other))
             .enumerate()
-            .filter(|(_, ((bool_a, bool_b), _))| bool_a != bool_b)
+            .filter(|(_, (bool_a, bool_b))| bool_a != bool_b)
             .collect();
         println!("--------------------------------------");
         println!("OTHER:");
@@ -200,31 +191,36 @@ mod tests {
             panic!(
                 "diff ids: \n{}",
                 diff.iter()
-                    .map(|(i, ((ba, bb), (aa, ab)))| format!("{i}: {ba} {bb}, {aa} {ab}"))
+                    .map(|(i, (ba, bb))| format!("{i}: {ba} {bb}"))
                     .collect::<Vec<_>>()
                     .join("\n"),
             );
         }
     }
-    //#[ignore]
+
     #[test]
     fn scalar_regression_test_unoptimized() {
-        assert!(scalar_test(false));
+        run_test::<ReferenceSim, ScalarSim>(false, 20);
     }
-    //#[ignore]
     #[test]
     fn scalar_regression_test_optimized() {
-        assert!(scalar_test(true));
+        run_test::<ReferenceSim, ScalarSim>(true, 20);
     }
-
+    #[test]
+    fn bitpack_regression_test_unoptimized() {
+        run_test::<ReferenceSim, BitPackSim>(false, 20);
+    }
+    #[test]
+    fn bitpack_regression_test_optimized() {
+        run_test::<ReferenceSim, BitPackSim>(true, 20);
+    }
     #[test]
     fn simd_regression_test_unoptimized() {
-        assert!(simd_test(false));
+        simd_test(false);
     }
-
     #[test]
     fn simd_regression_test_optimized() {
-        assert!(simd_test(true));
+        simd_test(true);
     }
 
     //#[test]
