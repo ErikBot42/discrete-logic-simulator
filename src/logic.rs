@@ -1287,13 +1287,13 @@ impl BitPackSim {
 
             *state = new_state;
 
-            if changed == 0 {
-                continue;
-            }
+            let mut changed = changed;
+            while changed != 0 {
+                let i = changed.trailing_zeros();
+                changed = changed & !(1 << i);
 
-            //TODO: intrinsics to obtain first 1
+                let i = i as usize;
 
-            for i in 0..Self::BITS {
                 let outputs_start = *unsafe {
                     self.packed_output_indexes
                         .get_unchecked(offset as usize + i)
@@ -1302,10 +1302,6 @@ impl BitPackSim {
                     self.packed_output_indexes
                         .get_unchecked(offset as usize + i + 1)
                 } as usize;
-
-                if !bit_get(changed, i) {
-                    continue;
-                }
 
                 let delta = if bit_get(new_state, i) {
                     1
@@ -1318,8 +1314,8 @@ impl BitPackSim {
                         .get_unchecked(outputs_start..outputs_end)
                 }
                 .iter()
+                .map(|&i| i as usize)
                 {
-                    let output = *output as usize;
                     let acc_mut = unsafe { self.acc.get_unchecked_mut(output) };
                     *acc_mut = acc_mut.wrapping_add(delta);
                     let output_group_id = Self::calc_group_id(output);
