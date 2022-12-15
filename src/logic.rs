@@ -1289,7 +1289,7 @@ impl BitPackSim {
             let acc_ptr: *const __m256i = transmute(acc_ptr);
 
             //TODO: use aligned intrinsic instead
-            let data = _mm256_loadu_si256(acc_ptr); // load value
+            let data = _mm256_load_si256(acc_ptr); // load value
             let data = _mm256_slli_epi64::<7>(data); // shift LSB to MSB for each byte
             let data = _mm256_movemask_epi8(data); // put MSB of each byte in an int
             transmute(data)
