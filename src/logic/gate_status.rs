@@ -256,20 +256,26 @@ pub(crate) fn eval_mut_scalar_slow_working<const CLUSTER: bool>(
 /// lowest bit in byte -> bit
 /// NOTE: byte order is reversed
 /// TODO: could make everything BE.
-fn pack_bit_bitpack_be(arr: Packed) -> u8 {
+#[inline(always)]
+fn pack_bit_bitpack_rev(arr: u64) -> u8 {
     // https://stackoverflow.com/questions/14547087/extracting-bits-with-a-single-multiplication
     const MASK: Packed =
         0b0000_0001_0000_0001_0000_0001_0000_0001_0000_0001_0000_0001_0000_0001_0000_0001;
     const MAGIC: Packed =
         0b1000_0000_0100_0000_0010_0000_0001_0000_0000_1000_0000_0100_0000_0010_0000_0001;
-    ((arr & MASK) * MAGIC).to_le_bytes()[7]
+    (arr & MASK).wrapping_mul(MAGIC).to_le_bytes()[7]
 }
 
 /// TODO: currently assumes little endian
 /// lowest bit in byte -> bit
-fn arr_bit_bitpack(arr: [Packed; 8]) -> Packed {
+fn arr_bit_bitpack_u64(arr: [u64; 8]) -> u64 {
     // big endian to flip bit order back
-    u64::from_be_bytes(arr.map(pack_bit_bitpack_be))
+    u64::from_be_bytes(arr.map(pack_bit_bitpack_rev))
+}
+
+#[inline(always)]
+pub(crate) fn arr_bit_bitpack<const N: usize>(arr: [u64; N]) -> [u8; N] {
+    arr.map(pack_bit_bitpack_rev).map(u8::reverse_bits)
 }
 
 /// Evaluator with 1 bit/gate.
@@ -281,8 +287,8 @@ fn eval_bitpacked(
     is_xor: Packed,
     is_inverted: Packed,
 ) -> Packed {
-    let acc_parity = arr_bit_bitpack(acc);
-    let acc_not_zero = arr_bit_bitpack(acc.map(or_combine_1));
+    let acc_parity = arr_bit_bitpack_u64(acc);
+    let acc_not_zero = arr_bit_bitpack_u64(acc.map(or_combine_1));
     let acc_term = (!is_xor) & (is_inverted ^ acc_not_zero);
     let xor_term = is_xor & acc_parity;
     let new_state = xor_term | acc_term;

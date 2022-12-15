@@ -8,7 +8,8 @@ pub mod network;
 pub mod reference_sim;
 use crate::logic::network::NetworkWithGaps;
 pub(crate) use crate::logic::network::{GateNetwork, InitializedNetwork};
-use std::mem::transmute;
+use bytemuck::{cast_slice, cast_slice_mut};
+use std::mem::{size_of, transmute};
 use std::simd::{Mask, Simd, SimdPartialEq};
 
 pub type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
@@ -1208,6 +1209,8 @@ fn pack_sparse_matrix(
 }
 
 type BitInt = u32;
+type BitAcc = u8;
+type BitAccPack = u64;
 #[must_use]
 fn bit_set(int: BitInt, index: usize, set: bool) -> BitInt {
     int | ((set as BitInt) << index)
@@ -1218,7 +1221,7 @@ fn bit_get(int: BitInt, index: usize) -> bool {
 }
 #[must_use]
 fn wrapping_bit_get(int: BitInt, index: usize) -> bool {
-    int & (1 as BitInt).wrapping_shl(index as BitInt) != 0
+    int & (1 as BitInt).wrapping_shl(index as u32) != 0
 }
 fn pack_bits(arr: [bool; BitPackSim::BITS]) -> BitInt {
     let mut tmp_int: BitInt = 0;
@@ -1230,7 +1233,7 @@ fn pack_bits(arr: [bool; BitPackSim::BITS]) -> BitInt {
 #[derive(Debug)]
 pub struct BitPackSim {
     translation_table: Vec<IndexType>,
-    acc: Vec<AccType>,
+    acc: Vec<BitAccPack>,
     state: Vec<BitInt>,
     kind: Vec<GateType>,
     is_xor: Vec<BitInt>,
@@ -1243,15 +1246,39 @@ pub struct BitPackSim {
     in_update_list: Vec<bool>,
 }
 impl BitPackSim {
+    const BIT_ACC_GROUP: usize = size_of::<BitAccPack>() / size_of::<BitAcc>();
     const BITS: usize = BitInt::BITS as usize;
     #[inline(always)]
     fn calc_group_id(id: usize) -> usize {
         id / Self::BITS
     }
     #[inline(always)]
-    fn calc_state(acc: [u8; Self::BITS], is_xor: &u32, is_inverted: &u32) -> u32 {
-        let acc_zero = pack_bits(acc.map(|a| a != 0));
-        let acc_parity = pack_bits(acc.map(|a| a & 1 == 1));
+    fn calc_state_pack(acc_p: &[BitAccPack], is_xor: &BitInt, is_inverted: &BitInt) -> BitInt {
+        let acc: &[BitAcc] = cast_slice(acc_p);
+        let mut acc_zero: BitInt = 0;
+        let mut acc_parity: BitInt = 0;
+        for (i, b) in acc.iter().map(|a| *a != 0).enumerate() {
+            acc_zero = bit_set(acc_zero, i, b);
+        }
+        for (i, b) in acc.iter().map(|a| a & 1 == 1).enumerate() {
+            acc_parity = bit_set(acc_parity, i, b);
+        }
+
+        //acc_parity = BitInt::from_le_bytes(gate_status::arr_bit_bitpack(acc_p.try_into().unwrap()));
+
+        ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
+    }
+    #[inline(always)]
+    fn calc_state(acc: &[BitAcc], is_xor: &BitInt, is_inverted: &BitInt) -> BitInt {
+        let mut acc_zero: BitInt = 0;
+        let mut acc_parity: BitInt = 0;
+        for (i, b) in acc.iter().map(|a| *a != 0).enumerate() {
+            acc_zero = bit_set(acc_zero, i, b);
+        }
+        for (i, b) in acc.iter().map(|a| a & 1 == 1).enumerate() {
+            acc_parity = bit_set(acc_parity, i, b);
+        }
+
         ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
     }
     #[inline(always)]
@@ -1261,6 +1288,7 @@ impl BitPackSim {
         } else {
             (&mut self.update_list, &mut self.cluster_update_list)
         };
+
         for (group_id, is_inverted, is_xor) in unsafe { update_list.iter() }
             .map(|g| g as usize)
             .map(|group_id| {
@@ -1278,12 +1306,18 @@ impl BitPackSim {
             let offset = group_id * Self::BITS;
             debug_assert_eq!(self.kind[offset] == GateType::Cluster, CLUSTER);
 
-            let group_range = offset..(offset + Self::BITS);
-            let acc =
-                <&[u8] as TryInto<[u8; Self::BITS]>>::try_into(&self.acc[group_range.clone()])
-                    .unwrap();
-            let new_state = Self::calc_state(acc, is_xor, is_inverted);
+            let new_state = Self::calc_state_pack(
+                unsafe {
+                    self.acc.get_unchecked(
+                        (offset / Self::BIT_ACC_GROUP)
+                            ..((offset + Self::BITS) / Self::BIT_ACC_GROUP),
+                    )
+                },
+                is_xor,
+                is_inverted,
+            );
             let changed = *state ^ new_state;
+            let acc: &mut [BitAcc] = cast_slice_mut(&mut self.acc);
 
             *state = new_state;
 
@@ -1306,7 +1340,7 @@ impl BitPackSim {
                 let delta = if bit_get(new_state, i) {
                     1
                 } else {
-                    (0 as AccType).wrapping_sub(1)
+                    (0 as BitAcc).wrapping_sub(1)
                 };
 
                 for output in unsafe {
@@ -1316,7 +1350,7 @@ impl BitPackSim {
                 .iter()
                 .map(|&i| i as usize)
                 {
-                    let acc_mut = unsafe { self.acc.get_unchecked_mut(output) };
+                    let acc_mut = unsafe { acc.get_unchecked_mut(output) };
                     *acc_mut = acc_mut.wrapping_add(delta);
                     let output_group_id = Self::calc_group_id(output);
 
@@ -1356,7 +1390,9 @@ impl LogicSim for BitPackSim {
         assert_eq!(state.len(), number_of_buckets);
         let acc: Vec<_> = gates
             .iter()
-            .map(|g| g.as_ref().map(|g| g.acc).unwrap_or(0))
+            .map(|g| g.as_ref().map(|g| g.acc as BitAcc).unwrap_or(0))
+            .array_chunks::<{ Self::BIT_ACC_GROUP }>()
+            .map(|a| BitAccPack::from_le_bytes(a))
             .collect();
         let kind: Vec<_> = gates
             .iter()
