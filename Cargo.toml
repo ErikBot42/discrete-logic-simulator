@@ -38,7 +38,7 @@ debug = true
 
 [profile.release-lto]
 inherits = "release"
-lto = true
+lto = "fat"
 
 [profile.small]
 inherits = "release"

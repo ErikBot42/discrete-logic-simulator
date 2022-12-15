@@ -9,7 +9,7 @@ pub mod reference_sim;
 use crate::logic::network::NetworkWithGaps;
 pub(crate) use crate::logic::network::{GateNetwork, InitializedNetwork};
 use bytemuck::{cast_slice, cast_slice_mut};
-use std::mem::{size_of, transmute};
+use std::mem::{align_of, size_of, transmute};
 use std::simd::{Mask, Simd, SimdPartialEq};
 
 pub type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
@@ -1208,9 +1208,6 @@ fn pack_sparse_matrix(
     (packed_output_indexes, packed_outputs)
 }
 
-type BitInt = u32;
-type BitAcc = u8;
-type BitAccPack = u64;
 #[must_use]
 fn bit_set(int: BitInt, index: usize, set: bool) -> BitInt {
     int | ((set as BitInt) << index)
@@ -1229,6 +1226,28 @@ fn pack_bits(arr: [bool; BitPackSim::BITS]) -> BitInt {
         tmp_int = bit_set(tmp_int, i, b);
     }
     tmp_int
+}
+type BitInt = u32;
+type BitAcc = u8;
+const ACC_GROUP_SIZE: usize = BitPackSim::BITS;
+//type BitAccPack = [BitAcc; ACC_GROUP_SIZE]; //u16;
+#[repr(C)]
+#[repr(align(32))]
+#[derive(Debug, Copy, Clone)]
+struct BitAccPack([BitAcc; ACC_GROUP_SIZE]);
+unsafe impl bytemuck::Zeroable for BitAccPack {}
+unsafe impl bytemuck::Pod for BitAccPack {}
+const FOO: () = {
+    let size = size_of::<BitAccPack>();
+    let align = align_of::<BitAccPack>();
+    if size != align {
+        panic!("BitAccPack: size diffrent from alignment");
+    }
+};
+
+fn bit_acc_pack(arr: [BitAcc; BitPackSim::BIT_ACC_GROUP]) -> BitAccPack {
+    //BitAccPack::from_le_bytes(arr)
+    BitAccPack(arr)
 }
 #[derive(Debug)]
 pub struct BitPackSim {
@@ -1252,23 +1271,66 @@ impl BitPackSim {
     fn calc_group_id(id: usize) -> usize {
         id / Self::BITS
     }
+    //#[inline(never)]
+    //fn acc_parity(acc: &BitAccPack) -> u32 {
+    //    let acc: &[BitAcc] = &acc.0;
+    //    let mut acc_parity: BitInt = 0;
+    //    for (i, b) in acc.iter().map(|a| a & 1 == 1).enumerate() {
+    //        acc_parity = bit_set(acc_parity, i, b);
+    //    }
+    //    acc_parity
+    //}
     #[inline(always)]
-    fn calc_state_pack(acc_p: &[BitAccPack], is_xor: &BitInt, is_inverted: &BitInt) -> BitInt {
-        let acc: &[BitAcc] = cast_slice(acc_p);
-        let mut acc_zero: BitInt = 0;
-        let mut acc_parity: BitInt = 0;
-        for (i, b) in acc.iter().map(|a| *a != 0).enumerate() {
-            acc_zero = bit_set(acc_zero, i, b);
+    fn acc_parity_simd(acc: &BitAccPack) -> u32 {
+        unsafe {
+            use core::arch::x86_64::*;
+            let acc_ptr: *const u8 = acc.0.as_ptr();
+            assert!(align_of::<BitAccPack>() >= 32);
+            let acc_ptr: *const __m256i = transmute(acc_ptr);
+
+            //TODO: use aligned intrinsic instead
+            let data = _mm256_loadu_si256(acc_ptr); // load value
+            let data = _mm256_slli_epi64::<7>(data); // shift LSB to MSB for each byte
+            let data = _mm256_movemask_epi8(data); // put MSB of each byte in an int
+            transmute(data)
+            //let a: &[__m256i] = transmute(&acc.0);
+            // _mm256_loadu_si256 (load value)
+            // _mm256_slli_epi64 (shift left, 64 bit barrier)
+            // _mm256_movemask_epi8 (mask from MSB of all the bytes)
         }
+    }
+    #[inline(never)]
+    fn acc_parity(acc: &BitAccPack) -> u32 {
+        return Self::acc_parity_simd(acc);
+        //let a: &[u64] = cast_slice(&acc.0);
+        //u32::from_le_bytes(gate_status::arr_bit_bitpack(a.try_into().unwrap()))
+        let acc: &[BitAcc] = &acc.0;
+        let mut acc_parity: BitInt = 0;
         for (i, b) in acc.iter().map(|a| a & 1 == 1).enumerate() {
             acc_parity = bit_set(acc_parity, i, b);
         }
+        acc_parity
+    }
 
-        //acc_parity = BitInt::from_le_bytes(gate_status::arr_bit_bitpack(acc_p.try_into().unwrap()));
-
+    #[inline(never)]
+    fn acc_zero(acc: &BitAccPack) -> u32 {
+        let acc: &[BitAcc] = &acc.0;
+        let mut acc_zero: BitInt = 0;
+        for (i, b) in acc.iter().map(|a| *a != 0).enumerate() {
+            acc_zero = bit_set(acc_zero, i, b);
+        }
+        acc_zero
+    }
+    #[inline(never)]
+    fn extract_acc_info(acc: &BitAccPack) -> (u32, u32) {
+        (Self::acc_zero(acc), Self::acc_parity(acc))
+    }
+    #[inline(never)]
+    fn calc_state_pack(acc_p: &BitAccPack, is_xor: &BitInt, is_inverted: &BitInt) -> BitInt {
+        let (acc_zero, acc_parity) = Self::extract_acc_info(acc_p);
         ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
     }
-    #[inline(always)]
+    #[inline(never)]
     fn calc_state(acc: &[BitAcc], is_xor: &BitInt, is_inverted: &BitInt) -> BitInt {
         let mut acc_zero: BitInt = 0;
         let mut acc_parity: BitInt = 0;
@@ -1281,7 +1343,7 @@ impl BitPackSim {
 
         ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
     }
-    #[inline(always)]
+    #[inline(never)]
     fn update_inner<const CLUSTER: bool>(&mut self) {
         let (update_list, next_update_list) = if CLUSTER {
             (&mut self.cluster_update_list, &mut self.update_list)
@@ -1309,8 +1371,7 @@ impl BitPackSim {
             let new_state = Self::calc_state_pack(
                 unsafe {
                     self.acc.get_unchecked(
-                        (offset / Self::BIT_ACC_GROUP)
-                            ..((offset + Self::BITS) / Self::BIT_ACC_GROUP),
+                        offset / Self::BIT_ACC_GROUP, //..((offset + Self::BITS) / Self::BIT_ACC_GROUP),
                     )
                 },
                 is_xor,
@@ -1391,8 +1452,8 @@ impl LogicSim for BitPackSim {
         let acc: Vec<_> = gates
             .iter()
             .map(|g| g.as_ref().map(|g| g.acc as BitAcc).unwrap_or(0))
-            .array_chunks::<{ Self::BIT_ACC_GROUP }>()
-            .map(|a| BitAccPack::from_le_bytes(a))
+            .array_chunks()
+            .map(bit_acc_pack)
             .collect();
         let kind: Vec<_> = gates
             .iter()

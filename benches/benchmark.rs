@@ -5,17 +5,28 @@ use logic_simulator::blueprint::*;
 use logic_simulator::logic::*;
 use std::hint::black_box;
 
-fn input_data() -> Vec<(&'static str, &'static str)> {
+fn input_data() -> Vec<(&'static str, VcbInput)> {
     vec![
         (
             "big_decoder",
-            include_str!("../test_files/big_decoder.blueprint"),
+            VcbInput::BlueprintLegacy(
+                include_str!("../test_files/big_decoder.blueprint").to_string(),
+            ),
         ),
         (
             "bcd_count",
-            include_str!("../test_files/bcd_count.blueprint"),
+            VcbInput::BlueprintLegacy(
+                include_str!("../test_files/bcd_count.blueprint").to_string(),
+            ),
         ),
-        ("intro", include_str!("../test_files/intro.blueprint")),
+        (
+            "intro",
+            VcbInput::BlueprintLegacy(include_str!("../test_files/intro.blueprint").to_string()),
+        ),
+        (
+            "serial mult",
+            VcbInput::World(include_str!("../test_files/serial_multipliers.vcb").to_string()),
+        ),
         // literally turns into a noop...
         // ("gates", include_str!("../test_files/gates.blueprint")),
     ]
@@ -26,20 +37,17 @@ fn pre_parse_tests<S: LogicSim>() -> Vec<(&'static str, VcbBoard<S>)> {
             .clone()
             .into_iter()
             //.map(|x| (x.0, black_box(Parser::parse(x.1, true))))
-            .map(|x| (x.0, black_box(VcbParser::parse_compile(VcbInput::BlueprintLegacy(x.1.to_string()), false).unwrap())))
+            .map(|x| (x.0, black_box(VcbParser::parse_compile(x.1, true).unwrap())))
             .collect()
 }
 
+#[rustfmt::skip]
 fn criterion_benchmark_runtime(c: &mut Criterion) {
-    let mut pre_parsed = black_box(pre_parse_tests::<ReferenceSim>());
-    let mut pre_parsed_simd = black_box(pre_parse_tests::<SimdSim>());
-    let mut pre_parsed_scalar = black_box(pre_parse_tests::<ScalarSim>());
-    let mut pre_parsed_bitpack = black_box(pre_parse_tests::<BitPackSim>());
 
-    bench_pre_parsed("run_scalar", c, &mut pre_parsed_scalar);
-    bench_pre_parsed("run_reference", c, &mut pre_parsed);
-    bench_pre_parsed("run_simd", c, &mut pre_parsed_simd);
-    bench_pre_parsed("run_bitpack", c, &mut pre_parsed_bitpack);
+    bench_pre_parsed("run_bitpack", c, &mut black_box(pre_parse_tests::<BitPackSim>()));
+    bench_pre_parsed("run_reference", c, &mut black_box(pre_parse_tests::<ReferenceSim>()));
+    bench_pre_parsed("run_scalar", c, &mut black_box(pre_parse_tests::<ScalarSim>()));
+    bench_pre_parsed("run_simd", c, &mut black_box(pre_parse_tests::<SimdSim>()));
 }
 
 fn bench_pre_parsed<T: LogicSim>(
@@ -57,7 +65,7 @@ fn bench_pre_parsed<T: LogicSim>(
 fn bench_parsing<T: LogicSim>(
     group_name: &'static str,
     c: &mut Criterion,
-    input: &[(&'static str, &'static str)],
+    input: &[(&'static str, VcbInput)],
 ) {
     let mut c_run = c.benchmark_group(group_name);
     for (name, data) in input {
@@ -65,7 +73,7 @@ fn bench_parsing<T: LogicSim>(
             b.iter(|| {
                 black_box(
                     VcbParser::parse_compile::<T>(
-                        black_box(VcbInput::BlueprintLegacy(data.to_string())),
+                        black_box(data.clone()),
                         true,
                     )
                     .unwrap(),
