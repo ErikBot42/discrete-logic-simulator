@@ -1299,9 +1299,8 @@ impl BitPackSim {
             // _mm256_movemask_epi8 (mask from MSB of all the bytes)
         }
     }
-    #[inline(never)]
+    #[inline(always)]
     fn acc_parity(acc: &BitAccPack) -> u32 {
-        return Self::acc_parity_simd(acc);
         //let a: &[u64] = cast_slice(&acc.0);
         //u32::from_le_bytes(gate_status::arr_bit_bitpack(a.try_into().unwrap()))
         let acc: &[BitAcc] = &acc.0;
@@ -1312,7 +1311,28 @@ impl BitPackSim {
         acc_parity
     }
 
-    #[inline(never)]
+    #[inline(always)]
+    fn acc_zero_simd(acc: &BitAccPack) -> u32 {
+        unsafe {
+            use core::arch::x86_64::*;
+            let acc_ptr: *const u8 = acc.0.as_ptr();
+            assert!(align_of::<BitAccPack>() >= 32);
+            let acc_ptr: *const __m256i = transmute(acc_ptr);
+
+            let zero = _mm256_setzero_si256();
+            let data = _mm256_load_si256(acc_ptr); // load value
+            let data = _mm256_cmpeq_epi8(data, zero); // compare with zero
+            let data = _mm256_movemask_epi8(data); // put MSB of each byte in an int
+            transmute(!data)
+            // _mm256_cmpeq_epi8 (compare 8 bit)
+            // _mm256_setzero_si256() (zero)
+            // _mm256_loadu_si256 (load value)
+            // _mm256_movemask_epi8 (mask from MSB of all the bytes)
+            //
+        }
+    }
+
+    #[inline(always)]
     fn acc_zero(acc: &BitAccPack) -> u32 {
         let acc: &[BitAcc] = &acc.0;
         let mut acc_zero: BitInt = 0;
@@ -1326,8 +1346,12 @@ impl BitPackSim {
         (Self::acc_zero(acc), Self::acc_parity(acc))
     }
     #[inline(never)]
+    fn extract_acc_info_simd(acc: &BitAccPack) -> (u32, u32) {
+        (Self::acc_zero_simd(acc), Self::acc_parity_simd(acc))
+    }
+    #[inline(never)]
     fn calc_state_pack(acc_p: &BitAccPack, is_xor: &BitInt, is_inverted: &BitInt) -> BitInt {
-        let (acc_zero, acc_parity) = Self::extract_acc_info(acc_p);
+        let (acc_zero, acc_parity) = Self::extract_acc_info_simd(acc_p);
         ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
     }
     #[inline(never)]
