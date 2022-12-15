@@ -2,6 +2,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 
 use logic_simulator::blueprint::*;
+use logic_simulator::logic::*;
 use std::hint::black_box;
 
 fn input_data() -> Vec<(&'static str, &'static str)> {
@@ -20,7 +21,7 @@ fn input_data() -> Vec<(&'static str, &'static str)> {
     ]
 }
 
-fn pre_parse_tests<const STRATEGY: u8>() -> Vec<(&'static str, VcbBoard<STRATEGY>)> {
+fn pre_parse_tests<S: LogicSim>() -> Vec<(&'static str, VcbBoard<S>)> {
     input_data()
             .clone()
             .into_iter()
@@ -30,24 +31,21 @@ fn pre_parse_tests<const STRATEGY: u8>() -> Vec<(&'static str, VcbBoard<STRATEGY
 }
 
 fn criterion_benchmark_runtime(c: &mut Criterion) {
-    use logic_simulator::logic::UpdateStrategy;
-    const STRATEGY_REF: u8 = UpdateStrategy::Reference as u8;
-    const STRATEGY_SIMD: u8 = UpdateStrategy::Simd as u8;
-    const STRATEGY_SCALAR: u8 = UpdateStrategy::ScalarSimd as u8;
-
-    let mut pre_parsed = black_box(pre_parse_tests::<STRATEGY_REF>());
-    let mut pre_parsed_simd = black_box(pre_parse_tests::<STRATEGY_SIMD>());
-    let mut pre_parsed_scalar = black_box(pre_parse_tests::<STRATEGY_SCALAR>());
+    let mut pre_parsed = black_box(pre_parse_tests::<ReferenceSim>());
+    let mut pre_parsed_simd = black_box(pre_parse_tests::<SimdSim>());
+    let mut pre_parsed_scalar = black_box(pre_parse_tests::<ScalarSim>());
+    let mut pre_parsed_bitpack = black_box(pre_parse_tests::<BitPackSim>());
 
     bench_pre_parsed("run_scalar", c, &mut pre_parsed_scalar);
     bench_pre_parsed("run_reference", c, &mut pre_parsed);
     bench_pre_parsed("run_simd", c, &mut pre_parsed_simd);
+    bench_pre_parsed("run_bitpack", c, &mut pre_parsed_bitpack);
 }
 
-fn bench_pre_parsed<const STRATEGY: u8>(
+fn bench_pre_parsed<T: LogicSim>(
     group_name: &'static str,
     c: &mut Criterion,
-    pre_parsed: &mut Vec<(&str, VcbBoard<STRATEGY>)>,
+    pre_parsed: &mut Vec<(&str, VcbBoard<T>)>,
 ) {
     let mut c_run = c.benchmark_group(group_name);
     for pre in pre_parsed.iter_mut() {
@@ -56,7 +54,7 @@ fn bench_pre_parsed<const STRATEGY: u8>(
     c_run.finish();
 }
 
-fn bench_parsing<const STRATEGY: u8>(
+fn bench_parsing<T: LogicSim>(
     group_name: &'static str,
     c: &mut Criterion,
     input: &[(&'static str, &'static str)],
@@ -66,7 +64,7 @@ fn bench_parsing<const STRATEGY: u8>(
         c_run.bench_function(*name, |b| {
             b.iter(|| {
                 black_box(
-                    VcbParser::parse_compile::<STRATEGY>(
+                    VcbParser::parse_compile::<T>(
                         black_box(VcbInput::BlueprintLegacy(data.to_string())),
                         true,
                     )
@@ -79,16 +77,16 @@ fn bench_parsing<const STRATEGY: u8>(
 }
 
 fn criterion_benchmark_parsing(c: &mut Criterion) {
-    use logic_simulator::logic::UpdateStrategy;
     let input = input_data();
-    bench_parsing::<{ UpdateStrategy::Reference as u8 }>("parse_reference", c, &input);
-    bench_parsing::<{ UpdateStrategy::Simd as u8 }>("parse_simd", c, &input);
-    bench_parsing::<{ UpdateStrategy::ScalarSimd as u8 }>("parse_scalar", c, &input);
+    bench_parsing::<ReferenceSim>("parse_reference", c, &input);
+    bench_parsing::<SimdSim>("parse_simd", c, &input);
+    bench_parsing::<ScalarSim>("parse_scalar", c, &input);
+    bench_parsing::<BitPackSim>("parse_bit", c, &input);
 }
 
 criterion_group!(
     benches,
     criterion_benchmark_runtime,
-    criterion_benchmark_parsing
+    //criterion_benchmark_parsing
 );
 criterion_main!(benches);
