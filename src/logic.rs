@@ -1230,10 +1230,11 @@ fn pack_bits(arr: [bool; BitPackSim::BITS]) -> BitInt {
     }
     tmp_int
 }
-type BitInt = u32;
 type BitAcc = u8;
 const ACC_GROUP_SIZE: usize = BitPackSim::BITS;
 //type BitAccPack = [BitAcc; ACC_GROUP_SIZE]; //u16;
+
+type BitInt = u32;
 #[repr(C)]
 #[repr(align(32))]
 #[derive(Debug, Copy, Clone)]
@@ -1276,7 +1277,7 @@ impl BitPackSim {
         id / Self::BITS
     }
     #[inline(always)] // function used at single call site
-    fn acc_parity(acc: &BitAccPack) -> u32 {
+    fn acc_parity(acc: &BitAccPack) -> BitInt {
         let acc: &[BitAcc] = &acc.0;
         let mut acc_parity: BitInt = 0;
         for (i, b) in acc.iter().map(|a| a & 1 == 1).enumerate() {
@@ -1285,7 +1286,7 @@ impl BitPackSim {
         acc_parity
     }
     #[inline(always)] // function used at single call site
-    fn acc_zero(acc: &BitAccPack) -> u32 {
+    fn acc_zero(acc: &BitAccPack) -> BitInt {
         let acc: &[BitAcc] = &acc.0;
         let mut acc_zero: BitInt = 0;
         for (i, b) in acc.iter().map(|a| *a != 0).enumerate() {
@@ -1294,7 +1295,7 @@ impl BitPackSim {
         acc_zero
     }
     #[inline(always)] // function used at single call site
-    fn extract_acc_info(acc: &BitAccPack) -> (u32, u32) {
+    fn extract_acc_info(acc: &BitAccPack) -> (BitInt, BitInt) {
         (Self::acc_zero(acc), Self::acc_parity(acc))
     }
 
@@ -1308,13 +1309,13 @@ impl BitPackSim {
         transmute(data)
     }
     #[inline(always)] // function used at single call site
-    fn acc_parity_simd(acc: &BitAccPack) -> u32 {
+    fn acc_parity_simd(acc: &BitAccPack) -> BitInt {
         unsafe {
-            use core::arch::x86_64::*;
-            assert_eq!(align_of::<BitAccPack>(), 32);
-            assert_eq!(size_of::<BitAccPack>(), 32);
+            assert!(align_of::<BitAccPack>() >= 32);
             let acc_ptr: *const __m256i = transmute(acc.0.as_ptr());
-            Self::acc_parity_m256i(acc_ptr)
+            let array: [u32; size_of::<BitAccPack>() / u32::BITS as usize] =
+                std::array::from_fn(|x| Self::acc_parity_m256i(acc_ptr.add(x)));
+            transmute(array) // compiler can statically check size here
         }
     }
 
@@ -1331,16 +1332,17 @@ impl BitPackSim {
         }
     }
     #[inline(always)] // function used at single call site
-    fn acc_zero_simd(acc: &BitAccPack) -> u32 {
+    fn acc_zero_simd(acc: &BitAccPack) -> BitInt {
         unsafe {
-            assert_eq!(align_of::<BitAccPack>(), 32);
-            assert_eq!(size_of::<BitAccPack>(), 32);
+            assert!(align_of::<BitAccPack>() >= 32);
             let acc_ptr: *const __m256i = transmute(acc.0.as_ptr());
-            Self::acc_zero_m256i(acc_ptr)
+            let array: [u32; size_of::<BitAccPack>() / u32::BITS as usize] =
+                std::array::from_fn(|x| Self::acc_zero_m256i(acc_ptr.add(x)));
+            transmute(array) // compiler can statically check size here
         }
     }
     #[inline(always)] // function used at single call site
-    fn extract_acc_info_simd(acc: &BitAccPack) -> (u32, u32) {
+    fn extract_acc_info_simd(acc: &BitAccPack) -> (BitInt, BitInt) {
         (Self::acc_zero_simd(acc), Self::acc_parity_simd(acc))
     }
     #[inline(always)] // function used at single call site
