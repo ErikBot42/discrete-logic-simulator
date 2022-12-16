@@ -14,6 +14,10 @@ fn input_data() -> Vec<(&'static str, VcbInput)> {
             ),
         ),
         (
+            "serial mult",
+            VcbInput::World(include_str!("../test_files/serial_multipliers.vcb").to_string()),
+        ),
+        (
             "bcd_count",
             VcbInput::BlueprintLegacy(
                 include_str!("../test_files/bcd_count.blueprint").to_string(),
@@ -22,10 +26,6 @@ fn input_data() -> Vec<(&'static str, VcbInput)> {
         (
             "intro",
             VcbInput::BlueprintLegacy(include_str!("../test_files/intro.blueprint").to_string()),
-        ),
-        (
-            "serial mult",
-            VcbInput::World(include_str!("../test_files/serial_multipliers.vcb").to_string()),
         ),
         // literally turns into a noop...
         // ("gates", include_str!("../test_files/gates.blueprint")),
@@ -46,8 +46,8 @@ fn criterion_benchmark_runtime(c: &mut Criterion) {
 
     bench_pre_parsed("run_bitpack", c, &mut black_box(pre_parse_tests::<BitPackSim>()));
     bench_pre_parsed("run_reference", c, &mut black_box(pre_parse_tests::<ReferenceSim>()));
-    bench_pre_parsed("run_scalar", c, &mut black_box(pre_parse_tests::<ScalarSim>()));
-    bench_pre_parsed("run_simd", c, &mut black_box(pre_parse_tests::<SimdSim>()));
+    //bench_pre_parsed("run_scalar", c, &mut black_box(pre_parse_tests::<ScalarSim>()));
+    //bench_pre_parsed("run_simd", c, &mut black_box(pre_parse_tests::<SimdSim>()));
 }
 
 fn bench_pre_parsed<T: LogicSim>(
@@ -71,13 +71,7 @@ fn bench_parsing<T: LogicSim>(
     for (name, data) in input {
         c_run.bench_function(*name, |b| {
             b.iter(|| {
-                black_box(
-                    VcbParser::parse_compile::<T>(
-                        black_box(data.clone()),
-                        true,
-                    )
-                    .unwrap(),
-                )
+                black_box(VcbParser::parse_compile::<T>(black_box(data.clone()), true).unwrap())
             })
         });
     }

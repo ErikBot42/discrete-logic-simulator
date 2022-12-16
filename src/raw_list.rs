@@ -56,6 +56,20 @@ where
             self.len
         );
     }
+    /// Branchless push with unconditional write
+    #[inline(always)]
+    pub(crate) unsafe fn push_if(&mut self, el: T, push: bool) {
+        if push {
+            *unsafe { self.list.get_unchecked_mut(self.len) } = el;
+        }
+        self.len += push as usize;
+        debug_assert!(
+            self.list.len() > self.len,
+            "{} <= {}",
+            self.list.len(),
+            self.len
+        );
+    }
     #[inline(always)]
     pub(crate) unsafe fn get_slice(&self) -> &[T] {
         // &self.list[0..self.len]

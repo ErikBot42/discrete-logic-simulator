@@ -1209,14 +1209,17 @@ fn pack_sparse_matrix(
 }
 
 #[must_use]
+#[inline(always)]
 fn bit_set(int: BitInt, index: usize, set: bool) -> BitInt {
     int | ((set as BitInt) << index)
 }
 #[must_use]
+#[inline(always)]
 fn bit_get(int: BitInt, index: usize) -> bool {
     int & (1 << index) != 0
 }
 #[must_use]
+#[inline(always)]
 fn wrapping_bit_get(int: BitInt, index: usize) -> bool {
     int & (1 as BitInt).wrapping_shl(index as u32) != 0
 }
@@ -1264,6 +1267,7 @@ pub struct BitPackSim {
     cluster_update_list: UpdateList,
     in_update_list: Vec<bool>,
 }
+use core::arch::x86_64::*;
 impl BitPackSim {
     const BIT_ACC_GROUP: usize = size_of::<BitAccPack>() / size_of::<BitAcc>();
     const BITS: usize = BitInt::BITS as usize;
@@ -1272,21 +1276,7 @@ impl BitPackSim {
         id / Self::BITS
     }
     #[inline(always)] // function used at single call site
-    fn acc_parity_simd(acc: &BitAccPack) -> u32 {
-        unsafe {
-            use core::arch::x86_64::*;
-            assert!(align_of::<BitAccPack>() >= 32);
-            let acc_ptr: *const __m256i = transmute(acc.0.as_ptr());
-            let data = _mm256_load_si256(acc_ptr); // load value
-            let data = _mm256_slli_epi64::<7>(data); // shift LSB to MSB for each byte
-            let data = _mm256_movemask_epi8(data); // put MSB of each byte in an int
-            transmute(data)
-        }
-    }
-    #[inline(always)] // function used at single call site
     fn acc_parity(acc: &BitAccPack) -> u32 {
-        //let a: &[u64] = cast_slice(&acc.0);
-        //u32::from_le_bytes(gate_status::arr_bit_bitpack(a.try_into().unwrap()))
         let acc: &[BitAcc] = &acc.0;
         let mut acc_parity: BitInt = 0;
         for (i, b) in acc.iter().map(|a| a & 1 == 1).enumerate() {
@@ -1294,20 +1284,6 @@ impl BitPackSim {
         }
         acc_parity
     }
-    #[inline(always)] // function used at single call site
-    fn acc_zero_simd(acc: &BitAccPack) -> u32 {
-        unsafe {
-            use core::arch::x86_64::*;
-            assert!(align_of::<BitAccPack>() >= 32);
-            let acc_ptr: *const __m256i = transmute(acc.0.as_ptr());
-            let zero = _mm256_setzero_si256();
-            let data = _mm256_load_si256(acc_ptr); // load value
-            let data = _mm256_cmpeq_epi8(data, zero); // compare with zero
-            let data = _mm256_movemask_epi8(data); // put MSB of each byte in an int
-            transmute(!data)
-        }
-    }
-
     #[inline(always)] // function used at single call site
     fn acc_zero(acc: &BitAccPack) -> u32 {
         let acc: &[BitAcc] = &acc.0;
@@ -1321,12 +1297,59 @@ impl BitPackSim {
     fn extract_acc_info(acc: &BitAccPack) -> (u32, u32) {
         (Self::acc_zero(acc), Self::acc_parity(acc))
     }
+
+    /// # SAFETY
+    /// Pointer MUST be aligned
+    #[inline(always)] // function used at single call site
+    unsafe fn acc_parity_m256i(acc_ptr: *const __m256i) -> u32 {
+        let data = _mm256_load_si256(acc_ptr); // load value
+        let data = _mm256_slli_epi64::<7>(data); // shift LSB to MSB for each byte
+        let data = _mm256_movemask_epi8(data); // put MSB of each byte in an int
+        transmute(data)
+    }
+    #[inline(always)] // function used at single call site
+    fn acc_parity_simd(acc: &BitAccPack) -> u32 {
+        unsafe {
+            use core::arch::x86_64::*;
+            assert_eq!(align_of::<BitAccPack>(), 32);
+            assert_eq!(size_of::<BitAccPack>(), 32);
+            let acc_ptr: *const __m256i = transmute(acc.0.as_ptr());
+            Self::acc_parity_m256i(acc_ptr)
+        }
+    }
+
+    /// # SAFETY
+    /// Pointer MUST be aligned
+    #[inline(always)] // function used at single call site
+    unsafe fn acc_zero_m256i(acc_ptr: *const __m256i) -> u32 {
+        unsafe {
+            let zero = _mm256_setzero_si256();
+            let data = _mm256_load_si256(acc_ptr); // load value
+            let data = _mm256_cmpeq_epi8(data, zero); // compare with zero
+            let data = _mm256_movemask_epi8(data); // put MSB of each byte in an int
+            transmute(!data)
+        }
+    }
+    #[inline(always)] // function used at single call site
+    fn acc_zero_simd(acc: &BitAccPack) -> u32 {
+        unsafe {
+            assert_eq!(align_of::<BitAccPack>(), 32);
+            assert_eq!(size_of::<BitAccPack>(), 32);
+            let acc_ptr: *const __m256i = transmute(acc.0.as_ptr());
+            Self::acc_zero_m256i(acc_ptr)
+        }
+    }
     #[inline(always)] // function used at single call site
     fn extract_acc_info_simd(acc: &BitAccPack) -> (u32, u32) {
         (Self::acc_zero_simd(acc), Self::acc_parity_simd(acc))
     }
     #[inline(always)] // function used at single call site
     fn calc_state_pack(acc_p: &BitAccPack, is_xor: &BitInt, is_inverted: &BitInt) -> BitInt {
+        let (acc_zero, acc_parity) = Self::extract_acc_info_simd(acc_p);
+        ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
+    }
+    #[inline(always)] // function used at single call site
+    fn calc_state_pack_g(acc_p: &BitAccPack, is_xor: &BitInt, is_inverted: &BitInt) -> BitInt {
         let (acc_zero, acc_parity) = Self::extract_acc_info_simd(acc_p);
         ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
     }
@@ -1343,7 +1366,7 @@ impl BitPackSim {
 
         ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
     }
-    #[inline(always)] // function used at 2 call sites
+    #[inline(never)] // function used at 2 call sites
     fn update_inner<const CLUSTER: bool>(&mut self) {
         let (update_list, next_update_list) = if CLUSTER {
             (&mut self.cluster_update_list, &mut self.update_list)
@@ -1362,12 +1385,9 @@ impl BitPackSim {
             })
         {
             *unsafe { self.in_update_list.get_unchecked_mut(group_id) } = false;
-
             let state = unsafe { self.state.get_unchecked_mut(group_id) };
-
             let offset = group_id * Self::BITS;
             debug_assert_eq!(self.kind[offset] == GateType::Cluster, CLUSTER);
-
             let new_state = Self::calc_state_pack(
                 unsafe {
                     self.acc.get_unchecked(
@@ -1377,32 +1397,25 @@ impl BitPackSim {
                 is_xor,
                 is_inverted,
             );
-            let changed = *state ^ new_state;
-            let acc: &mut [BitAcc] = cast_slice_mut(&mut self.acc);
-
+            let mut changed = *state ^ new_state;
+            if changed == 0 {
+                continue;
+            }
             *state = new_state;
-
-            let mut changed = changed;
+            let acc: &mut [BitAcc] = cast_slice_mut(&mut self.acc);
             while changed != 0 {
                 let i = changed.trailing_zeros();
                 changed = changed & !(1 << i);
-
                 let i = i as usize;
 
-                let outputs_start = *unsafe {
-                    self.packed_output_indexes
-                        .get_unchecked(offset as usize + i)
-                } as usize;
-                let outputs_end = *unsafe {
-                    self.packed_output_indexes
-                        .get_unchecked(offset as usize + i + 1)
-                } as usize;
+                let gate_id = offset as usize + i;
 
-                let delta = if bit_get(new_state, i) {
-                    1
-                } else {
-                    (0 as BitAcc).wrapping_sub(1)
-                };
+                let outputs_start =
+                    *unsafe { self.packed_output_indexes.get_unchecked(gate_id) } as usize;
+                let outputs_end =
+                    *unsafe { self.packed_output_indexes.get_unchecked(gate_id + 1) } as usize;
+
+                let delta = (bit_get(new_state, i) as AccType * 2).wrapping_sub(1);
 
                 for output in unsafe {
                     self.packed_outputs
@@ -1411,14 +1424,13 @@ impl BitPackSim {
                 .iter()
                 .map(|&i| i as usize)
                 {
+                    let output_group_id = Self::calc_group_id(output);
+
                     let acc_mut = unsafe { acc.get_unchecked_mut(output) };
                     *acc_mut = acc_mut.wrapping_add(delta);
-                    
-                    let output_group_id = Self::calc_group_id(output);
 
                     let in_update_list_mut =
                         unsafe { self.in_update_list.get_unchecked_mut(output_group_id) };
-
                     if !*in_update_list_mut {
                         unsafe { next_update_list.push(output_group_id as IndexType) };
                         *in_update_list_mut = true;
