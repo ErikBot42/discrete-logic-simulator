@@ -1208,6 +1208,19 @@ fn pack_sparse_matrix(
     (packed_output_indexes, packed_outputs)
 }
 
+#[inline(always)]
+fn inline_arr_from_fn<T, const N: usize, F>(mut cb: F) -> [T; N]
+where
+    F: FnMut(usize) -> T,
+{
+    let mut idx = 0;
+    [(); N].map(|_| {
+        let res = cb(idx);
+        idx += 1;
+        res
+    })
+}
+
 #[must_use]
 #[inline(always)]
 fn bit_set(int: BitInt, index: usize, set: bool) -> BitInt {
@@ -1232,11 +1245,9 @@ fn pack_bits(arr: [bool; BitPackSim::BITS]) -> BitInt {
 }
 type BitAcc = u8;
 const ACC_GROUP_SIZE: usize = BitPackSim::BITS;
-//type BitAccPack = [BitAcc; ACC_GROUP_SIZE]; //u16;
-
-type BitInt = u32;
+type BitInt = u64;
 #[repr(C)]
-#[repr(align(32))]
+#[repr(align(64))]
 #[derive(Debug, Copy, Clone)]
 struct BitAccPack([BitAcc; ACC_GROUP_SIZE]);
 unsafe impl bytemuck::Zeroable for BitAccPack {}
@@ -1314,7 +1325,7 @@ impl BitPackSim {
             assert!(align_of::<BitAccPack>() >= 32);
             let acc_ptr: *const __m256i = transmute(acc.0.as_ptr());
             let array: [u32; size_of::<BitAccPack>() / u32::BITS as usize] =
-                std::array::from_fn(|x| Self::acc_parity_m256i(acc_ptr.add(x)));
+                inline_arr_from_fn(|x| Self::acc_parity_m256i(acc_ptr.add(x)));
             transmute(array) // compiler can statically check size here
         }
     }
@@ -1337,7 +1348,7 @@ impl BitPackSim {
             assert!(align_of::<BitAccPack>() >= 32);
             let acc_ptr: *const __m256i = transmute(acc.0.as_ptr());
             let array: [u32; size_of::<BitAccPack>() / u32::BITS as usize] =
-                std::array::from_fn(|x| Self::acc_zero_m256i(acc_ptr.add(x)));
+                inline_arr_from_fn(|x| Self::acc_zero_m256i(acc_ptr.add(x)));
             transmute(array) // compiler can statically check size here
         }
     }
@@ -1368,7 +1379,7 @@ impl BitPackSim {
 
         ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
     }
-    #[inline(never)] // function used at 2 call sites
+    #[inline(always)] // function used at 2 call sites
     fn update_inner<const CLUSTER: bool>(&mut self) {
         let (update_list, next_update_list) = if CLUSTER {
             (&mut self.cluster_update_list, &mut self.update_list)
