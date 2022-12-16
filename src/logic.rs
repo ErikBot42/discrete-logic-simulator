@@ -1271,7 +1271,7 @@ impl BitPackSim {
     fn calc_group_id(id: usize) -> usize {
         id / Self::BITS
     }
-    #[inline(always)]
+    #[inline(always)] // function used at single call site
     fn acc_parity_simd(acc: &BitAccPack) -> u32 {
         unsafe {
             use core::arch::x86_64::*;
@@ -1283,7 +1283,7 @@ impl BitPackSim {
             transmute(data)
         }
     }
-    #[inline(always)]
+    #[inline(always)] // function used at single call site
     fn acc_parity(acc: &BitAccPack) -> u32 {
         //let a: &[u64] = cast_slice(&acc.0);
         //u32::from_le_bytes(gate_status::arr_bit_bitpack(a.try_into().unwrap()))
@@ -1294,7 +1294,7 @@ impl BitPackSim {
         }
         acc_parity
     }
-    #[inline(always)]
+    #[inline(always)] // function used at single call site
     fn acc_zero_simd(acc: &BitAccPack) -> u32 {
         unsafe {
             use core::arch::x86_64::*;
@@ -1308,7 +1308,7 @@ impl BitPackSim {
         }
     }
 
-    #[inline(always)]
+    #[inline(always)] // function used at single call site
     fn acc_zero(acc: &BitAccPack) -> u32 {
         let acc: &[BitAcc] = &acc.0;
         let mut acc_zero: BitInt = 0;
@@ -1317,20 +1317,20 @@ impl BitPackSim {
         }
         acc_zero
     }
-    #[inline(always)]
+    #[inline(always)] // function used at single call site
     fn extract_acc_info(acc: &BitAccPack) -> (u32, u32) {
         (Self::acc_zero(acc), Self::acc_parity(acc))
     }
-    #[inline(always)]
+    #[inline(always)] // function used at single call site
     fn extract_acc_info_simd(acc: &BitAccPack) -> (u32, u32) {
         (Self::acc_zero_simd(acc), Self::acc_parity_simd(acc))
     }
-    #[inline(always)]
+    #[inline(always)] // function used at single call site
     fn calc_state_pack(acc_p: &BitAccPack, is_xor: &BitInt, is_inverted: &BitInt) -> BitInt {
         let (acc_zero, acc_parity) = Self::extract_acc_info_simd(acc_p);
         ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
     }
-    #[inline(always)]
+    #[inline(always)] // function used at single call site
     fn calc_state(acc: &[BitAcc], is_xor: &BitInt, is_inverted: &BitInt) -> BitInt {
         let mut acc_zero: BitInt = 0;
         let mut acc_parity: BitInt = 0;
@@ -1343,7 +1343,7 @@ impl BitPackSim {
 
         ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
     }
-    #[inline(always)]
+    #[inline(always)] // function used at 2 call sites
     fn update_inner<const CLUSTER: bool>(&mut self) {
         let (update_list, next_update_list) = if CLUSTER {
             (&mut self.cluster_update_list, &mut self.update_list)
@@ -1413,6 +1413,7 @@ impl BitPackSim {
                 {
                     let acc_mut = unsafe { acc.get_unchecked_mut(output) };
                     *acc_mut = acc_mut.wrapping_add(delta);
+                    
                     let output_group_id = Self::calc_group_id(output);
 
                     let in_update_list_mut =
@@ -1498,6 +1499,7 @@ impl LogicSim for BitPackSim {
     fn number_of_gates_external(&self) -> usize {
         self.translation_table.len()
     }
+    #[inline(always)] // function used at single call site
     fn update(&mut self) {
         self.update_inner::<false>();
         self.update_inner::<true>();
