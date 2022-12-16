@@ -67,18 +67,18 @@ debuginfo-level = 2
 #path = "src/lib.rs"
 
 [dependencies]
-base64 = {version = "0.13.0"}
-zstd = {version = "0.11", default-features = false}
-itertools = "0.10.5"
-bytemuck = "1.12.1"
-clap = { version = "4.0.19", features = ["derive"] }
-crossterm = { version = "0.25.0", default-features = false }
-anyhow = { version = "1.0.66", features = ["backtrace"] }
-image = { version = "0.24.5", default-features = false, features = ["gif"] }
-arboard = "3.2.0"
-tempfile = "3.3.0"
-arrayvec = "0.7.2"
-json = "0.12.4"
+base64 =    { version = "0.13.0", default-features = false, features = ["std"]              }
+zstd =      { version = "0.11",   default-features = false                                  }
+itertools = { version = "0.10.5", default-features = false, features = ["use_std"]          }
+bytemuck =  { version = "1.12.1", default-features = false                                  }
+clap =      { version = "4.0.19",                           features = ["derive"]           }
+crossterm = { version = "0.25.0", default-features = false                                  }
+anyhow =    { version = "1.0.66", default-features = false, features = ["std", "backtrace"] }
+image =     { version = "0.24.5", default-features = false, features = ["gif"]              }
+arboard =   { version = "3.2.0",  default-features = false, features = ["image-data"]       }
+tempfile =  { version = "3.3.0",  default-features = false                                  }
+arrayvec =  { version = "0.7.2",  default-features = false                                  }
+json =      { version = "0.12.4", default-features = false                                  }
 
 
 [dev-dependencies]

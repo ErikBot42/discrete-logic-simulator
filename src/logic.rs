@@ -754,14 +754,14 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             packed_output_indexes,
             Mask::splat(true),
             idx,
-            Simd::splat(u32::MAX),
+            Simd::splat(IndexType::MAX),
         )
         .cast();
         let to_index = Simd::gather_select(
             packed_output_indexes,
             Mask::splat(true),
             idx + Simd::splat(1),
-            Simd::splat(u32::MAX),
+            Simd::splat(IndexType::MAX),
         )
         .cast();
         let mut curr_index: Simd<usize, _> = from_index;
