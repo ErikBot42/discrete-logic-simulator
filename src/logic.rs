@@ -1247,7 +1247,7 @@ type BitAcc = u8;
 const ACC_GROUP_SIZE: usize = BitPackSim::BITS;
 type BitInt = u64;
 #[repr(C)]
-#[repr(align(64))]
+#[repr(align(64))] // in bits: 64*8 = 512 bits
 #[derive(Debug, Copy, Clone)]
 struct BitAccPack([BitAcc; ACC_GROUP_SIZE]);
 unsafe impl bytemuck::Zeroable for BitAccPack {}
