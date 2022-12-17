@@ -1267,11 +1267,11 @@ fn bit_acc_pack(arr: [BitAcc; BitPackSim::BIT_ACC_GROUP]) -> BitAccPack {
 #[derive(Debug)]
 pub struct BitPackSim {
     translation_table: Vec<IndexType>,
-    acc: Vec<BitAccPack>,
-    state: Vec<BitInt>,
-    kind: Vec<GateType>,
-    is_xor: Vec<BitInt>,
-    is_inverted: Vec<BitInt>,
+    acc: Vec<BitAccPack>, // 8x BitInt
+    state: Vec<BitInt>,   // intersperse candidate
+    //kind: Vec<GateType>,
+    is_xor: Vec<BitInt>,                 // intersperse candidate
+    is_inverted: Vec<BitInt>,            // intersperse candidate
     packed_output_indexes: Vec<IndexType>,
     packed_outputs: Vec<IndexType>,
 
@@ -1400,7 +1400,7 @@ impl BitPackSim {
             *unsafe { self.in_update_list.get_unchecked_mut(group_id) } = false;
             let state = unsafe { self.state.get_unchecked_mut(group_id) };
             let offset = group_id * Self::BITS;
-            debug_assert_eq!(self.kind[offset] == GateType::Cluster, CLUSTER);
+            //debug_assert_eq!(self.kind[offset] == GateType::Cluster, CLUSTER);
             let new_state = Self::calc_state_pack(
                 unsafe {
                     self.acc.get_unchecked(
@@ -1507,7 +1507,7 @@ impl LogicSim for BitPackSim {
             translation_table,
             acc,
             state,
-            kind,
+            //kind,
             is_xor,
             is_inverted,
             packed_output_indexes,

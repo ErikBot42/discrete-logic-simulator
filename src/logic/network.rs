@@ -3,7 +3,7 @@ use crate::logic::{
     gate_status, CompiledNetwork, Gate, GateKey, GateType, IndexType, UpdateStrategy,
 };
 use itertools::Itertools;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Iterate through all gates, skipping any
 /// placeholder gates.
@@ -62,6 +62,7 @@ impl NetworkWithGaps {
 
 /// Contains translation table and can no longer be edited by client.
 /// Can be edited for optimizations.
+#[derive(Clone)]
 pub struct InitializedNetwork {
     pub(crate) gates: Vec<Gate>,
     pub(crate) translation_table: Vec<IndexType>,
@@ -206,7 +207,7 @@ impl InitializedNetwork {
     ///
     /// Will completely recreate the network.
     /// O(n * k)
-    fn optimization_pass(&self) -> Self {
+    fn optimization_pass_remove_redundant(&self) -> Self {
         // Iterate through all old gates.
         // Add gate if type & original input set is unique.
         let old_gates = &self.gates;
@@ -222,22 +223,131 @@ impl InitializedNetwork {
             translation_table: new_translation_table,
         }
     }
+    fn optimize_remove_redundant(&self) -> InitializedNetwork {
+        let mut prev_network_gate_count = self.gates.len();
+        let mut new_network = self.optimization_pass_remove_redundant();
+        loop {
+            if new_network.gates.len() == prev_network_gate_count {
+                new_network.print_info();
+                break new_network;
+            }
+            prev_network_gate_count = new_network.gates.len();
+            new_network = new_network.optimization_pass_remove_redundant();
+        }
+    }
+    /// Tries to reorder in a way that is better for the cache.
+    fn optimize_reorder_cache(&self) -> InitializedNetwork {
+        self.reordered_by(|v| {
+            // sorting by input ids implicitly sorts by cluster/non cluster
+            let mut v = v;
+
+            v.sort_by_key(|(_,g)| g.inputs.len());
+
+            return v;
+
+            let mut out = Vec::new();
+            out.push(v.pop().unwrap());
+
+            // Score is number of overlapping inputs
+            // on tie, use first
+
+            fn count_overlapping_inputs(a: &Gate, b: &Gate) -> usize {
+                let a: HashSet<_> = a.inputs.iter().cloned().collect();
+                let b: HashSet<_> = b.inputs.iter().cloned().collect();
+                a.intersection(&b).count()
+            }
+
+            let limit = 256;
+
+            loop {
+                // score, index
+                let mut curr_best: Option<(usize, usize)> = None;
+                let compare_with = out.last().unwrap().1;
+                for (i, (_, gate)) in v.iter().enumerate().take(limit) {
+                    let score = count_overlapping_inputs(compare_with, gate);
+                    let new_entry = (score, i);
+                    curr_best = Some(match curr_best {
+                        None => new_entry,
+                        Some(curr_best) => {
+                            if curr_best.0 < score {
+                                new_entry
+                            } else {
+                                curr_best
+                            }
+                        },
+                    })
+                }
+                let (_, index) = unwrap_or_else!(curr_best, break);
+                out.push(v.swap_remove(index));
+            }
+            out
+        })
+    }
+
+    /// Change order of gates and update ids afterwards, might be better for cache.
+    /// Removing gates is UB, adding None is used to add padding.
+    ///
+    /// O(n * k) + O(reorder(n, k))
+    fn reordered_by<F: FnMut(Vec<(usize, &Gate)>) -> Vec<(usize, &Gate)>>(
+        &self,
+        mut reorder: F,
+    ) -> Self {
+        let gates_with_ids: Vec<(usize, &Gate)> = self.gates.iter().enumerate().collect();
+
+        let gates_with_ids = reorder(gates_with_ids);
+
+        let (inverse_translation_table, gates): (Vec<usize>, Vec<&Gate>) =
+            gates_with_ids.into_iter().unzip();
+        assert_eq_len!(gates, inverse_translation_table);
+        let mut translation_table: Vec<IndexType> = (0..inverse_translation_table.len())
+            .map(|_| 0 as IndexType)
+            .collect();
+        assert_eq_len!(gates, translation_table);
+        inverse_translation_table
+            .iter()
+            .enumerate()
+            .for_each(|(index, new)| {
+                //if let Some(new) = new {
+                translation_table[*new] = index.try_into().unwrap();
+                //}
+            });
+        //TODO: avoid allocations here
+        let gates: Vec<Gate> = gates
+            .into_iter()
+            .map(|gate| {
+                //gate.map(|gate| {
+                let mut gate = gate.clone();
+                gate.outputs.iter_mut().for_each(|output| {
+                    *output = translation_table[*output as usize] as IndexType;
+                });
+                gate.inputs
+                    .iter_mut()
+                    .for_each(|input| *input = translation_table[*input as usize] as IndexType);
+                gate
+                //})
+            })
+            .collect();
+        assert_eq_len!(gates, translation_table);
+        //assert_le_len!(self.translation_table, translation_table);
+        let translation_table =
+            Self::create_translation_table(&self.translation_table, &translation_table);
+        for t in &translation_table {
+            assert_le!(*t as usize, gates.len());
+        }
+        Self {
+            gates,
+            translation_table,
+        }
+    }
 
     /// Perform repeated optimization passes.
     fn optimized(&self) -> Self {
         timed!(
             {
-                let mut prev_network_gate_count = self.gates.len();
-                let mut new_network = self.optimization_pass();
-                //self.print_info();
-                loop {
-                    //new_network.print_info();
-                    if new_network.gates.len() == prev_network_gate_count {
-                        break new_network;
-                    }
-                    prev_network_gate_count = new_network.gates.len();
-                    new_network = new_network.optimization_pass();
-                }
+                let network = self;
+                let network = network.optimize_remove_redundant();
+                let network = network.optimize_reorder_cache();
+                network
             },
             "optimized network in: {:?}"
         )
@@ -246,17 +356,15 @@ impl InitializedNetwork {
     /// In order for scalar packing optimizations to be sound,
     /// cluster and non cluster cannot be mixed
     fn prepare_for_scalar_packing(&self) -> NetworkWithGaps {
-        self.reordered_by(|v| {
+        self.reordered_by_gaps(|v| {
             Self::aligned_by_inner(v, gate_status::PACKED_ELEMENTS, |a, b| {
                 Gate::is_cluster_a_xor_is_cluster_b(a, b)
             })
         })
     }
     pub(crate) fn prepare_for_bitpack_packing(&self, bits: usize) -> NetworkWithGaps {
-        self.reordered_by(|v| {
-            Self::aligned_by_inner(v, bits, |a, b| {
-                Gate::is_cluster_a_xor_is_cluster_b(a, b)
-            })
+        self.reordered_by_gaps(|v| {
+            Self::aligned_by_inner(v, bits, |a, b| Gate::is_cluster_a_xor_is_cluster_b(a, b))
         })
     }
 
@@ -301,7 +409,7 @@ impl InitializedNetwork {
     /// Removing gates is UB, adding None is used to add padding.
     ///
     /// O(n * k) + O(reorder(n, k))
-    fn reordered_by<F: FnMut(Vec<(usize, &Gate)>) -> Vec<Option<(usize, &Gate)>>>(
+    fn reordered_by_gaps<F: FnMut(Vec<(usize, &Gate)>) -> Vec<Option<(usize, &Gate)>>>(
         &self,
         mut reorder: F,
     ) -> NetworkWithGaps {
