@@ -53,6 +53,11 @@ inherits = "release-lto"
 codegen-units = 1
 panic = "abort"
 
+[profile.release-extreme]
+inherits = "release"
+panic = "abort"
+debug = false
+
 [profile.small]
 inherits = "release"
 opt-level = "z"   
@@ -92,6 +97,7 @@ arboard =   { version = "3.2.0",  default-features = false, features = ["image-d
 tempfile =  { version = "3.3.0",  default-features = false                                  }
 arrayvec =  { version = "0.7.2",  default-features = false                                  }
 json =      { version = "0.12.4", default-features = false                                  }
+rand = "0.8.5"
 
 
 [dev-dependencies]

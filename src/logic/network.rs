@@ -239,21 +239,116 @@ impl InitializedNetwork {
 
     /// Tries to reorder in a way that is better for the cache.
     fn optimize_reorder_cache(&self) -> InitializedNetwork {
-        self.reordered_by(|v| {
+        self.reordered_by(|mut v| {
+
+            //TODO: HIGHEST NUMBER OF INPUTS FIRST
+
+            //return v;
             // sorting by input ids implicitly sorts by cluster/non cluster
-            let mut v = v;
+
+            let mut active_set: Vec<usize> = Vec::new();
+            let mut next_active_set: Vec<usize> = Vec::new();
+            let mut visited: Vec<bool> = Vec::new();
+            let mut constness_level: Vec<Option<usize>> = v
+                .iter()
+                .enumerate()
+                .map(|(i2, (i, g))| {
+                    assert_eq!(i2, *i);
+                    if g.is_propably_constant() {
+                        active_set.push(*i);
+                        visited.push(true);
+                        Some(0)
+                    } else {
+                        visited.push(false);
+                        None
+                    }
+                })
+                .collect();
+            dbg!(&active_set);
+            while active_set.len() > 0 {
+                for active_id in active_set.iter().cloned() {
+                    assert!(constness_level[active_id].is_some());
+                    //dbg!(active_id);
+                    'foo: for output_id in v[active_id].1.outputs.iter().map(|&i| i as usize) {
+                        if visited[output_id] {
+                            println!("already visited {output_id}");
+                            continue;
+                        }
+                        //dbg!(output_id);
+                        let mut max = None;
+                        for input_id in v[output_id].1.inputs.iter().map(|&i| i as usize) {
+                            let c = constness_level[input_id];
+                            //dbg!(input_id, c);
+                            if c.is_none() {
+                                continue 'foo;
+                            }
+                            max = max.max(c);
+                        }
+                        assert!(max.is_some(), "{max:?}");
+                        visited[output_id] = true;
+                        constness_level[output_id] = max.map(|x| x + 1);
+                        next_active_set.push(output_id);
+                        println!("ADDING CONST: {active_id} -> {output_id}");
+                    }
+                }
+                std::mem::swap(&mut active_set, &mut next_active_set);
+                next_active_set.clear();
+            }
+            let (_, input_count_without_const): (Vec<_>, Vec<_>) = v
+                .iter()
+                .map(|(_, g)| {
+                    (
+                        g.inputs.len(),
+                        g.inputs
+                            .iter()
+                            .filter(|&&i| constness_level[i as usize].is_none())
+                            .count(),
+                    )
+                })
+                .unzip();
+
+            dbg!(&active_set, &next_active_set);
+
+            //panic!("{}", active_set.len());
+
+            let (mut constant, mut dynamic): (Vec<_>, Vec<_>) = v
+                .into_iter()
+                .partition(|(i, _)| constness_level[*i].is_some());
+            //let mut dynamic = v;
+
+
+
+            // PROP:
+            // add gate, add their outputs
+            // what order should outputs have?
+
+            //use rand::seq::SliceRandom;
+            //use rand::thread_rng;
+            //let mut rng = thread_rng();
+            //dynamic.shuffle(&mut rng);
 
             //v.sort_by_key(|(_,g)| g.inputs.len());
-            v.sort_by(|(_, a), (_, b)| {
-                let by_input_degree = a.inputs.len().cmp(&b.inputs.len());
+            dynamic.sort_by(|(ia, a), (ib, b)| {
+                let by_input_degree = a.inputs.len().cmp(&b.inputs.len()).reverse();
+                let by_output_degree = a.outputs.len().cmp(&b.outputs.len());
+                let by_input_degree_exclude_const = input_count_without_const[*ia]
+                    .cmp(&input_count_without_const[*ib])
+                    .reverse();
                 let by_is_cluster = a.kind.is_cluster().cmp(&b.kind.is_cluster());
-                by_is_cluster.then(by_input_degree)
+                //by_is_cluster.then(by_input_degree_exclude_const)
+                by_is_cluster.then(by_input_degree).then(by_output_degree)
             });
 
-            return v;
+            //panic!("{:?}, {:?}", dynamic[0], dynamic[dynamic.len() - 1]);
+
+            dynamic.append(&mut constant);
+
+            //panic!();
+
+            return dynamic;
 
             let mut out = Vec::new();
-            out.push(v.pop().unwrap());
+            out.push(dynamic.pop().unwrap());
 
             struct Score {
                 foo: u8,
@@ -274,7 +369,7 @@ impl InitializedNetwork {
                 // score, index
                 let mut curr_best: Option<(usize, usize)> = None;
                 let compare_with = out.last().unwrap().1;
-                for (i, (_, gate)) in v.iter().enumerate().take(limit) {
+                for (i, (_, gate)) in dynamic.iter().enumerate().take(limit) {
                     let score = count_overlapping_inputs(compare_with, gate);
                     let new_entry = (score, i);
                     curr_best = Some(match curr_best {
@@ -289,7 +384,7 @@ impl InitializedNetwork {
                     })
                 }
                 let (_, index) = unwrap_or_else!(curr_best, break);
-                out.push(v.swap_remove(index));
+                out.push(dynamic.swap_remove(index));
             }
             out
         })

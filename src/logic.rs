@@ -9,6 +9,7 @@ pub mod reference_sim;
 use crate::logic::network::NetworkWithGaps;
 pub(crate) use crate::logic::network::{GateNetwork, InitializedNetwork};
 use bytemuck::{cast_slice, cast_slice_mut};
+use itertools::*;
 use std::mem::{align_of, size_of, transmute};
 use std::simd::{Mask, Simd, SimdPartialEq};
 
@@ -160,6 +161,9 @@ pub(crate) struct Gate {
     //TODO: "do not merge" flag for gates that are "volatile", for example handling IO
 }
 impl Gate {
+    fn is_propably_constant(&self) -> bool {
+        self.inputs.len() == 0
+    }
     fn acc(&self) -> AccType {
         self.acc
     }
@@ -1391,6 +1395,11 @@ impl<const LATCH: bool> BitPackSimInner<LATCH> {
             (&mut self.update_list, &mut self.cluster_update_list)
         };
 
+        //static mut AVG_ONES: f64 = 6.0;
+        //const AVG_ONES_WINDOW: f64 = 4_000_000.0;
+
+        //unsafe { println!("{AVG_ONES}") };
+
         for (group_id, is_inverted, is_xor) in unsafe { update_list.iter() }
             .map(|g| g as usize)
             .map(|group_id| {
@@ -1416,7 +1425,12 @@ impl<const LATCH: bool> BitPackSimInner<LATCH> {
             );
             let mut changed = *state ^ new_state;
             //println!("{changed:#068b}");
-            println!("{}", changed.count_ones());
+            //println!("{}", changed.count_ones());
+            //unsafe {
+            //    AVG_ONES = changed.count_ones() as f64 / AVG_ONES_WINDOW
+            //        + AVG_ONES * (AVG_ONES_WINDOW - 1.0) / AVG_ONES_WINDOW;
+            //}
+
             if changed == 0 {
                 continue;
             }
@@ -1458,6 +1472,7 @@ impl<const LATCH: bool> BitPackSimInner<LATCH> {
                 }
             }
         }
+
         update_list.clear();
     }
 }
