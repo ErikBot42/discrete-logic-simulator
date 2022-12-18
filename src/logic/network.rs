@@ -3,6 +3,7 @@ use crate::logic::{
     gate_status, CompiledNetwork, Gate, GateKey, GateType, IndexType, UpdateStrategy,
 };
 use itertools::Itertools;
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 /// Iterate through all gates, skipping any
@@ -235,18 +236,28 @@ impl InitializedNetwork {
             new_network = new_network.optimization_pass_remove_redundant();
         }
     }
+
     /// Tries to reorder in a way that is better for the cache.
     fn optimize_reorder_cache(&self) -> InitializedNetwork {
         self.reordered_by(|v| {
             // sorting by input ids implicitly sorts by cluster/non cluster
             let mut v = v;
 
-            v.sort_by_key(|(_,g)| g.inputs.len());
+            //v.sort_by_key(|(_,g)| g.inputs.len());
+            v.sort_by(|(_, a), (_, b)| {
+                let by_input_degree = a.inputs.len().cmp(&b.inputs.len());
+                let by_is_cluster = a.kind.is_cluster().cmp(&b.kind.is_cluster());
+                by_is_cluster.then(by_input_degree)
+            });
 
             return v;
 
             let mut out = Vec::new();
             out.push(v.pop().unwrap());
+
+            struct Score {
+                foo: u8,
+            }
 
             // Score is number of overlapping inputs
             // on tie, use first
@@ -323,6 +334,8 @@ impl InitializedNetwork {
                 gate.inputs
                     .iter_mut()
                     .for_each(|input| *input = translation_table[*input as usize] as IndexType);
+                gate.outputs.sort_unstable();
+                gate.inputs.sort_unstable();
                 gate
                 //})
             })
@@ -446,6 +459,8 @@ impl InitializedNetwork {
                     gate.inputs
                         .iter_mut()
                         .for_each(|input| *input = translation_table[*input as usize] as IndexType);
+                    gate.outputs.sort_unstable();
+                    gate.inputs.sort_unstable();
                     gate
                 })
             })

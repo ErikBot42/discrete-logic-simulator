@@ -1,3 +1,5 @@
+cargo-features = ["profile-rustflags"]
+
 #[target.x86_64-unknown-linux-gnu]
 #rustflags = [
 #    #"-C", "link-arg=-fuse-ld=lld",
@@ -17,12 +19,18 @@ autotests = true
 # Optimize deps in debug
 [profile.dev.package."*"]
 opt-level = 3           # Build in release
-strip = true            # Remove everything unnessesary from binary
+#strip = true            # Remove everything unnessesary from binary
 debug-assertions = true # 
 #lto = "thin"
 
 [profile.release]
-
+# link-arg: extra linker arguments
+# passes: extra llvm passes
+# "remark all"
+rustflags = [
+    "-C", "target-cpu=native",
+]
+opt-level = 3 
 # Very expensive, but makes 
 # code a tiny bit faster
 # Makes SIMD significantly faster
@@ -39,6 +47,11 @@ debug = true
 [profile.release-lto]
 inherits = "release"
 lto = "fat"
+
+[profile.release-lto-extreme]
+inherits = "release-lto"
+codegen-units = 1
+panic = "abort"
 
 [profile.small]
 inherits = "release"

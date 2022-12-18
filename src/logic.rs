@@ -15,6 +15,7 @@ use std::simd::{Mask, Simd, SimdPartialEq};
 pub type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
 pub type SimdSim = CompiledNetwork<{ UpdateStrategy::Simd as u8 }>;
 pub type ScalarSim = CompiledNetwork<{ UpdateStrategy::ScalarSimd as u8 }>;
+pub type BitPackSim = BitPackSimInner<false>;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, PartialOrd, Ord, Default)]
 /// A = active inputs
@@ -1236,7 +1237,7 @@ fn bit_get(int: BitInt, index: usize) -> bool {
 fn wrapping_bit_get(int: BitInt, index: usize) -> bool {
     int & (1 as BitInt).wrapping_shl(index as u32) != 0
 }
-fn pack_bits(arr: [bool; BitPackSim::BITS]) -> BitInt {
+fn pack_bits(arr: [bool; BIT_PACK_SIM_BITS]) -> BitInt {
     let mut tmp_int: BitInt = 0;
     for (i, b) in arr.into_iter().enumerate() {
         tmp_int = bit_set(tmp_int, i, b);
@@ -1244,7 +1245,8 @@ fn pack_bits(arr: [bool; BitPackSim::BITS]) -> BitInt {
     tmp_int
 }
 type BitAcc = u8;
-const ACC_GROUP_SIZE: usize = BitPackSim::BITS;
+const ACC_GROUP_SIZE: usize = BIT_PACK_SIM_BITS;
+const BIT_PACK_SIM_BITS: usize = BitPackSimInner::<false>::BITS;
 type BitInt = u64;
 #[repr(C)]
 #[repr(align(64))] // in bits: 64*8 = 512 bits
@@ -1260,18 +1262,18 @@ const FOO: () = {
     }
 };
 
-fn bit_acc_pack(arr: [BitAcc; BitPackSim::BIT_ACC_GROUP]) -> BitAccPack {
+fn bit_acc_pack(arr: [BitAcc; BIT_PACK_SIM_BITS]) -> BitAccPack {
     //BitAccPack::from_le_bytes(arr)
     BitAccPack(arr)
 }
 #[derive(Debug)]
-pub struct BitPackSim {
+pub struct BitPackSimInner<const LATCH: bool> {
     translation_table: Vec<IndexType>,
     acc: Vec<BitAccPack>, // 8x BitInt
     state: Vec<BitInt>,   // intersperse candidate
     //kind: Vec<GateType>,
-    is_xor: Vec<BitInt>,                 // intersperse candidate
-    is_inverted: Vec<BitInt>,            // intersperse candidate
+    is_xor: Vec<BitInt>,      // intersperse candidate
+    is_inverted: Vec<BitInt>, // intersperse candidate
     packed_output_indexes: Vec<IndexType>,
     packed_outputs: Vec<IndexType>,
 
@@ -1280,7 +1282,7 @@ pub struct BitPackSim {
     in_update_list: Vec<bool>,
 }
 use core::arch::x86_64::*;
-impl BitPackSim {
+impl<const LATCH: bool> BitPackSimInner<LATCH> {
     const BIT_ACC_GROUP: usize = size_of::<BitAccPack>() / size_of::<BitAcc>();
     const BITS: usize = BitInt::BITS as usize;
     #[inline(always)]
@@ -1314,10 +1316,12 @@ impl BitPackSim {
     /// Pointer MUST be aligned
     #[inline(always)] // function used at single call site
     unsafe fn acc_parity_m256i(acc_ptr: *const __m256i) -> u32 {
-        let data = _mm256_load_si256(acc_ptr); // load value
-        let data = _mm256_slli_epi64::<7>(data); // shift LSB to MSB for each byte
-        let data = _mm256_movemask_epi8(data); // put MSB of each byte in an int
-        transmute(data)
+        unsafe {
+            let data = _mm256_load_si256(acc_ptr); // load value
+            let data = _mm256_slli_epi64::<7>(data); // shift LSB to MSB for each byte
+            let data = _mm256_movemask_epi8(data); // put MSB of each byte in an int
+            transmute(data)
+        }
     }
     #[inline(always)] // function used at single call site
     fn acc_parity_simd(acc: &BitAccPack) -> BitInt {
@@ -1411,24 +1415,27 @@ impl BitPackSim {
                 is_inverted,
             );
             let mut changed = *state ^ new_state;
+            //println!("{changed:#068b}");
+            println!("{}", changed.count_ones());
             if changed == 0 {
                 continue;
             }
             *state = new_state;
             let acc: &mut [BitAcc] = cast_slice_mut(&mut self.acc);
-            while changed != 0 {
-                let i = changed.trailing_zeros();
-                changed = changed & !(1 << i);
-                let i = i as usize;
 
-                let gate_id = offset as usize + i;
+            while changed != 0 {
+                let i_u32 = changed.trailing_zeros();
+                let i_usize = i_u32 as usize;
+
+                let gate_id = offset as usize + i_usize;
 
                 let outputs_start =
                     *unsafe { self.packed_output_indexes.get_unchecked(gate_id) } as usize;
                 let outputs_end =
                     *unsafe { self.packed_output_indexes.get_unchecked(gate_id + 1) } as usize;
+                changed = changed & !(1 << i_u32); // ANY
 
-                let delta = (bit_get(new_state, i) as AccType * 2).wrapping_sub(1);
+                let delta = (bit_get(new_state, i_usize) as AccType * 2).wrapping_sub(1);
 
                 for output in unsafe {
                     self.packed_outputs
@@ -1455,7 +1462,7 @@ impl BitPackSim {
     }
 }
 
-impl LogicSim for BitPackSim {
+impl<const LATCH: bool> LogicSim for BitPackSimInner<LATCH> {
     fn create(network: InitializedNetwork) -> Self {
         let network = network.prepare_for_bitpack_packing(Self::BITS);
         let number_of_gates_with_padding = network.gates.len();
@@ -1490,7 +1497,7 @@ impl LogicSim for BitPackSim {
             .cloned()
             .map(RunTimeGateType::new)
             .map(RunTimeGateType::calc_flags)
-            .array_chunks::<{ Self::BITS }>()
+            .array_chunks::<{ BIT_PACK_SIM_BITS }>()
             .map(|arr| (pack_bits(arr.map(|a| a.0)), pack_bits(arr.map(|a| a.1))))
             .unzip();
         let update_list = UpdateList::collect_size(

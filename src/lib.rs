@@ -8,6 +8,7 @@
 #![feature(iter_next_chunk)]
 #![feature(is_sorted)]
 #![feature(array_chunks)]
+#![feature(stdsimd)]
 macro_rules! timed {
     ($block:expr, $print_str:expr) => {{
         let now = std::time::Instant::now();
