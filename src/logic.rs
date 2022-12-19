@@ -1424,12 +1424,12 @@ impl BitPackSimInner /*<LATCH>*/ {
                 is_inverted,
             );
             let changed = *state ^ new_state;
-            //println!("{changed:#068b}");
-            //println!("{}", changed.count_ones());
-            //unsafe {
-            //    AVG_ONES = changed.count_ones() as f64 / AVG_ONES_WINDOW
-            //        + AVG_ONES * (AVG_ONES_WINDOW - 1.0) / AVG_ONES_WINDOW;
-            //}
+            // println!("{changed:#068b}");
+            // println!("{}", changed.count_ones());
+            // unsafe {
+            //     AVG_ONES = changed.count_ones() as f64 / AVG_ONES_WINDOW
+            //         + AVG_ONES * (AVG_ONES_WINDOW - 1.0) / AVG_ONES_WINDOW;
+            // }
 
             if changed == 0 {
                 continue;
@@ -1625,6 +1625,28 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
     fn update(&mut self) {
         self.update_inner::<false>();
         self.update_inner::<true>();
+
+        //static mut I: usize = 0;
+
+        // inf: 3494, -8.5%
+        //
+        // 128: 3645, -12.8%
+        //
+        // 64: 3531,  -14%
+        //
+        // 32: 3659,  -6.9%
+        //
+        // 8: 3513,   -11.2%
+        //
+        // 1/2: 2300
+
+        //unsafe {
+        //    I += 1;
+        //    I %= 64;
+        //    if I == 0 {
+        //        self.update_list.get_slice_mut().sort_unstable();
+        //    }
+        //}
     }
     fn to_internal_id(&self, gate_id: usize) -> usize {
         self.translation_table[gate_id].try_into().unwrap()

@@ -8,14 +8,14 @@ use std::hint::black_box;
 fn input_data() -> Vec<(&'static str, VcbInput)> {
     vec![
         (
+            "serial mult",
+            VcbInput::World(include_str!("../test_files/serial_multipliers.vcb").to_string()),
+        ),
+        (
             "big_decoder",
             VcbInput::BlueprintLegacy(
                 include_str!("../test_files/big_decoder.blueprint").to_string(),
             ),
-        ),
-        (
-            "serial mult",
-            VcbInput::World(include_str!("../test_files/serial_multipliers.vcb").to_string()),
         ),
         (
             "bcd_count",
