@@ -41,7 +41,7 @@ macro_rules! assert_assume {
     ($statement:expr) => {
         #[inline(always)]
         unsafe fn foo() {}
-        foo(); // mark as unsafe
+        foo(); 
 
         #[cfg(debug_assertions)]
         assert!($statement);

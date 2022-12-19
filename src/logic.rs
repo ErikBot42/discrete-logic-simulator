@@ -16,7 +16,7 @@ use std::simd::{Mask, Simd, SimdPartialEq};
 pub type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
 pub type SimdSim = CompiledNetwork<{ UpdateStrategy::Simd as u8 }>;
 pub type ScalarSim = CompiledNetwork<{ UpdateStrategy::ScalarSimd as u8 }>;
-pub type BitPackSim = BitPackSimInner<false>;
+pub type BitPackSim = BitPackSimInner;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, PartialOrd, Ord, Default)]
 /// A = active inputs
@@ -1250,7 +1250,7 @@ fn pack_bits(arr: [bool; BIT_PACK_SIM_BITS]) -> BitInt {
 }
 type BitAcc = u8;
 const ACC_GROUP_SIZE: usize = BIT_PACK_SIM_BITS;
-const BIT_PACK_SIM_BITS: usize = BitPackSimInner::<false>::BITS;
+const BIT_PACK_SIM_BITS: usize = BitPackSimInner::BITS;
 type BitInt = u64;
 #[repr(C)]
 #[repr(align(64))] // in bits: 64*8 = 512 bits
@@ -1271,7 +1271,7 @@ fn bit_acc_pack(arr: [BitAcc; BIT_PACK_SIM_BITS]) -> BitAccPack {
     BitAccPack(arr)
 }
 #[derive(Debug)]
-pub struct BitPackSimInner<const LATCH: bool> {
+pub struct BitPackSimInner /*<const LATCH: bool>*/ {
     translation_table: Vec<IndexType>,
     acc: Vec<BitAccPack>, // 8x BitInt
     state: Vec<BitInt>,   // intersperse candidate
@@ -1284,9 +1284,10 @@ pub struct BitPackSimInner<const LATCH: bool> {
     update_list: UpdateList,
     cluster_update_list: UpdateList,
     in_update_list: Vec<bool>,
+    group_output_count: Vec<Option<u8>>, //TODO: better encoding
 }
 use core::arch::x86_64::*;
-impl<const LATCH: bool> BitPackSimInner<LATCH> {
+impl BitPackSimInner /*<LATCH>*/ {
     const BIT_ACC_GROUP: usize = size_of::<BitAccPack>() / size_of::<BitAcc>();
     const BITS: usize = BitInt::BITS as usize;
     #[inline(always)]
@@ -1399,7 +1400,6 @@ impl<const LATCH: bool> BitPackSimInner<LATCH> {
         //const AVG_ONES_WINDOW: f64 = 4_000_000.0;
 
         //unsafe { println!("{AVG_ONES}") };
-
         for (group_id, is_inverted, is_xor) in unsafe { update_list.iter() }
             .map(|g| g as usize)
             .map(|group_id| {
@@ -1423,7 +1423,7 @@ impl<const LATCH: bool> BitPackSimInner<LATCH> {
                 is_xor,
                 is_inverted,
             );
-            let mut changed = *state ^ new_state;
+            let changed = *state ^ new_state;
             //println!("{changed:#068b}");
             //println!("{}", changed.count_ones());
             //unsafe {
@@ -1437,47 +1437,99 @@ impl<const LATCH: bool> BitPackSimInner<LATCH> {
             *state = new_state;
             let acc: &mut [BitAcc] = cast_slice_mut(&mut self.acc);
 
-            while changed != 0 {
-                let i_u32 = changed.trailing_zeros();
-                let i_usize = i_u32 as usize;
+            let group_output_count = unsafe { self.group_output_count.get_unchecked(group_id) };
 
-                let gate_id = offset as usize + i_usize;
-
-                let outputs_start =
-                    *unsafe { self.packed_output_indexes.get_unchecked(gate_id) } as usize;
-                let outputs_end =
-                    *unsafe { self.packed_output_indexes.get_unchecked(gate_id + 1) } as usize;
-                changed = changed & !(1 << i_u32); // ANY
-
-                let delta = (bit_get(new_state, i_usize) as AccType * 2).wrapping_sub(1);
-
-                for output in unsafe {
-                    self.packed_outputs
-                        .get_unchecked(outputs_start..outputs_end)
-                }
-                .iter()
-                .map(|&i| i as usize)
-                {
-                    let output_group_id = Self::calc_group_id(output);
-
-                    let acc_mut = unsafe { acc.get_unchecked_mut(output) };
-                    *acc_mut = acc_mut.wrapping_add(delta);
-
-                    let in_update_list_mut =
-                        unsafe { self.in_update_list.get_unchecked_mut(output_group_id) };
-                    if !*in_update_list_mut {
-                        unsafe { next_update_list.push(output_group_id as IndexType) };
-                        *in_update_list_mut = true;
-                    }
-                }
-            }
+            let packed_output_indexes = &self.packed_output_indexes;
+            let packed_outputs = &self.packed_outputs;
+            let in_update_list = &mut self.in_update_list;
+            Self::propagate_acc(
+                changed,
+                offset,
+                group_output_count,
+                packed_output_indexes,
+                new_state,
+                packed_outputs,
+                acc,
+                in_update_list,
+                next_update_list,
+            );
         }
 
         update_list.clear();
     }
+
+    #[inline(always)]
+    fn propagate_acc(
+        mut changed: u64,
+        offset: usize,
+        group_output_count: &Option<u8>,
+        packed_output_indexes: &Vec<u32>,
+        new_state: u64,
+        packed_outputs: &Vec<u32>,
+        acc: &mut [u8],
+        in_update_list: &mut Vec<bool>,
+        next_update_list: &mut crate::raw_list::RawList<u32>,
+    ) {
+        while changed != 0 {
+            let i_u32 = changed.trailing_zeros();
+            let i_usize = i_u32 as usize;
+
+            let gate_id = offset as usize + i_usize;
+
+            let (outputs_start, outputs_end) = group_output_count
+                .map(|x| {
+                    let base = *unsafe { packed_output_indexes.get_unchecked(offset) } as usize;
+                    let x = x as usize;
+                    (base + x * i_usize, base + x * (i_usize + 1))
+                })
+                .unwrap_or_else(|| {
+                    (
+                        *unsafe { packed_output_indexes.get_unchecked(gate_id) } as usize,
+                        *unsafe { packed_output_indexes.get_unchecked(gate_id + 1) } as usize,
+                    )
+                });
+
+            //let outputs_start =
+            //    *unsafe { packed_output_indexes.get_unchecked(gate_id) } as usize;
+            //let outputs_end =
+            //    *unsafe { packed_output_indexes.get_unchecked(gate_id + 1) } as usize;
+            //group_output_count.map(|x| unsafe {
+            //    assert_assume!(x as usize == outputs_end - outputs_start);
+            //});
+
+            // TODO: Store # of outputs in a group if it's constant for the entire group.
+
+            //unsafe {
+            //    assert_assume!(outputs_start <= outputs_end);
+            //}
+            changed = changed & !(1 << i_u32); // ANY
+
+            let delta = (bit_get(new_state, i_usize) as AccType * 2).wrapping_sub(1);
+            //unsafe {
+            //    assert_assume!(delta == 1 || delta == 0_u8.wrapping_sub(1));
+            //}
+
+            for output in unsafe { packed_outputs.get_unchecked(outputs_start..outputs_end) }
+                .iter()
+                .map(|&i| i as usize)
+            {
+                let output_group_id = BitPackSimInner::calc_group_id(output);
+
+                let acc_mut = unsafe { acc.get_unchecked_mut(output) };
+                *acc_mut = acc_mut.wrapping_add(delta);
+
+                let in_update_list_mut =
+                    unsafe { in_update_list.get_unchecked_mut(output_group_id) };
+                if !*in_update_list_mut {
+                    unsafe { next_update_list.push(output_group_id as IndexType) };
+                    *in_update_list_mut = true;
+                }
+            }
+        }
+    }
 }
 
-impl<const LATCH: bool> LogicSim for BitPackSimInner<LATCH> {
+impl LogicSim for BitPackSimInner /*<LATCH>*/ {
     fn create(network: InitializedNetwork) -> Self {
         let network = network.prepare_for_bitpack_packing(Self::BITS);
         let number_of_gates_with_padding = network.gates.len();
@@ -1525,6 +1577,28 @@ impl<const LATCH: bool> LogicSim for BitPackSimInner<LATCH> {
         );
         let in_update_list = (0..gates.len()).map(|_| false).collect();
         let cluster_update_list = UpdateList::new(update_list.capacity());
+
+        let group_output_count: Vec<_> = {
+            let from = packed_output_indexes.array_chunks::<{ Self::BITS }>();
+            let to = packed_output_indexes[1..].array_chunks::<{ Self::BITS }>();
+            from.zip(to)
+                .map(|(from, to)| {
+                    let mut foo = from.into_iter().zip(to).map(|(&a, &b)| b - a);
+
+                    // # inputs/outputs are almost never beyond 255
+
+                    let foo: Option<u8> = foo.next().and_then(|cmp_val| {
+                        foo.all(|x| x == cmp_val)
+                            .then_some(cmp_val)
+                            .and_then(|x| x.try_into().ok())
+                    });
+
+                    foo
+                })
+                .collect()
+        };
+        dbg!(group_output_count.iter().counts());
+
         Self {
             translation_table,
             acc,
@@ -1537,6 +1611,7 @@ impl<const LATCH: bool> LogicSim for BitPackSimInner<LATCH> {
             update_list,
             cluster_update_list,
             in_update_list,
+            group_output_count,
         }
     }
     fn get_state_internal(&self, gate_id: usize) -> bool {
