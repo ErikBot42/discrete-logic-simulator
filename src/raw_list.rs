@@ -62,7 +62,7 @@ where
         if push {
             *unsafe { self.list.get_unchecked_mut(self.len) } = el;
         }
-        self.len += push as usize;
+        self.len += usize::from(push);
         debug_assert!(
             self.list.len() > self.len,
             "{} <= {}",

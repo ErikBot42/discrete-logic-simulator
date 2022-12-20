@@ -240,7 +240,6 @@ impl InitializedNetwork {
     /// Tries to reorder in a way that is better for the cache.
     fn optimize_reorder_cache(&self) -> InitializedNetwork {
         self.reordered_by(|mut v| {
-
             //TODO: HIGHEST NUMBER OF INPUTS FIRST
 
             //return v;
@@ -265,8 +264,8 @@ impl InitializedNetwork {
                 })
                 .collect();
             dbg!(&active_set);
-            while active_set.len() > 0 {
-                for active_id in active_set.iter().cloned() {
+            while !active_set.is_empty() {
+                for active_id in active_set.iter().copied() {
                     assert!(constness_level[active_id].is_some());
                     //dbg!(active_id);
                     'foo: for output_id in v[active_id].1.outputs.iter().map(|&i| i as usize) {
@@ -316,8 +315,6 @@ impl InitializedNetwork {
                 .partition(|(i, _)| constness_level[*i].is_some());
             //let mut dynamic = v;
 
-
-
             // PROP:
             // add gate, add their outputs
             // what order should outputs have?
@@ -358,8 +355,8 @@ impl InitializedNetwork {
             // on tie, use first
 
             fn count_overlapping_inputs(a: &Gate, b: &Gate) -> usize {
-                let a: HashSet<_> = a.inputs.iter().cloned().collect();
-                let b: HashSet<_> = b.inputs.iter().cloned().collect();
+                let a: HashSet<_> = a.inputs.iter().copied().collect();
+                let b: HashSet<_> = b.inputs.iter().copied().collect();
                 a.intersection(&b).count()
             }
 
@@ -381,7 +378,7 @@ impl InitializedNetwork {
                                 curr_best
                             }
                         },
-                    })
+                    });
                 }
                 let (_, index) = unwrap_or_else!(curr_best, break);
                 out.push(dynamic.swap_remove(index));
@@ -452,10 +449,8 @@ impl InitializedNetwork {
     fn optimized(&self) -> Self {
         timed!(
             {
-                let network = self;
-                let network = network.optimize_remove_redundant();
-                let network = network.optimize_reorder_cache();
-                network
+                let network = self.optimize_remove_redundant();
+                network.optimize_reorder_cache()
             },
             "optimized network in: {:?}"
         )
@@ -465,14 +460,16 @@ impl InitializedNetwork {
     /// cluster and non cluster cannot be mixed
     fn prepare_for_scalar_packing(&self) -> NetworkWithGaps {
         self.reordered_by_gaps(|v| {
-            Self::aligned_by_inner(v, gate_status::PACKED_ELEMENTS, |a, b| {
-                Gate::is_cluster_a_xor_is_cluster_b(a, b)
-            })
+            Self::aligned_by_inner(
+                v,
+                gate_status::PACKED_ELEMENTS,
+                Gate::is_cluster_a_xor_is_cluster_b,
+            )
         })
     }
     pub(crate) fn prepare_for_bitpack_packing(&self, bits: usize) -> NetworkWithGaps {
         self.reordered_by_gaps(|v| {
-            Self::aligned_by_inner(v, bits, |a, b| Gate::is_cluster_a_xor_is_cluster_b(a, b))
+            Self::aligned_by_inner(v, bits, Gate::is_cluster_a_xor_is_cluster_b)
         })
     }
 
