@@ -160,7 +160,7 @@ pub(crate) const fn or_combine(value: Packed) -> Packed {
     value
 }
 /// like `or_combine`, but replaces with 0x1 instead.
-/// equivalent to BYTEwise != 0
+/// equivalent to `BYTEwise` != 0
 const fn or_combine_1(value: Packed) -> Packed {
     //let mut value = value;
     //value |= (splat_u32(0b1111_0000) & value) >> 4;
@@ -173,8 +173,8 @@ const fn or_combine_1(value: Packed) -> Packed {
     value & splat_u32(1)
 }
 /// for each byte:
-/// 0 -> 0b0000_0000
-/// 1 -> 0b1111_1111
+/// 0 -> `0b0000_0000`
+/// 1 -> `0b1111_1111`
 const fn mask_if_one(value: Packed) -> Packed {
     //let value = value & splat_u32(1);
     //let value = value | (value << 4);
