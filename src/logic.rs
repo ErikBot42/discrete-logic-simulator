@@ -155,17 +155,29 @@ pub(crate) struct Gate {
     kind: GateType,
 
     // variable:
-    acc: AccType,
-    state: bool,
-    //in_update_list: bool,
-    //TODO: "do not merge" flag for gates that are "volatile", for example handling IO
+    // acc: AccType,
+    initial_state: bool,
+    // in_update_list: bool,
+    // TODO: "do not merge" flag for gates that are "volatile", for example handling IO
 }
 impl Gate {
     fn is_propably_constant(&self) -> bool {
         self.inputs.is_empty()
     }
     fn acc(&self) -> AccType {
-        self.acc
+        self.calc_acc()
+    }
+    fn calc_acc(&self) -> AccType {
+        Self::calc_acc_i(self.inputs.len(), self.kind)
+    }
+    fn calc_acc_i(inputs: usize, kind: GateType) -> AccType {
+        match kind {
+            GateType::And | GateType::Nand => {
+                AccType::from(0).wrapping_sub(AccType::try_from(inputs).unwrap())
+            },
+            GateType::Or | GateType::Nor | GateType::Xor | GateType::Cluster => 0,
+            GateType::Xnor => 1,
+        }
     }
     fn has_overlapping_ids(&self, other: &Gate) -> bool {
         self.outputs
@@ -181,30 +193,26 @@ impl Gate {
             GateType::Xnor => 1,
             _ => 0,
         };
-        Gate {
+        let gate = Gate {
             inputs: Vec::new(),
             outputs,
-            acc: start_acc,
+            //acc: start_acc,
             kind,
-            state: false, // all gates/clusters initialize to off
-        }
+            initial_state: false, // all gates/clusters initialize to off
+        };
+        //assert_eq!(gate.acc, gate.calc_acc());
+        gate
     }
     fn from_gate_type(kind: GateType) -> Self {
         Self::new(kind, Vec::new())
     }
-    /// Change number of inputs to handle logic correctly
-    /// Can be called multiple times for *different* inputs
-    fn add_inputs(&mut self, inputs: i32) {
-        let diff: AccType = inputs.try_into().unwrap();
-        match self.kind {
-            GateType::And | GateType::Nand => self.acc = self.acc.wrapping_sub(diff),
-            GateType::Or | GateType::Nor | GateType::Xor | GateType::Xnor | GateType::Cluster => (),
-        }
-    }
+
     /// add inputs and handle internal logic for them
+    /// # NOTE
+    /// Redundant connections are allowed here.
     fn add_inputs_vec(&mut self, inputs: &mut Vec<IndexType>) {
-        self.add_inputs(inputs.len().try_into().unwrap());
         self.inputs.append(inputs);
+        self.inputs.sort_unstable(); // TODO: probably not needed
     }
     #[inline]
     const fn evaluate(acc: AccType, kind: RunTimeGateType) -> bool {
@@ -263,15 +271,17 @@ impl Gate {
         // TODO: can potentially include inverted.
         // but then every connection would have to include
         // connection information
-        let kind = match self.kind {
-            GateType::Cluster => GateType::Or,
-            _ => self.kind,
-        };
+        //let kind = match self.kind {
+        //    GateType::Cluster => GateType::Or,
+        //    _ => self.kind,
+        //};
+        let kind = self.kind;
         let inputs_len = self.inputs.len();
         let kind = match inputs_len {
             0 | 1 => match kind {
                 GateType::Nand | GateType::Xnor | GateType::Nor => GateType::Nor,
-                GateType::And | GateType::Or | GateType::Xor | GateType::Cluster => GateType::Or,
+                GateType::And | GateType::Or | GateType::Xor => GateType::Or,
+                GateType::Cluster => kind, // without this, network is messed up
             },
             _ => kind,
         };
@@ -406,11 +416,11 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             .collect();
         let state: Vec<u8> = gates
             .iter()
-            .map(|gate| u8::from(gate.as_ref().map(|g| g.state).unwrap_or_default()))
+            .map(|gate| u8::from(gate.as_ref().map(|g| g.initial_state).unwrap_or_default()))
             .collect();
         let acc: Vec<u8> = gates
             .iter()
-            .map(|gate| gate.as_ref().map(|g| g.acc).unwrap_or_default())
+            .map(|gate| gate.as_ref().map(|g| g.acc()).unwrap_or_default())
             .collect();
 
         let update_list = UpdateList::collect_size(
@@ -1549,14 +1559,14 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
         );
         let state: Vec<_> = gates
             .iter()
-            .map(|g| g.as_ref().map_or(false, |g| g.state))
+            .map(|g| g.as_ref().map_or(false, |g| g.initial_state))
             .array_chunks()
             .map(pack_bits)
             .collect();
         assert_eq!(state.len(), number_of_buckets);
         let acc: Vec<_> = gates
             .iter()
-            .map(|g| g.as_ref().map_or(0, |g| g.acc as BitAcc))
+            .map(|g| g.as_ref().map_or(0, |g| g.acc() as BitAcc))
             .array_chunks()
             .map(bit_acc_pack)
             .collect();

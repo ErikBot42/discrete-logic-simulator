@@ -41,7 +41,7 @@ macro_rules! assert_assume {
     ($statement:expr) => {
         #[inline(always)]
         unsafe fn foo() {}
-        foo(); 
+        foo();
 
         #[cfg(debug_assertions)]
         assert!($statement);
@@ -63,6 +63,12 @@ mod tests {
 
     fn prep_cases<SIM: LogicSim>(optimize: bool) -> Vec<(&'static str, VcbBoard<SIM>)> {
         let cases: Vec<(&str, _)> = vec![
+            //(
+            //    "xnor edge case",
+            //    VcbInput::Blueprint(
+            //        include_str!("../test_files/xnor_edge_case.blueprint").to_string(),
+            //    ),
+            //),
             (
                 "gates",
                 VcbInput::BlueprintLegacy(
@@ -97,31 +103,7 @@ mod tests {
 
     #[test]
     fn optimization_regression_test() {
-        for add_all_optimized in [true, false] {
-            for add_all_unoptimized in [true, false] {
-                let unoptimized = prep_cases::<ReferenceSim>(false);
-                let optimized = prep_cases::<ReferenceSim>(true);
-                for ((name, mut unoptimized), (_, mut optimized)) in
-                    unoptimized.into_iter().zip(optimized.into_iter())
-                {
-                    for i in 0..30 {
-                        assert_eq!(
-                            unoptimized.make_state_vec(),
-                            optimized.make_state_vec(),
-                            "optimized/unoptimized mismatch for test {name}, in iteration {i} {add_all_unoptimized} {add_all_optimized}"
-                        );
-                        if add_all_optimized {
-                            optimized.compiled_network.add_all_to_update_list()
-                        };
-                        if add_all_unoptimized {
-                            optimized.compiled_network.add_all_to_update_list()
-                        };
-                        optimized.update();
-                        unoptimized.update();
-                    }
-                }
-            }
-        }
+        run_test_o::<ReferenceSim, ReferenceSim>(false, true, 30);
     }
 
     fn simd_test(optimized: bool) -> bool {
@@ -157,14 +139,21 @@ mod tests {
     }
 
     fn run_test<Reference: LogicSim, Other: LogicSim>(optimized: bool, iterations: usize) {
+        run_test_o::<Reference, Other>(optimized, optimized, iterations);
+    }
+    fn run_test_o<Reference: LogicSim, Other: LogicSim>(
+        optimized: bool,
+        optimized_other: bool,
+        iterations: usize,
+    ) {
         let optimized_board = prep_cases::<Reference>(optimized);
-        let optimized_scalar = prep_cases::<Other>(optimized);
+        let optimized_scalar = prep_cases::<Other>(optimized_other);
         for ((name, mut optimized), (_, mut optimized_scalar)) in optimized_board
             .into_iter()
             .zip(optimized_scalar.into_iter())
         {
             dbg!(name);
-            compare_boards_iter(&mut optimized, &mut optimized_scalar, iterations);
+            compare_boards_iter(&mut optimized, &mut optimized_scalar, iterations, name);
         }
     }
 
@@ -172,9 +161,10 @@ mod tests {
         reference: &mut VcbBoard<impl LogicSim>,
         other: &mut VcbBoard<impl LogicSim>,
         iterations: usize,
+        name: &str,
     ) {
-        for _ in 0..iterations {
-            compare_boards(reference, other);
+        for i in 0..iterations {
+            compare_boards(reference, other, i, name);
             other.update();
             reference.update();
         }
@@ -183,11 +173,14 @@ mod tests {
     fn compare_boards(
         reference: &mut VcbBoard<impl LogicSim>,
         other: &mut VcbBoard<impl LogicSim>,
+        iteration: usize,
+        name: &str,
     ) {
         //let acc_reference = reference.compiled_network.get_acc_test();
         //let acc_other = other.compiled_network.get_acc_test();
         let state_reference = reference.make_inner_state_vec();
         let state_other = other.make_inner_state_vec();
+        assert_eq!(state_reference.len(), state_other.len());
         let diff: Vec<_> = state_reference
             .into_iter()
             .zip(state_other)
@@ -201,13 +194,17 @@ mod tests {
         println!("REFERENCE:");
         reference.print_debug();
         if diff.len() != 0 {
-            panic!(
+            println!(
                 "diff ids: \n{}",
                 diff.iter()
                     .map(|(i, (ba, bb))| format!("{i}: {ba} {bb}"))
                     .collect::<Vec<_>>()
                     .join("\n"),
             );
+
+            reference.print_marked(&diff.iter().map(|d| d.0).collect::<Vec<_>>());
+
+            panic!("state differs with reference after {iteration} iterations in test {name}");
         }
     }
 

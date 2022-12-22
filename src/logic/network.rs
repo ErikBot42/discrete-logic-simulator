@@ -63,7 +63,7 @@ impl NetworkWithGaps {
 
 /// Contains translation table and can no longer be edited by client.
 /// Can be edited for optimizations.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct InitializedNetwork {
     pub(crate) gates: Vec<Gate>,
     pub(crate) translation_table: Vec<IndexType>,
@@ -108,6 +108,7 @@ impl InitializedNetwork {
                 .map(|x| old_to_new_id[x as usize] as IndexType)
                 .collect();
             new_gate.inputs.append(new_inputs);
+            new_gate.inputs.sort();
         }
     }
 
@@ -120,16 +121,16 @@ impl InitializedNetwork {
             let new_inputs = &new_gate.inputs;
             let deduped_inputs: &mut Vec<IndexType> = &mut Vec::new();
             for new_input in new_inputs {
-                if let Some(previous) = deduped_inputs.last() {
-                    if *previous == *new_input {
-                        if new_gate.kind.can_delete_single_identical_inputs() {
-                            continue;
-                        } else if new_gate.kind.can_delete_double_identical_inputs() {
-                            deduped_inputs.pop();
-                            continue;
-                        }
-                    }
-                }
+                //if let Some(previous) = deduped_inputs.last() {
+                //    if *previous == *new_input {
+                //        if new_gate.kind.can_delete_single_identical_inputs() {
+                //            continue;
+                //        } else if new_gate.kind.can_delete_double_identical_inputs() {
+                //            deduped_inputs.pop();
+                //            continue;
+                //        }
+                //    }
+                //}
                 deduped_inputs.push(*new_input);
             }
             new_gate.inputs.clear();
@@ -169,6 +170,7 @@ impl InitializedNetwork {
             let key = old_gate.calc_key();
             let new_id = new_gates.len();
             if let Some(existing_new_id) = gate_key_to_new_id.get(&key) {
+                dbg!(format!("{old_gate_id} -> {existing_new_id} {:?}", &key));
                 // this gate is same as other, so use other's id.
                 assert!(old_to_new_id.len() == old_gate_id);
                 old_to_new_id.push((*existing_new_id).try_into().unwrap());
@@ -227,13 +229,16 @@ impl InitializedNetwork {
     fn optimize_remove_redundant(&self) -> InitializedNetwork {
         let mut prev_network_gate_count = self.gates.len();
         let mut new_network = self.optimization_pass_remove_redundant();
+        let mut i = 0;
+        let limit = 0;
         loop {
-            if new_network.gates.len() == prev_network_gate_count {
+            if new_network.gates.len() == prev_network_gate_count || i == limit {
                 new_network.print_info();
                 break new_network;
             }
             prev_network_gate_count = new_network.gates.len();
             new_network = new_network.optimization_pass_remove_redundant();
+            i += 1;
         }
     }
 
@@ -449,8 +454,9 @@ impl InitializedNetwork {
     fn optimized(&self) -> Self {
         timed!(
             {
-                let network = self.optimize_remove_redundant();
-                network.optimize_reorder_cache()
+                let network = dbg!(dbg!(self).optimize_remove_redundant());
+                //network.optimize_reorder_cache()
+                network
             },
             "optimized network in: {:?}"
         )
@@ -609,16 +615,13 @@ impl GateNetwork {
     /// If preconditions are not held.
     pub(crate) fn add_inputs(&mut self, kind: GateType, gate_id: usize, inputs: Vec<usize>) {
         let gate = &mut self.network.gates[gate_id];
-        gate.add_inputs(inputs.len().try_into().unwrap());
-        let mut in2 = Vec::new();
-        for input in &inputs {
-            in2.push((*input).try_into().unwrap());
-        }
-        gate.inputs.append(&mut in2);
-        gate.inputs.sort_unstable();
+
+        gate.add_inputs_vec(&mut inputs.iter().map(|&i| i.try_into().unwrap()).collect());
+
         let len_before_dedup = gate.inputs.len();
         gate.inputs.dedup();
         assert_eq!(len_before_dedup, gate.inputs.len());
+
         for input_id in inputs {
             assert!(
                 input_id < self.network.gates.len(),

@@ -24,6 +24,8 @@ pub enum RunMode {
     EmojiVcb,
     /// Print initial state of board
     Print,
+    /// Print board with internal ids
+    PrintDebug,
     /// Run and display state of board
     Run,
     /// Run a number of iterations and print time
@@ -85,6 +87,10 @@ pub struct Args {
     /// Iterations to run in bench
     #[arg(short = 'i', long)]
     pub iterations: Option<usize>,
+    
+    /// Step
+    #[arg(short,long)]
+    pub step: bool
 }
 
 fn main() {
@@ -138,6 +144,10 @@ fn handle_board<T: LogicSim>(args: &Args, parser_input: VcbInput) {
         RunMode::Clip => board.print_to_clipboard(),
         RunMode::Emoji => board.print_regular_emoji(args.legend),
         RunMode::EmojiVcb => board.print_vcb_discord_emoji(args.legend),
+        RunMode::PrintDebug => {
+            board.update();
+            board.print_debug();
+        },
         RunMode::Print => {
             board.update();
             board.print();
@@ -154,7 +164,8 @@ fn handle_board<T: LogicSim>(args: &Args, parser_input: VcbInput) {
                 //while prev.elapsed().as_millis() < 16 {
                 board.update();
                 //}
-                std::thread::sleep(Duration::from_millis(16));
+                //std::thread::sleep(Duration::from_millis(16));
+                std::thread::sleep(Duration::from_millis(1000));
 
                 if crossterm::event::poll(Duration::from_secs(0)).unwrap() {
                     let term_event = crossterm::event::read().unwrap();

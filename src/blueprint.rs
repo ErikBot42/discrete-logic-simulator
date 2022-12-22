@@ -423,7 +423,7 @@ impl<T: LogicSim> VcbBoard<T> {
         self.compiled_network.get_state_vec()
     }
     pub fn update_i(&mut self, iterations: usize) {
-        self.compiled_network.update_i(iterations); 
+        self.compiled_network.update_i(iterations);
     }
     #[inline(always)]
     pub fn update(&mut self) {
@@ -623,17 +623,23 @@ impl<T: LogicSim> VcbBoard<T> {
         for y in 0..self.height {
             for x in 0..self.width {
                 let i = x + y * self.width;
-                self.elements[i].print(self, i, marked.contains(&i), true);
+                let element = &self.elements[i];
+                element.print(
+                    self,
+                    i,
+                    element.id.map_or(false, |i| marked.contains(&i)),
+                    Some(true),
+                );
             }
             println!();
         }
     }
-    fn print_inner(&self, debug: bool) {
+    fn print_inner(&self, debug_inner: Option<bool>) {
         println!("\nBoard:");
         for y in 0..self.height {
             for x in 0..self.width {
                 let i = x + y * self.width;
-                self.elements[i].print(self, i, false, debug);
+                self.elements[i].print(self, i, false, debug_inner);
             }
             println!();
         }
@@ -699,7 +705,8 @@ impl<T: LogicSim> VcbBoard<T> {
         self.print_using_translation(Trace::as_discord_emoji, legend);
     }
     pub fn print_debug(&self) {
-        self.print_inner(true);
+        self.print_inner(Some(true));
+        self.print_inner(Some(false));
     }
     pub fn print(&self) {
         self.print_compact().unwrap();
@@ -1166,13 +1173,21 @@ impl BoardElement {
             id: None,
         }
     }
-    fn print<T: LogicSim>(&self, board: &VcbBoard<T>, _i: usize, _marked: bool, debug: bool) {
-        let format = |debug, id: usize| {
-            if debug {
+    fn print<T: LogicSim>(
+        &self,
+        board: &VcbBoard<T>,
+        _i: usize,
+        marked: bool,
+        debug_inner: Option<bool>,
+    ) {
+        let format = |debug: Option<bool>, id: usize| match debug {
+            None => "  ".to_string(),
+            Some(true) => {
+                format!("{:>2}", board.compiled_network.to_internal_id(id))
+            },
+            Some(false) => {
                 format!("{id:>2}")
-            } else {
-                "  ".to_string()
-            }
+            },
         };
 
         let mut state = false;
@@ -1181,13 +1196,15 @@ impl BoardElement {
                 .network_id
                 .map(|i| board.compiled_network.get_state(i))
                 .unwrap_or_default();
-            format(debug, board.compiled_network.to_internal_id(t) % 100)
+            format(debug_inner, t % 100)
         } else {
             "  ".to_string()
         };
         let col = if state { self.color_on } else { self.color_off };
         let col1: Color = (col[0], col[1], col[2]).into();
         let col2: Color = (255 - col[0], 255 - col[1], 255 - col[2]).into();
+
+        let (col1, col2) = if marked { (col2, col1) } else { (col1, col2) };
 
         print!("{}", tmpstr.on(col1).with(col2));
     }
