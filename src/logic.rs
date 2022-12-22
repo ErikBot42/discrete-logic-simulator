@@ -147,7 +147,7 @@ pub trait LogicSim {
 }
 
 /// data needed after processing network
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub(crate) struct Gate {
     // constant:
     inputs: Vec<IndexType>,  // list of ids
@@ -188,23 +188,24 @@ impl Gate {
     fn is_cluster_a_xor_is_cluster_b(&self, other: &Gate) -> bool {
         self.kind.is_cluster() != other.kind.is_cluster()
     }
-    fn new(kind: GateType, outputs: Vec<IndexType>) -> Self {
-        let start_acc = match kind {
-            GateType::Xnor => 1,
-            _ => 0,
-        };
-        let gate = Gate {
+    fn new_from_inputs(kind: GateType, inputs: Vec<IndexType>) -> Self {
+        Gate {
+            inputs,
+            outputs: Vec::new(),
+            kind,
+            initial_state: false,
+        }
+    }
+    fn new_from_outputs(kind: GateType, outputs: Vec<IndexType>) -> Self {
+        Gate {
             inputs: Vec::new(),
             outputs,
-            //acc: start_acc,
             kind,
-            initial_state: false, // all gates/clusters initialize to off
-        };
-        //assert_eq!(gate.acc, gate.calc_acc());
-        gate
+            initial_state: false,
+        }
     }
     fn from_gate_type(kind: GateType) -> Self {
-        Self::new(kind, Vec::new())
+        Self::new_from_outputs(kind, Vec::new())
     }
 
     /// add inputs and handle internal logic for them

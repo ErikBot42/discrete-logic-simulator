@@ -63,12 +63,12 @@ mod tests {
 
     fn prep_cases<SIM: LogicSim>(optimize: bool) -> Vec<(&'static str, VcbBoard<SIM>)> {
         let cases: Vec<(&str, _)> = vec![
-            //(
-            //    "xnor edge case",
-            //    VcbInput::Blueprint(
-            //        include_str!("../test_files/xnor_edge_case.blueprint").to_string(),
-            //    ),
-            //),
+            (
+                "xnor edge case",
+                VcbInput::Blueprint(
+                    include_str!("../test_files/xnor_edge_case.blueprint").to_string(),
+                ),
+            ),
             (
                 "gates",
                 VcbInput::BlueprintLegacy(
