@@ -454,8 +454,7 @@ impl InitializedNetwork {
         timed!(
             {
                 let network = dbg!(dbg!(self).optimize_remove_redundant());
-                //network.optimize_reorder_cache()
-                network
+                network.optimize_reorder_cache()
             },
             "optimized network in: {:?}"
         )
