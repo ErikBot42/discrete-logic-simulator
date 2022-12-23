@@ -114,7 +114,7 @@ impl InitializedNetwork {
                 .map(|x| old_to_new_id[x as usize] as IndexType)
                 .collect();
             new_gate.inputs.append(new_inputs);
-            new_gate.inputs.sort();
+            new_gate.inputs.sort_unstable();
         }
     }
 
@@ -169,7 +169,7 @@ impl InitializedNetwork {
             let key = old_gate.calc_key();
             let new_id = new_gates.len();
             if let Some(existing_new_id) = gate_key_to_new_id.get(&key) {
-                dbg!(format!("{old_gate_id} -> {existing_new_id} {:?}", &key));
+                //dbg!(format!("{old_gate_id} -> {existing_new_id} {:?}", &key));
                 // this gate is same as other, so use other's id.
                 assert!(old_to_new_id.len() == old_gate_id);
                 old_to_new_id.push((*existing_new_id).try_into().unwrap());
@@ -453,8 +453,11 @@ impl InitializedNetwork {
     fn optimized(&self) -> Self {
         timed!(
             {
-                let network = dbg!(dbg!(self).optimize_remove_redundant());
-                network.optimize_reorder_cache()
+                let network = self.optimize_remove_redundant();
+                let network = network.optimize_reorder_cache();
+                network.print_info();
+                network
+
             },
             "optimized network in: {:?}"
         )

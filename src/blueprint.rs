@@ -510,7 +510,7 @@ impl<T: LogicSim> VcbBoard<T> {
     /// assigned to nothing, `this_x` valid
     fn fill_id(elements: &mut Vec<BoardElement>, width: i32, this_x: i32, id: usize) {
         let this = &mut elements[this_x as usize];
-        let this_kind = this.kind;
+        let this_kind = this.trace;
         assert!(this_kind.is_logic());
         match this.id {
             None => this.id = Some(id),
@@ -524,7 +524,7 @@ impl<T: LogicSim> VcbBoard<T> {
                 // TODO: handle wrapping
                 let other_x = this_x + dx * ddx;
                 let other_kind =
-                    unwrap_or_else!(elements.get(other_x as usize), continue 'side).kind;
+                    unwrap_or_else!(elements.get(other_x as usize), continue 'side).trace;
                 if other_kind == Trace::Cross {
                     continue 'forward;
                 }
@@ -545,7 +545,7 @@ impl<T: LogicSim> VcbBoard<T> {
         this_id: usize,
     ) {
         let this = &mut elements[TryInto::<usize>::try_into(this_x).unwrap()];
-        let this_kind = this.kind;
+        let this_kind = this.trace;
         assert!(this_kind.is_gate());
         assert!(this.id.is_some());
 
@@ -555,7 +555,7 @@ impl<T: LogicSim> VcbBoard<T> {
             let other_x = this_x + dx;
             let other = unwrap_or_else!(elements.get(other_x as usize), continue 'side);
 
-            let dir = match other.kind {
+            let dir = match other.trace {
                 Trace::Read => false,
                 Trace::Write => true,
                 _ => continue,
@@ -576,11 +576,11 @@ impl<T: LogicSim> VcbBoard<T> {
         this_x: i32,
     ) -> usize {
         let this = &elements[TryInto::<usize>::try_into(this_x).unwrap()];
-        assert!(this.kind.is_logic());
+        assert!(this.trace.is_logic());
 
         // create a new id.
         let this_id = nodes.len();
-        nodes.push(BoardNode::new(this.kind));
+        nodes.push(BoardNode::new(this.trace));
 
         // fill with this_id
         Self::fill_id(elements, width, this_x, this_id);
@@ -600,7 +600,7 @@ impl<T: LogicSim> VcbBoard<T> {
 
         // all here is correct
         let this = &elements[TryInto::<usize>::try_into(this_x).unwrap()];
-        let this_kind = this.kind;
+        let this_kind = this.trace;
 
         if !this_kind.is_logic() {
             return;
@@ -681,14 +681,14 @@ impl<T: LogicSim> VcbBoard<T> {
             let mut min_print_width = 0;
             for x in 0..self.width {
                 let i = x + y * self.width;
-                if !matches!(self.elements[i].kind, Trace::Empty) {
+                if !matches!(self.elements[i].trace, Trace::Empty) {
                     min_print_width = x;
                 }
             }
             min_print_width += 1;
             for x in 0..min_print_width {
                 let i = x + y * self.width;
-                let trace = self.elements[i].kind;
+                let trace = self.elements[i].trace;
                 let printed_str = fun(trace);
                 print!("{printed_str}");
             }
@@ -719,7 +719,7 @@ impl<T: LogicSim> VcbBoard<T> {
     fn get_current_traces(&self) -> Vec<Trace> {
         self.elements
             .iter()
-            .map(|e| e.kind)
+            .map(|e| e.trace)
             .fold(std::collections::HashSet::new(), |mut set, trace| {
                 set.insert(trace);
                 set
@@ -734,7 +734,7 @@ impl<T: LogicSim> VcbBoard<T> {
         let color_data: Vec<u8> = self
             .elements
             .iter()
-            .flat_map(|x| x.kind.to_color_on())
+            .flat_map(|x| x.trace.to_color_on())
             .collect();
         let mut clipboard = Clipboard::new().unwrap();
         clipboard
@@ -749,6 +749,8 @@ impl<T: LogicSim> VcbBoard<T> {
             sleep(Duration::from_secs(1));
         }
     }
+    /// # Panics
+    /// very large image
     pub fn print_to_gif(&mut self, limit: usize) {
         use image::codecs::gif::GifEncoder;
         use image::{codecs, imageops, Frame, ImageBuffer, RgbaImage};
@@ -1158,18 +1160,13 @@ impl Trace {
 /// make a copy of this type.
 #[derive(Debug)]
 struct BoardElement {
-    /// Raw color from input file.
-    color_on: [u8; 4],
-    color_off: [u8; 4],
-    kind: Trace,
+    trace: Trace,
     id: Option<usize>,
 }
 impl BoardElement {
     fn new(trace: Trace) -> Self {
         BoardElement {
-            color_on: trace.to_color_on(),
-            color_off: trace.to_color_off(),
-            kind: trace,
+            trace,
             id: None,
         }
     }
@@ -1200,7 +1197,11 @@ impl BoardElement {
         } else {
             "  ".to_string()
         };
-        let col = if state { self.color_on } else { self.color_off };
+        let col = if state {
+            self.trace.to_color_on()
+        } else {
+            self.trace.to_color_off()
+        };
         let col1: Color = (col[0], col[1], col[2]).into();
         let col2: Color = (255 - col[0], 255 - col[1], 255 - col[2]).into();
 
@@ -1220,9 +1221,9 @@ impl BoardElement {
     }
     fn get_color<T: LogicSim>(&self, board: &VcbBoard<T>) -> [u8; 4] {
         if self.get_state(board) {
-            self.color_on
+            self.trace.to_color_on()
         } else {
-            self.color_off
+            self.trace.to_color_off()
         }
     }
 }

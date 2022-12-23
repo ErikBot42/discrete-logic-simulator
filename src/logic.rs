@@ -272,17 +272,13 @@ impl Gate {
         // TODO: can potentially include inverted.
         // but then every connection would have to include
         // connection information
-        //let kind = match self.kind {
-        //    GateType::Cluster => GateType::Or,
-        //    _ => self.kind,
-        //};
         let kind = self.kind;
         let inputs_len = self.inputs.len();
         let kind = match inputs_len {
             0 | 1 => match kind {
                 GateType::Nand | GateType::Xnor | GateType::Nor => GateType::Nor,
                 GateType::And | GateType::Or | GateType::Xor => GateType::Or,
-                GateType::Cluster => kind, // without this, network is messed up
+                GateType::Cluster => GateType::Cluster, // merging cluster is invalid
             },
             _ => kind,
         };
@@ -402,7 +398,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     .unwrap_or_default()
             })
             .filter_map(|(gate_id, gate)| {
-                gate.as_mut().map(|g| {
+                gate.as_ref().map(|_| {
                     in_update_list[gate_id] = true;
                     gate_id.try_into().unwrap()
                 })
@@ -421,7 +417,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             .collect();
         let acc: Vec<u8> = gates
             .iter()
-            .map(|gate| gate.as_ref().map(|g| g.acc()).unwrap_or_default())
+            .map(|gate| gate.as_ref().map(Gate::acc).unwrap_or_default())
             .collect();
 
         let update_list = UpdateList::collect_size(
@@ -813,7 +809,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     /// this HAS to be resolved when network is compiled
     /// TODO: `debug_assert` this property
     /// TODO: PERF: unchecked reads
-    #[inline(always)]
+    /*#[inline(always)]
     fn propagate_delta_to_accs_scalar_simd_ref(
         delta_p: gate_status::Packed,
         id_packed: usize,
@@ -867,18 +863,19 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
             //TODO: "add to update list" functionality
         }
-    }
-    #[cfg(target_feature = "avx2")]
-    #[inline(always)]
-    fn assert_avx2() {}
-    #[cfg(not(target_feature = "avx2"))]
-    #[inline(always)]
-    fn assert_avx2() {
-        #[cfg(not(debug_assertions))]
-        panic!("This program was compiled without avx2, which is needed")
-    }
+    }*/
+    //#[cfg(target_feature = "avx2")]
+    //#[inline(always)]
+    //fn assert_avx2() {}
+    //#[cfg(not(target_feature = "avx2"))]
+    //#[inline(always)]
+    //fn assert_avx2() {
+    //    #[cfg(not(debug_assertions))]
+    //    panic!("This program was compiled without avx2, which is needed")
+    //}
 
     // This uses direct intrinsics instead.
+    /*
     #[inline(always)]
     fn propagate_delta_to_accs_scalar_simd(
         delta_p: gate_status::Packed,
@@ -996,7 +993,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             output_id_index_mm =
                 unsafe { _mm256_add_epi32(output_id_index_mm, _mm256_set1_epi32(1)) };
         }
-    }
+    }*/
 
     #[inline(never)]
     fn propagate_delta_to_accs_scalar_safe<F: FnMut(IndexType)>(
@@ -1325,10 +1322,6 @@ impl BitPackSimInner /*<LATCH>*/ {
         }
         acc_zero
     }
-    #[inline(always)] // function used at single call site
-    fn extract_acc_info(acc: &BitAccPack) -> (BitInt, BitInt) {
-        (Self::acc_zero(acc), Self::acc_parity(acc))
-    }
 
     /// # SAFETY
     /// Pointer MUST be aligned
@@ -1345,7 +1338,7 @@ impl BitPackSimInner /*<LATCH>*/ {
     fn acc_parity_simd(acc: &BitAccPack) -> BitInt {
         unsafe {
             assert!(align_of::<BitAccPack>() >= 32);
-            let acc_ptr: *const __m256i = transmute(acc.0.as_ptr());
+            let acc_ptr: *const __m256i = acc as *const BitAccPack as *const __m256i;
             let array: [u32; size_of::<BitAccPack>() / u32::BITS as usize] =
                 inline_arr_from_fn(|x| Self::acc_parity_m256i(acc_ptr.add(x)));
             transmute(array) // compiler can statically check size here
@@ -1368,38 +1361,24 @@ impl BitPackSimInner /*<LATCH>*/ {
     fn acc_zero_simd(acc: &BitAccPack) -> BitInt {
         unsafe {
             assert!(align_of::<BitAccPack>() >= 32);
-            let acc_ptr: *const __m256i = transmute(acc.0.as_ptr());
+            let acc_ptr: *const __m256i = acc as *const BitAccPack as *const __m256i;
             let array: [u32; size_of::<BitAccPack>() / u32::BITS as usize] =
                 inline_arr_from_fn(|x| Self::acc_zero_m256i(acc_ptr.add(x)));
             transmute(array) // compiler can statically check size here
         }
     }
     #[inline(always)] // function used at single call site
+    fn extract_acc_info(acc: &BitAccPack) -> (BitInt, BitInt) {
+        (Self::acc_zero(acc), Self::acc_parity(acc))
+    }
+    #[inline(always)] // function used at single call site
     fn extract_acc_info_simd(acc: &BitAccPack) -> (BitInt, BitInt) {
         (Self::acc_zero_simd(acc), Self::acc_parity_simd(acc))
     }
+    // pass by reference intentional to use intrinsics.
     #[inline(always)] // function used at single call site
     fn calc_state_pack(acc_p: &BitAccPack, is_xor: &BitInt, is_inverted: &BitInt) -> BitInt {
         let (acc_zero, acc_parity) = Self::extract_acc_info_simd(acc_p);
-        ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
-    }
-    // pass by reference intentional to use intrinsics.
-    #[inline(always)] // function used at single call site
-    fn calc_state_pack_g(acc_p: &BitAccPack, is_xor: &BitInt, is_inverted: &BitInt) -> BitInt {
-        let (acc_zero, acc_parity) = Self::extract_acc_info_simd(acc_p);
-        ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
-    }
-    #[inline(always)] // function used at single call site
-    fn calc_state(acc: &[BitAcc], is_xor: &BitInt, is_inverted: &BitInt) -> BitInt {
-        let mut acc_zero: BitInt = 0;
-        let mut acc_parity: BitInt = 0;
-        for (i, b) in acc.iter().map(|a| *a != 0).enumerate() {
-            acc_zero = bit_set(acc_zero, i, b);
-        }
-        for (i, b) in acc.iter().map(|a| a & 1 == 1).enumerate() {
-            acc_parity = bit_set(acc_parity, i, b);
-        }
-
         ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
     }
     #[inline(always)] // function used at 2 call sites
@@ -1490,18 +1469,19 @@ impl BitPackSimInner /*<LATCH>*/ {
 
             let gate_id = offset + i_usize;
 
-            let (outputs_start, outputs_end) = group_output_count
-                .map(|x| {
-                    let base = *unsafe { packed_output_indexes.get_unchecked(offset) } as usize;
-                    let x = x as usize;
-                    (base + x * i_usize, base + x * (i_usize + 1))
-                })
-                .unwrap_or_else(|| {
+            let (outputs_start, outputs_end) = group_output_count.map_or_else(
+                || {
                     (
                         *unsafe { packed_output_indexes.get_unchecked(gate_id) } as usize,
                         *unsafe { packed_output_indexes.get_unchecked(gate_id + 1) } as usize,
                     )
-                });
+                },
+                |x| {
+                    let base = *unsafe { packed_output_indexes.get_unchecked(offset) } as usize;
+                    let x = x as usize;
+                    (base + x * i_usize, base + x * (i_usize + 1))
+                },
+            );
 
             //let outputs_start =
             //    *unsafe { packed_output_indexes.get_unchecked(gate_id) } as usize;
@@ -1603,14 +1583,12 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
 
                     // # inputs/outputs are almost never beyond 255
 
-                    let foo: Option<u8> = local_output_count.next().and_then(|cmp_val| {
+                    local_output_count.next().and_then(|cmp_val| {
                         local_output_count
                             .all(|x| x == cmp_val)
                             .then_some(cmp_val)
                             .and_then(|x| x.try_into().ok())
-                    });
-
-                    foo
+                    })
                 })
                 .collect()
         };

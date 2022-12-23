@@ -189,7 +189,7 @@ fn handle_board<T: LogicSim>(args: &Args, parser_input: VcbInput) {
         },
         RunMode::Bench => {
             let iterations = args.iterations.unwrap_or(10_000_000);
-            let iterations_f32: f32 = iterations as f32;
+            let iterations_f32 = iterations as f32;
             println!("Running {iterations} iterations");
             let now = std::time::Instant::now();
             board.update_i(iterations);
