@@ -6,9 +6,8 @@
 pub mod gate_status;
 pub mod network;
 pub mod reference_sim;
-use crate::logic::network::NetworkWithGaps;
 pub(crate) use crate::logic::network::{GateNetwork, InitializedNetwork};
-use bytemuck::{cast_slice, cast_slice_mut};
+use bytemuck::cast_slice_mut;
 use itertools::Itertools;
 use std::mem::{align_of, size_of, transmute};
 use std::simd::{Mask, Simd, SimdPartialEq};

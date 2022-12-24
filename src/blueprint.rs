@@ -1,6 +1,6 @@
 #![allow(clippy::cast_sign_loss)]
 
-use crate::logic::{CompiledNetwork, GateNetwork, GateType, LogicSim};
+use crate::logic::{GateNetwork, GateType, LogicSim};
 use anyhow::{anyhow, Context};
 use crossterm::style::{Color, Colors, Print, ResetColor, SetColors, Stylize};
 use crossterm::QueueableCommand;
@@ -1165,10 +1165,7 @@ struct BoardElement {
 }
 impl BoardElement {
     fn new(trace: Trace) -> Self {
-        BoardElement {
-            trace,
-            id: None,
-        }
+        BoardElement { trace, id: None }
     }
     fn print<T: LogicSim>(
         &self,

@@ -410,14 +410,12 @@ pub(crate) fn packed_state(packed: Packed) -> [bool; PACKED_ELEMENTS] {
         .for_each(|(res, x)| *res = x != 0);
     res
 }
+#[cfg(test)]
 pub(crate) fn packed_state_vec(packed: Packed) -> Vec<bool> {
     unpack_single(packed & splat_u32(FLAG_STATE))
         .into_iter()
         .map(|x| x != 0)
         .collect()
-}
-pub(crate) fn get_unpacked_mut(packed: &mut [Packed], index: usize) -> &mut Inner {
-    &mut bytemuck::cast_slice_mut(packed)[index]
 }
 pub(crate) fn get_state_from_packed_slice(packed: &[Packed], index: usize) -> bool {
     let outer_index = index / PACKED_ELEMENTS;

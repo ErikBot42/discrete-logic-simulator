@@ -37,7 +37,7 @@ macro_rules! assert_eq_len {
         assert_eq!($first.len(), $second.len());
     };
 }
-macro_rules! assert_assume {
+/*macro_rules! assert_assume {
     ($statement:expr) => {
         #[inline(always)]
         unsafe fn foo() {}
@@ -48,7 +48,7 @@ macro_rules! assert_assume {
         #[cfg(not(debug_assertions))]
         std::intrinsics::assume($statement);
     };
-}
+}*/
 
 pub mod blueprint;
 pub mod logic;

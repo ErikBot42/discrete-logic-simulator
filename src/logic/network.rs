@@ -1,9 +1,6 @@
 //! network.rs: Manage and optimize the network while preserving behaviour.
-use crate::logic::{
-    gate_status, CompiledNetwork, Gate, GateKey, GateType, IndexType, UpdateStrategy,
-};
+use crate::logic::{gate_status, Gate, GateKey, GateType, IndexType, UpdateStrategy};
 use itertools::Itertools;
-use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 /// Iterate through all gates, skipping any
@@ -329,6 +326,8 @@ impl InitializedNetwork {
             //dynamic.shuffle(&mut rng);
 
             //v.sort_by_key(|(_,g)| g.inputs.len());
+
+            // TODO: make nearby have overlapping outputs
             dynamic.sort_by(|(ia, a), (ib, b)| {
                 let by_input_degree = a.inputs.len().cmp(&b.inputs.len()).reverse();
                 let by_output_degree = a.outputs.len().cmp(&b.outputs.len());
@@ -346,9 +345,9 @@ impl InitializedNetwork {
 
             //panic!();
 
-            return dynamic;
+            dynamic
 
-            let mut out = Vec::new();
+            /*let mut out = Vec::new();
             out.push(dynamic.pop().unwrap());
 
             struct Score {
@@ -387,7 +386,7 @@ impl InitializedNetwork {
                 let (_, index) = unwrap_or_else!(curr_best, break);
                 out.push(dynamic.swap_remove(index));
             }
-            out
+            out*/
         })
     }
 
@@ -457,7 +456,6 @@ impl InitializedNetwork {
                 let network = network.optimize_reorder_cache();
                 network.print_info();
                 network
-
             },
             "optimized network in: {:?}"
         )
