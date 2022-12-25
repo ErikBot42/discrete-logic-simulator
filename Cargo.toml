@@ -75,9 +75,9 @@ rpath = false
 
 
 
-[rust]
+#[rust]
 #rustflags = ["-C", "target-cpu=native"]
-debuginfo-level = 2
+#debuginfo-level = 2
 #opt-level = 0
 
 #[lib]

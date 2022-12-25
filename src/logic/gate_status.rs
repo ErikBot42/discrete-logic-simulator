@@ -119,7 +119,7 @@ pub(crate) const fn splat_u32(value: u8) -> Packed {
 }
 /// if byte contains any bit set, it will be
 /// replaced with 0xff
-pub(crate) const fn or_combine(value: Packed) -> Packed {
+pub(crate) const fn _or_combine(value: Packed) -> Packed {
     //TODO: try using a tree here.
     //      this is extremely sequential
     let mut value = value;
@@ -179,79 +179,6 @@ pub(crate) fn eval_mut_scalar<const CLUSTER: bool>(inner_mut: &mut Packed, acc: 
     mask_if_one(decrement_1) | increment_1
 }
 
-#[inline]
-pub(crate) fn eval_mut_scalar_masked<const CLUSTER: bool>(
-    inner_mut: &mut Packed,
-    acc: Packed,
-    cluster_mask: [bool; PACKED_ELEMENTS],
-) -> Packed {
-    let cluster_mask = or_combine(pack_single(cluster_mask.map(u8::from)));
-    let (active_mask, inactive_mask) = if CLUSTER {
-        (cluster_mask, !cluster_mask)
-    } else {
-        (!cluster_mask, cluster_mask)
-    };
-    let mut inner_mut_new = *inner_mut;
-    let delta = eval_mut_scalar::<CLUSTER>(&mut inner_mut_new, acc) & active_mask;
-    *inner_mut = (inner_mut_new & active_mask) | (*inner_mut & inactive_mask);
-    delta
-}
-
-/// TODO: currently assumes little endian
-/// lowest bit in byte -> bit
-/// NOTE: byte order is reversed
-/// TODO: could make everything BE.
-#[inline(always)]
-fn pack_bit_bitpack_rev(arr: u64) -> u8 {
-    // https://stackoverflow.com/questions/14547087/extracting-bits-with-a-single-multiplication
-    const MASK: Packed =
-        0b0000_0001_0000_0001_0000_0001_0000_0001_0000_0001_0000_0001_0000_0001_0000_0001;
-    const MAGIC: Packed =
-        0b1000_0000_0100_0000_0010_0000_0001_0000_0000_1000_0000_0100_0000_0010_0000_0001;
-    (arr & MASK).wrapping_mul(MAGIC).to_le_bytes()[7]
-}
-
-/// TODO: currently assumes little endian
-/// lowest bit in byte -> bit
-fn arr_bit_bitpack_u64(arr: [u64; 8]) -> u64 {
-    // big endian to flip bit order back
-    u64::from_be_bytes(arr.map(pack_bit_bitpack_rev))
-}
-
-#[inline(always)]
-pub(crate) fn arr_bit_bitpack<const N: usize>(arr: [u64; N]) -> [u8; N] {
-    arr.map(pack_bit_bitpack_rev).map(u8::reverse_bits)
-}
-
-/// Evaluator with 1 bit/gate.
-/// u64 fits in single register so this *should* be fast
-/// unlike status, this does not need any bitshifts, and has no wasted bits.
-fn eval_bitpacked(
-    acc: [Packed; 8],
-    old_state: Packed,
-    is_xor: Packed,
-    is_inverted: Packed,
-) -> Packed {
-    let acc_parity = arr_bit_bitpack_u64(acc);
-    let acc_not_zero = arr_bit_bitpack_u64(acc.map(or_combine_1));
-    let acc_term = (!is_xor) & (is_inverted ^ acc_not_zero);
-    let xor_term = is_xor & acc_parity;
-    let new_state = xor_term | acc_term;
-    new_state ^ old_state
-}
-
-fn eval_bitpacked_masked(
-    acc: [Packed; 8],
-    old_state: Packed,
-    is_xor: Packed,
-    is_inverted: Packed,
-    mask: Packed,
-) -> (Packed, Packed) {
-    let state_changed = eval_bitpacked(acc, old_state, is_xor, is_inverted);
-    let state_changed_masked = state_changed & mask;
-    let new_state_masked = old_state ^ state_changed_masked;
-    (state_changed_masked, new_state_masked)
-}
 
 #[inline]
 pub(crate) fn eval_mut_simd<const CLUSTER: bool, const LANES: usize>(
@@ -316,14 +243,6 @@ pub(crate) fn state(inner: Inner) -> bool {
     inner & FLAG_STATE != 0
 }
 
-#[inline]
-pub(crate) fn state_simd<const LANES: usize>(inner: Simd<Inner, LANES>) -> Mask<InnerSigned, LANES>
-where
-    LaneCount<LANES>: SupportedLaneCount,
-{
-    (inner & Simd::splat(FLAG_STATE)).simd_ne(Simd::splat(0))
-}
-
 pub(crate) fn pack(mut iter: impl Iterator<Item = u8>) -> Vec<Packed> {
     let mut tmp = Vec::new();
     loop {
@@ -381,6 +300,7 @@ mod tests {
     fn test_pack_single(t: [u8; PACKED_ELEMENTS]) {
         assert_eq!(t, unpack_single(pack_single(t)));
     }
+    #[test]
     fn pack_multiple() {
         test_pack(&[1, 2, 3, 4, 5, 6, 7, 8]);
         test_pack(&[1, 2, 3, 4, 5, 6, 7, 8, 9]);
@@ -411,7 +331,7 @@ mod tests {
                 let expected = Packed::from_le_bytes(bytes);
                 assert_eq!(
                     expected,
-                    or_combine(value),
+                    _or_combine(value),
                     "invalid or_combine() for: {}",
                     value
                 );
