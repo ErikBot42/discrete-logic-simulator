@@ -296,7 +296,7 @@ pub enum UpdateStrategy {
     ScalarSimd = 1,
     /// Update gates with simd
     Simd = 2,
-    /// Bit
+    /// Bit manipulation
     BitPack = 3,
 }
 impl UpdateStrategy {
@@ -326,8 +326,8 @@ pub(crate) struct CompiledNetworkInner {
     translation_table: Vec<IndexType>,
     pub iterations: usize,
 
-    //#[cfg(test)]
     kind: Vec<GateType>,
+    #[cfg(test)]
     number_of_gates: usize,
 }
 
@@ -487,6 +487,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
                 iterations: 0,
                 translation_table: network.translation_table,
+                #[cfg(test)]
                 number_of_gates,
                 kind,
             },
@@ -618,26 +619,15 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         _gate_update_list: &mut UpdateList,
         _cluster_update_list: &mut UpdateList,
     ) {
-        use arrayvec::ArrayVec;
-        //let (update_list_p, next_update_list_p) = if CLUSTER {
-        //    (unsafe { cluster_update_list.get_slice() }, gate_update_list)
-        //} else {
-        //    (unsafe { gate_update_list.get_slice() }, cluster_update_list)
-        //};
-
         // this updates EVERY gate
-        let status_packed_len = inner.status_packed.len();
-
-        let mut sparse_vec: ArrayVec<(IndexType, AccType), { gate_status::PACKED_ELEMENTS }> =
-            ArrayVec::new();
-        for (id_packed, group_offset, status_mut) in inner
+        for (id_packed, status_mut) in inner
             .kind
             .iter()
             .map(|x| (*x == GateType::Cluster) == CLUSTER)
             .step_by(gate_status::PACKED_ELEMENTS)
             .enumerate()
             .zip(inner.status_packed.iter_mut())
-            .filter_map(|((i, b), s)| b.then_some((i, i * gate_status::PACKED_ELEMENTS, s)))
+            .filter_map(|((i, b), s)| b.then_some((i, s)))
         {
             let delta_p = gate_status::eval_mut_scalar::<CLUSTER>(status_mut, *unsafe {
                 inner.acc_packed.get_unchecked(id_packed)
@@ -654,32 +644,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 &inner.packed_outputs,
                 |_| {},
             );
-
-            //for el in gate_status::unpack_single(delta_p)
-            //    .into_iter()
-            //    .enumerate()
-            //    .map(|(i, d)| ((i + group_offset) as IndexType, d))
-            //    .filter(|(_, d)| *d != 0)
-            //{
-            //    sparse_vec.push(el);
-            //    if sparse_vec.is_full() {
-            //        Self::propagate_delta_sparse_vec_fixed(
-            //            sparse_vec.as_slice().try_into().unwrap(),
-            //            bytemuck::cast_slice_mut(&mut inner.acc_packed),
-            //            &inner.packed_output_indexes,
-            //            &inner.packed_outputs,
-            //        );
-            //        sparse_vec.clear();
-            //    }
-            //}
         }
-        // handle remaining
-        Self::propagate_delta_sparse_vec(
-            &sparse_vec,
-            bytemuck::cast_slice_mut(&mut inner.acc_packed),
-            &inner.packed_output_indexes,
-            &inner.packed_outputs,
-        );
     }
 
     /// Update all gates in update list.
@@ -1266,7 +1231,7 @@ type BitInt = u64;
 struct BitAccPack([BitAcc; ACC_GROUP_SIZE]);
 unsafe impl bytemuck::Zeroable for BitAccPack {}
 unsafe impl bytemuck::Pod for BitAccPack {}
-const FOO: () = {
+const _: () = {
     let size = size_of::<BitAccPack>();
     let align = align_of::<BitAccPack>();
     assert!(size == align, "BitAccPack: size diffrent from alignment");

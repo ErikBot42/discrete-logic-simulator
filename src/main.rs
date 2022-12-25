@@ -80,7 +80,7 @@ pub struct Args {
     #[arg(short = 'l', long, requires = "blueprint")]
     pub legend: bool,
 
-    /// What implementation to use
+    /// What implementation to use (default to `reference`)
     #[arg(value_enum, requires = "blueprint", default_value_t = UpdateStrategy::default())]
     pub implementation: UpdateStrategy,
 

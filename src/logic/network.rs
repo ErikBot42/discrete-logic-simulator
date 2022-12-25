@@ -1,7 +1,7 @@
 //! network.rs: Manage and optimize the network while preserving behaviour.
 use crate::logic::{gate_status, Gate, GateKey, GateType, IndexType, UpdateStrategy};
 use itertools::Itertools;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Iterate through all gates, skipping any
 /// placeholder gates.
@@ -124,16 +124,16 @@ impl InitializedNetwork {
             let new_inputs = &new_gate.inputs;
             let deduped_inputs: &mut Vec<IndexType> = &mut Vec::new();
             for new_input in new_inputs {
-                //if let Some(previous) = deduped_inputs.last() {
-                //    if *previous == *new_input {
-                //        if new_gate.kind.can_delete_single_identical_inputs() {
-                //            continue;
-                //        } else if new_gate.kind.can_delete_double_identical_inputs() {
-                //            deduped_inputs.pop();
-                //            continue;
-                //        }
-                //    }
-                //}
+                if let Some(previous) = deduped_inputs.last() {
+                    if *previous == *new_input {
+                        if new_gate.kind.can_delete_single_identical_inputs() {
+                            continue;
+                        } else if new_gate.kind.can_delete_double_identical_inputs() {
+                            deduped_inputs.pop();
+                            continue;
+                        }
+                    }
+                }
                 deduped_inputs.push(*new_input);
             }
             new_gate.inputs.clear();
@@ -240,8 +240,8 @@ impl InitializedNetwork {
 
     /// Tries to reorder in a way that is better for the cache.
     fn optimize_reorder_cache(&self) -> InitializedNetwork {
-        self.reordered_by(|mut v| {
-            //TODO: HIGHEST NUMBER OF INPUTS FIRST
+        self.reordered_by(|v| {
+            //TODO: partition in place
 
             //return v;
             // sorting by input ids implicitly sorts by cluster/non cluster
@@ -294,18 +294,18 @@ impl InitializedNetwork {
                 std::mem::swap(&mut active_set, &mut next_active_set);
                 next_active_set.clear();
             }
-            let (_, input_count_without_const): (Vec<_>, Vec<_>) = v
-                .iter()
-                .map(|(_, g)| {
-                    (
-                        g.inputs.len(),
-                        g.inputs
-                            .iter()
-                            .filter(|&&i| constness_level[i as usize].is_none())
-                            .count(),
-                    )
-                })
-                .unzip();
+            //let (_, input_count_without_const): (Vec<_>, Vec<_>) = v
+            //    .iter()
+            //    .map(|(_, g)| {
+            //        (
+            //            g.inputs.len(),
+            //            g.inputs
+            //                .iter()
+            //                .filter(|&&i| constness_level[i as usize].is_none())
+            //                .count(),
+            //        )
+            //    })
+            //    .unzip();
 
             dbg!(&active_set, &next_active_set);
 
@@ -328,15 +328,20 @@ impl InitializedNetwork {
             //v.sort_by_key(|(_,g)| g.inputs.len());
 
             // TODO: make nearby have overlapping outputs
-            dynamic.sort_by(|(ia, a), (ib, b)| {
-                let by_input_degree = a.inputs.len().cmp(&b.inputs.len()).reverse();
-                let by_output_degree = a.outputs.len().cmp(&b.outputs.len());
-                let by_input_degree_exclude_const = input_count_without_const[*ia]
-                    .cmp(&input_count_without_const[*ib])
-                    .reverse();
-                let by_is_cluster = a.kind.is_cluster().cmp(&b.kind.is_cluster());
+
+            dynamic.sort_by(|(_ia, a), (_ib, b)| {
+                //let input_degree = a.inputs.len().cmp(&b.inputs.len()).reverse();
+                //let output_degree = a.outputs.len().cmp(&b.outputs.len());
+                //let input_degree_exclude_const = input_count_without_const[*ia]
+                //    .cmp(&input_count_without_const[*ib])
+                //    .reverse();
+                let is_cluster = a.kind.is_cluster().cmp(&b.kind.is_cluster());
+                let input_ids = a.inputs.cmp(&b.inputs);
+                let output_ids = a.outputs.cmp(&b.outputs).reverse();
                 //by_is_cluster.then(by_input_degree_exclude_const)
-                by_is_cluster.then(by_input_degree).then(by_output_degree)
+                //by_is_cluster.then(by_input_degree).then(by_output_degree)
+                is_cluster.then(input_ids).then(output_ids)
+                //.then(by_input_degree)
             });
 
             //panic!("{:?}, {:?}", dynamic[0], dynamic[dynamic.len() - 1]);
