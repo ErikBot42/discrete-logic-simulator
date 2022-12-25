@@ -385,6 +385,7 @@ struct BoardNode {
     inputs: BTreeSet<usize>,
     outputs: BTreeSet<usize>,
     kind: GateType,
+    init_state: bool,
     network_id: Option<usize>,
 }
 impl BoardNode {
@@ -393,7 +394,8 @@ impl BoardNode {
         BoardNode {
             inputs: BTreeSet::new(),
             outputs: BTreeSet::new(),
-            kind: trace.to_gate(),
+            init_state: false,
+            kind: trace.to_gatetype(),
             network_id: None,
         }
     }
@@ -1076,7 +1078,7 @@ impl Trace {
     }
 
     #[inline]
-    fn to_gate(self) -> GateType {
+    fn to_gatetype(self) -> GateType {
         if self.is_wire() {
             GateType::Cluster
         } else {
