@@ -88,9 +88,6 @@ pub struct Args {
     #[arg(short = 'i', long)]
     pub iterations: Option<usize>,
 
-    /// Step
-    #[arg(short, long)]
-    pub step: bool,
 }
 
 fn main() {
