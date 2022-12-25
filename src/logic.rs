@@ -1,5 +1,6 @@
 //! logic.rs: Contains the simulaion engine itself.
 
+#![allow(clippy::too_many_arguments)]
 #![allow(clippy::inline_always)]
 //#![allow(dead_code)]
 
@@ -180,7 +181,8 @@ impl Gate {
     fn calc_acc_i(inputs: usize, kind: GateType) -> AccType {
         match kind {
             GateType::And | GateType::Nand => {
-                AccType::from(0).wrapping_sub(AccType::try_from(inputs).unwrap())
+                let a: AccType = 0;
+                a.wrapping_sub(AccType::try_from(inputs).unwrap())
             },
             GateType::Or | GateType::Nor | GateType::Xor | GateType::Cluster => 0,
             GateType::Xnor => 1,
@@ -841,7 +843,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
     }*/
 
-
     /// Reference impl
     #[inline(never)]
     fn propagate_delta_to_accs_scalar<F: FnMut(IndexType)>(
@@ -1150,7 +1151,7 @@ impl BitPackSimInner /*<LATCH>*/ {
     #[inline(always)] // function used at single call site
     unsafe fn acc_zero_m256i(acc_ptr: *const __m256i) -> u32 {
         unsafe {
-            let zero = _mm256_setzero_si256(); 
+            let zero = _mm256_setzero_si256();
             let data = _mm256_load_si256(acc_ptr); // load value
             let data = _mm256_cmpeq_epi8(data, zero); // compare with zero
             let data = _mm256_movemask_epi8(data); // put MSB of each byte in an int

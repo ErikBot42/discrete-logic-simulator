@@ -222,7 +222,6 @@ struct BoardFooter {
 }
 impl BoardFooter {
     const SIZE: usize = std::mem::size_of::<Self>();
-    #[must_use]
     fn from_bytes(bytes: [u8; Self::SIZE]) -> anyhow::Result<BoardFooterInfo> {
         let read = |i: usize| i32::from_le_bytes(from_fn(|k| bytes[k + (i * size_of::<i32>())]));
         BoardFooterInfo::new(
@@ -247,7 +246,6 @@ struct BoardFooterInfo {
 }
 
 impl BoardFooterInfo {
-    #[must_use]
     fn new(footer: &BoardFooter) -> anyhow::Result<Self> {
         if footer.bytes != footer.height * footer.width * size_of::<u32>() as i32
             || footer.width_type != 2
@@ -279,8 +277,6 @@ struct BlueprintFooter {
 }
 impl BlueprintFooter {
     const SIZE: usize = std::mem::size_of::<Self>();
-    #[must_use]
-    /// Infalliable because of fixed size input
     fn from_bytes(bytes: [u8; Self::SIZE]) -> anyhow::Result<BlueprintFooterInfo> {
         let read = |i: usize| i32::from_le_bytes(from_fn(|k| bytes[k + (i * size_of::<i32>())]));
         BlueprintFooterInfo::new(
@@ -307,7 +303,6 @@ struct BlueprintFooterInfo {
     layer: Layer,
 }
 impl BlueprintFooterInfo {
-    #[must_use]
     fn new(footer: &BlueprintFooter) -> anyhow::Result<BlueprintFooterInfo> {
         if footer.bytes != footer.height * footer.width * size_of::<u32>() as i32
             || footer.width_type != 2
@@ -344,7 +339,6 @@ struct VcbPlainBoard {
     height: usize,
 }
 impl VcbPlainBoard {
-    #[must_use]
     fn from_color_data(data: &[u8], width: usize, height: usize) -> anyhow::Result<Self> {
         timed!(
             {
