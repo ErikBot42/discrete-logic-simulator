@@ -49,8 +49,8 @@ impl VcbParser {
         if footer.layer != Layer::Logic {
             return Err(anyhow!("Blueprint layer not logic"));
         };
-        let data = zstd_decompress(data_bytes, footer.count)?;
-        if data.len() != footer.count * 4 {
+        let data = zstd_decompress(data_bytes, footer.count()?)?;
+        if data.len() != footer.count()? * 4 {
             return Err(anyhow!("Mismatch between footer count and data length"));
         }
         VcbPlainBoard::from_color_data(&data, footer.width, footer.height)
@@ -103,7 +103,7 @@ impl VcbParser {
             .context("")?
             .try_into()?;
         let footer = BoardFooter::from_bytes(footer_bytes)?;
-        let data = zstd_decompress(data_bytes, footer.count)?;
+        let data = zstd_decompress(data_bytes, footer.count()?)?;
         VcbPlainBoard::from_color_data(&data, footer.width, footer.height)
     }
     fn parse_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
@@ -113,15 +113,15 @@ impl VcbParser {
             let bytes = base64_decode(data)?;
             let (color_data, footer_bytes) = bytes.split_at(bytes.len() - BoardFooter::SIZE);
             let footer = BoardFooter::from_bytes(footer_bytes.try_into().context("")?)?;
-            let data = zstd_decompress(color_data, footer.count)?;
+            let data = zstd_decompress(color_data, footer.count()?)?;
             VcbPlainBoard::from_color_data(&data, footer.width, footer.height)
         } else {
             Err(anyhow!("json parsing went wrong"))
         }
     }
 
-    /// # Result
-    /// Returns Err if input is invalid or could not parse.
+    /// # Errors
+    /// Returns Err if input could not be parsed
     pub fn parse_compile<T: LogicSim>(
         input: VcbInput,
         optimize: bool,
@@ -242,12 +242,16 @@ impl BoardFooter {
 struct BoardFooterInfo {
     width: usize,
     height: usize,
-    count: usize,
 }
 
 impl BoardFooterInfo {
     fn new(footer: &BoardFooter) -> anyhow::Result<Self> {
-        if footer.bytes != footer.height * footer.width * size_of::<u32>() as i32
+        if usize::try_from(footer.bytes)?
+            != usize::try_from(footer.height)?
+                .checked_mul(usize::try_from(footer.width)?)
+                .context("")?
+                .checked_mul(size_of::<u32>())
+                .context("")?
             || footer.width_type != 2
             || footer.bytes_type != 2
             || footer.height_type != 2
@@ -257,9 +261,11 @@ impl BoardFooterInfo {
             Ok(Self {
                 width: footer.width.try_into()?,
                 height: footer.height.try_into()?,
-                count: (footer.width * footer.height).try_into()?,
             })
         }
+    }
+    fn count(&self) -> anyhow::Result<usize> {
+        self.width.checked_mul(self.height).context("")
     }
 }
 /// contains the raw footer data for blueprints
@@ -299,12 +305,16 @@ impl BlueprintFooter {
 struct BlueprintFooterInfo {
     width: usize,
     height: usize,
-    count: usize,
     layer: Layer,
 }
 impl BlueprintFooterInfo {
     fn new(footer: &BlueprintFooter) -> anyhow::Result<BlueprintFooterInfo> {
-        if footer.bytes != footer.height * footer.width * size_of::<u32>() as i32
+        if usize::try_from(footer.bytes)?
+            != usize::try_from(footer.height)?
+                .checked_mul(usize::try_from(footer.width)?)
+                .context("")?
+                .checked_mul(size_of::<u32>())
+                .context("")?
             || footer.width_type != 2
             || footer.bytes_type != 2
             || footer.height_type != 2
@@ -314,7 +324,6 @@ impl BlueprintFooterInfo {
             Ok(BlueprintFooterInfo {
                 width: footer.width.try_into()?,
                 height: footer.height.try_into()?,
-                count: (footer.width * footer.height).try_into()?,
                 layer: match footer.layer {
                     65_536 => Layer::Logic,
                     131_072 => Layer::On,
@@ -323,6 +332,9 @@ impl BlueprintFooterInfo {
                 },
             })
         }
+    }
+    fn count(&self) -> anyhow::Result<usize> {
+        self.width.checked_mul(self.height).context("")
     }
 }
 #[derive(Debug, PartialEq, Eq)]
