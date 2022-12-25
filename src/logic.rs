@@ -10,7 +10,7 @@ pub(crate) use crate::logic::network::{GateNetwork, InitializedNetwork};
 use bytemuck::cast_slice_mut;
 use itertools::Itertools;
 use std::mem::{align_of, size_of, transmute};
-use std::simd::{Mask, Simd, SimdPartialEq};
+use std::simd::{Mask, Simd};
 
 pub type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
 pub type SimdSim = CompiledNetwork<{ UpdateStrategy::Simd as u8 }>;
@@ -234,6 +234,7 @@ impl Gate {
     where
         std::simd::LaneCount<LANES>: std::simd::SupportedLaneCount,
     {
+        use std::simd::SimdPartialEq;
         let acc_logic = acc.cast::<SimdLogicType>();
         let acc_not_zero = acc_logic
             .simd_ne(Simd::splat(0))
@@ -650,7 +651,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
     }
 
-
     /// NOTE: this assumes that all outputs are non overlapping.
     /// this HAS to be resolved when network is compiled
     /// TODO: `debug_assert` this property
@@ -841,54 +841,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
     }*/
 
-    #[inline(never)]
-    fn propagate_delta_to_accs_scalar_safe<F: FnMut(IndexType)>(
-        delta_p: gate_status::Packed,
-        id_packed: usize,
-        acc_packed: &mut [gate_status::Packed],
-        packed_output_indexes: &[IndexType],
-        packed_outputs: &[IndexType],
-        mut update_list_handler: F,
-    ) {
-        let group_id_offset = id_packed * gate_status::PACKED_ELEMENTS;
-        let acc = bytemuck::cast_slice_mut(acc_packed);
-        let deltas = gate_status::unpack_single(delta_p);
-
-        for (id_inner, delta) in deltas.into_iter().enumerate() {
-            Self::propagate_delta_to_accs_safe(
-                group_id_offset + id_inner,
-                delta,
-                acc,
-                packed_output_indexes,
-                packed_outputs,
-                &mut update_list_handler,
-            );
-        }
-    }
-    #[inline(always)]
-    fn propagate_delta_to_accs_safe<F: FnMut(IndexType)>(
-        id: usize,
-        delta: AccTypeInner,
-        acc: &mut [AccTypeInner],
-        packed_output_indexes: &[IndexType],
-        packed_outputs: &[IndexType],
-        update_list_handler: F,
-    ) {
-        if delta == 0 {
-            return;
-        }
-        let from_index = packed_output_indexes[id] as usize;
-        let to_index = packed_output_indexes[id + 1] as usize;
-
-        for output_id in packed_outputs[from_index..to_index].iter() {
-            let other_acc = &mut acc[*output_id as usize];
-            *other_acc = other_acc.wrapping_add(delta);
-        }
-        unsafe { packed_outputs.get_unchecked(from_index..to_index) }
-            .iter()
-            .copied()
-            .for_each(update_list_handler);
-    }
 
     /// Reference impl
     #[inline(never)]
@@ -1150,8 +1102,9 @@ impl BitPackSimInner /*<LATCH>*/ {
     fn calc_group_id(id: usize) -> usize {
         id / Self::BITS
     }
+    /// Reference implementation TODO: TEST
     #[inline(always)] // function used at single call site
-    fn acc_parity(acc: &BitAccPack) -> BitInt {
+    fn _acc_parity(acc: &BitAccPack) -> BitInt {
         let acc: &[BitAcc] = &acc.0;
         let mut acc_parity: BitInt = 0;
         for (i, b) in acc.iter().map(|a| a & 1 == 1).enumerate() {
@@ -1159,8 +1112,9 @@ impl BitPackSimInner /*<LATCH>*/ {
         }
         acc_parity
     }
+    /// Reference implementation TODO: TEST
     #[inline(always)] // function used at single call site
-    fn acc_zero(acc: &BitAccPack) -> BitInt {
+    fn _acc_zero(acc: &BitAccPack) -> BitInt {
         let acc: &[BitAcc] = &acc.0;
         let mut acc_zero: BitInt = 0;
         for (i, b) in acc.iter().map(|a| *a != 0).enumerate() {
@@ -1196,7 +1150,7 @@ impl BitPackSimInner /*<LATCH>*/ {
     #[inline(always)] // function used at single call site
     unsafe fn acc_zero_m256i(acc_ptr: *const __m256i) -> u32 {
         unsafe {
-            let zero = _mm256_setzero_si256();
+            let zero = _mm256_setzero_si256(); 
             let data = _mm256_load_si256(acc_ptr); // load value
             let data = _mm256_cmpeq_epi8(data, zero); // compare with zero
             let data = _mm256_movemask_epi8(data); // put MSB of each byte in an int
@@ -1213,9 +1167,10 @@ impl BitPackSimInner /*<LATCH>*/ {
             transmute(array) // compiler can statically check size here
         }
     }
+    /// Reference implmentation TODO: TEST
     #[inline(always)] // function used at single call site
-    fn extract_acc_info(acc: &BitAccPack) -> (BitInt, BitInt) {
-        (Self::acc_zero(acc), Self::acc_parity(acc))
+    fn _extract_acc_info(acc: &BitAccPack) -> (BitInt, BitInt) {
+        (Self::_acc_zero(acc), Self::_acc_parity(acc))
     }
     #[inline(always)] // function used at single call site
     fn extract_acc_info_simd(acc: &BitAccPack) -> (BitInt, BitInt) {
