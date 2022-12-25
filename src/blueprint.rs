@@ -1,4 +1,5 @@
 #![allow(clippy::cast_sign_loss)]
+#![allow(clippy::inline_always)]
 
 use crate::logic::{GateNetwork, GateType, LogicSim};
 use anyhow::{anyhow, Context};
@@ -714,8 +715,8 @@ impl<T: LogicSim> VcbBoard<T> {
         self.print_inner(Some(true));
         self.print_inner(Some(false));
     }
-    pub fn print(&self) {
-        self.print_compact().unwrap();
+    pub fn print(&self) -> Result<(), std::io::Error> {
+        self.print_compact()
     }
     fn print_legend<F: Fn(Trace) -> String, U: Fn(Trace) -> String>(&self, f1: F, f2: U) {
         for t in self.get_current_traces() {
@@ -733,6 +734,9 @@ impl<T: LogicSim> VcbBoard<T> {
             .into_iter()
             .collect()
     }
+    
+    /// # Panics
+    /// Cannot set clipboard
     pub fn print_to_clipboard(&self) -> ! {
         use arboard::{Clipboard, ImageData};
         use std::borrow::Cow;
@@ -758,6 +762,7 @@ impl<T: LogicSim> VcbBoard<T> {
     /// # Panics
     /// very large image
     pub fn print_to_gif(&mut self, limit: usize) {
+        #![allow(clippy::cast_precision_loss)]
         use image::codecs::gif::GifEncoder;
         use image::{codecs, imageops, Frame, ImageBuffer, RgbaImage};
         use std::collections::HashMap;

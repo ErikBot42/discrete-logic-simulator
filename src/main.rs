@@ -87,10 +87,10 @@ pub struct Args {
     /// Iterations to run in bench
     #[arg(short = 'i', long)]
     pub iterations: Option<usize>,
-    
+
     /// Step
-    #[arg(short,long)]
-    pub step: bool
+    #[arg(short, long)]
+    pub step: bool,
 }
 
 fn main() {
@@ -150,7 +150,7 @@ fn handle_board<T: LogicSim>(args: &Args, parser_input: VcbInput) {
         },
         RunMode::Print => {
             board.update();
-            board.print();
+            board.print().unwrap();
         },
         RunMode::Run => {
             execute!(stdout(), EnterAlternateScreen, Hide, DisableLineWrap).unwrap();
@@ -158,7 +158,7 @@ fn handle_board<T: LogicSim>(args: &Args, parser_input: VcbInput) {
             loop {
                 //use std::time::Instant;
                 execute!(stdout(), MoveTo(0, 0),).unwrap();
-                board.print();
+                board.print().unwrap();
                 enable_raw_mode().unwrap();
                 //let prev = Instant::now();
                 //while prev.elapsed().as_millis() < 16 {
@@ -187,27 +187,30 @@ fn handle_board<T: LogicSim>(args: &Args, parser_input: VcbInput) {
             )
             .unwrap();
         },
-        RunMode::Bench => {
-            let iterations = args.iterations.unwrap_or(10_000_000);
-            let iterations_f32 = iterations as f32;
-            println!("Running {iterations} iterations");
-            let now = std::time::Instant::now();
-            board.update_i(iterations);
-            let elapsed_raw = now.elapsed();
-            let elapsed = now.elapsed().as_secs_f32();
-            let millisecond_per_iteration = elapsed / iterations_f32 * 1000.0;
-            let microsecond_per_iteration = millisecond_per_iteration * 1000.0;
-            let nanosecond_per_iteration = microsecond_per_iteration * 1000.0;
-            let iterations_per_second = iterations_f32 / elapsed;
-            println!("Elapsed: {elapsed_raw:?}");
-            println!("ms/iteration: {millisecond_per_iteration}");
-            println!("μs/iteration: {microsecond_per_iteration}");
-            println!("ns/iteration: {nanosecond_per_iteration}");
-            println!("TPS: {iterations_per_second}");
-            println!(
-                "iteration/s: {} million",
-                iterations_per_second / 1_000_000.0
-            );
-        },
+        RunMode::Bench => run_bench(args, board),
     }
+}
+
+fn run_bench<T: LogicSim>(args: &Args, mut board: logic_simulator::blueprint::VcbBoard<T>) {
+    #![allow(clippy::cast_precision_loss)]
+    let iterations = args.iterations.unwrap_or(10_000_000);
+    let iterations_f32 = iterations as f32;
+    println!("Running {iterations} iterations");
+    let now = std::time::Instant::now();
+    board.update_i(iterations);
+    let elapsed_raw = now.elapsed();
+    let elapsed = now.elapsed().as_secs_f32();
+    let millisecond_per_iteration = elapsed / iterations_f32 * 1000.0;
+    let microsecond_per_iteration = millisecond_per_iteration * 1000.0;
+    let nanosecond_per_iteration = microsecond_per_iteration * 1000.0;
+    let iterations_per_second = iterations_f32 / elapsed;
+    println!("Elapsed: {elapsed_raw:?}");
+    println!("ms/iteration: {millisecond_per_iteration}");
+    println!("μs/iteration: {microsecond_per_iteration}");
+    println!("ns/iteration: {nanosecond_per_iteration}");
+    println!("TPS: {iterations_per_second}");
+    println!(
+        "iteration/s: {} million",
+        iterations_per_second / 1_000_000.0
+    );
 }
