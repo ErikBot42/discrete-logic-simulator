@@ -57,9 +57,7 @@ pub mod raw_list;
 #[cfg(test)]
 mod tests {
     use crate::blueprint::{VcbBoard, VcbInput, VcbParser};
-    use crate::logic::{
-        BitPackSim, CompiledNetwork, LogicSim, ReferenceSim, ScalarSim, SimdSim, UpdateStrategy,
-    };
+    use crate::logic::{BitPackSim, LogicSim, ReferenceSim, ScalarSim, SimdSim};
 
     fn prep_cases<SIM: LogicSim>(optimize: bool) -> Vec<(&'static str, VcbBoard<SIM>)> {
         let cases: Vec<(&str, _)> = vec![
