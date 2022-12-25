@@ -1139,7 +1139,7 @@ impl BitPackSimInner /*<LATCH>*/ {
     fn acc_parity_simd(acc: &BitAccPack) -> BitInt {
         unsafe {
             assert!(align_of::<BitAccPack>() >= 32);
-            let acc_ptr: *const __m256i = acc as *const BitAccPack as *const __m256i;
+            let acc_ptr: *const __m256i = (acc as *const BitAccPack).cast();
             let array: [u32; size_of::<BitAccPack>() / u32::BITS as usize] =
                 inline_arr_from_fn(|x| Self::acc_parity_m256i(acc_ptr.add(x)));
             transmute(array) // compiler can statically check size here
@@ -1162,7 +1162,7 @@ impl BitPackSimInner /*<LATCH>*/ {
     fn acc_zero_simd(acc: &BitAccPack) -> BitInt {
         unsafe {
             assert!(align_of::<BitAccPack>() >= 32);
-            let acc_ptr: *const __m256i = acc as *const BitAccPack as *const __m256i;
+            let acc_ptr: *const __m256i = (acc as *const BitAccPack).cast();
             let array: [u32; size_of::<BitAccPack>() / u32::BITS as usize] =
                 inline_arr_from_fn(|x| Self::acc_zero_m256i(acc_ptr.add(x)));
             transmute(array) // compiler can statically check size here

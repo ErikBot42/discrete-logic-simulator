@@ -715,6 +715,8 @@ impl<T: LogicSim> VcbBoard<T> {
         self.print_inner(Some(true));
         self.print_inner(Some(false));
     }
+    /// # Errors
+    /// cannot print
     pub fn print(&self) -> Result<(), std::io::Error> {
         self.print_compact()
     }
@@ -734,7 +736,7 @@ impl<T: LogicSim> VcbBoard<T> {
             .into_iter()
             .collect()
     }
-    
+
     /// # Panics
     /// Cannot set clipboard
     pub fn print_to_clipboard(&self) -> ! {
@@ -763,6 +765,8 @@ impl<T: LogicSim> VcbBoard<T> {
     /// very large image
     pub fn print_to_gif(&mut self, limit: usize) {
         #![allow(clippy::cast_precision_loss)]
+        #![allow(clippy::cast_possible_truncation)]
+        #![allow(clippy::cast_lossless)]
         use image::codecs::gif::GifEncoder;
         use image::{codecs, imageops, Frame, ImageBuffer, RgbaImage};
         use std::collections::HashMap;
@@ -1089,22 +1093,22 @@ impl Trace {
     }
     fn as_regular_emoji(self) -> &'static str {
         match self {
-            Trace::Gray => "🔘",
-            Trace::White => "🔘",
-            Trace::Red => "🔘",
-            Trace::Orange1 => "🔘",
-            Trace::Orange2 => "🔘",
-            Trace::Orange3 => "🔘",
-            Trace::Yellow => "🔘",
-            Trace::Green1 => "🔘",
-            Trace::Green2 => "🔘",
-            Trace::Cyan1 => "🔘",
-            Trace::Cyan2 => "🔘",
-            Trace::Blue1 => "🔘",
-            Trace::Blue2 => "🔘",
-            Trace::Purple => "🔘",
-            Trace::Magenta => "🔘",
-            Trace::Pink => "🔘",
+            Trace::Gray
+            | Trace::White
+            | Trace::Red
+            | Trace::Orange1
+            | Trace::Orange2
+            | Trace::Orange3
+            | Trace::Yellow
+            | Trace::Green1
+            | Trace::Green2
+            | Trace::Cyan1
+            | Trace::Cyan2
+            | Trace::Blue1
+            | Trace::Blue2
+            | Trace::Purple
+            | Trace::Magenta
+            | Trace::Pink => "🔘",
             Trace::Write => "✏",
             Trace::Empty => "⬛",
             Trace::Cross => "➕",

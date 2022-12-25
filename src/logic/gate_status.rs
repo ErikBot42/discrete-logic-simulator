@@ -26,10 +26,10 @@ pub(crate) fn new(in_update_list: bool, state: bool, kind: RunTimeGateType) -> I
     //let state = state as u8;
     let (is_inverted, is_xor) = RunTimeGateType::calc_flags(kind);
 
-    ((state as Inner) << STATE)
-        | ((in_update_list as Inner) << IN_UPDATE_LIST)
-        | ((is_inverted as Inner) << IS_INVERTED)
-        | ((is_xor as Inner) << IS_XOR)
+    (Inner::from(state) << STATE)
+        | (Inner::from(in_update_list) << IN_UPDATE_LIST)
+        | (Inner::from(is_inverted) << IS_INVERTED)
+        | (Inner::from(is_xor) << IS_XOR)
 }
 
 /// Evaluate and update internal state.
@@ -49,13 +49,13 @@ pub(crate) fn eval_mut<const CLUSTER: bool>(inner_mut: &mut Inner, acc: AccType)
     let flag_bits = inner & FLAGS_MASK;
 
     let state_1 = (inner >> STATE) & 1;
-    let acc = acc as Inner; // XXXXXXXX
+    let acc = Inner::from(acc); // XXXXXXXX
     let new_state_1 = if CLUSTER {
-        (acc != 0) as Inner
+        AccType::from(acc != 0)
     } else {
         match flag_bits {
-            0 => (acc != 0) as Inner,
-            FLAG_IS_INVERTED => (acc == 0) as Inner,
+            0 => Inner::from(acc != 0),
+            FLAG_IS_INVERTED => Inner::from(acc == 0),
             FLAG_IS_XOR => acc & 1,
             //_ => 0,
             _ => unreachable!(), /*unsafe {
@@ -70,7 +70,7 @@ pub(crate) fn eval_mut<const CLUSTER: bool>(inner_mut: &mut Inner, acc: AccType)
         let acc_parity = acc; // XXXXXXXX
         let xor_term = is_xor & acc_parity; // 0|1
         debug_assert_eq!(xor_term & 1, xor_term);
-        let acc_not_zero = (acc != 0) as Inner; // 0|1
+        let acc_not_zero = Inner::from(acc != 0); // 0|1
         let is_inverted = inner >> IS_INVERTED; // XX
         let not_xor = !is_xor; // 0|11111111
         let acc_term = not_xor & (is_inverted ^ acc_not_zero); // XXXXXXXX
@@ -109,10 +109,9 @@ acc_term: {acc_term:b}",
     if state_changed_1 == 0 {
         0
     } else {
-        (new_state_1 << 1).wrapping_sub(1) as AccType
+        AccType::from((new_state_1 << 1).wrapping_sub(1))
     }
 }
-
 
 pub(crate) const fn splat_u32(value: u8) -> Packed {
     pack_single([value; PACKED_ELEMENTS])
@@ -178,7 +177,6 @@ pub(crate) fn eval_mut_scalar<const CLUSTER: bool>(inner_mut: &mut Packed, acc: 
     debug_assert_eq!(increment_1 & decrement_1, 0, "{increment_1}, {decrement_1}");
     mask_if_one(decrement_1) | increment_1
 }
-
 
 #[inline]
 pub(crate) fn eval_mut_simd<const CLUSTER: bool, const LANES: usize>(
