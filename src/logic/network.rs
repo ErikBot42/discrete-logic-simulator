@@ -175,7 +175,7 @@ impl InitializedNetwork {
                 // this gate is new, so a fresh id is created.
                 assert!(old_to_new_id.len() == old_gate_id);
                 old_to_new_id.push(new_id.try_into().unwrap());
-                new_gates.push(Gate::from_gate_type(old_gate.kind));
+                new_gates.push(Gate::new(old_gate.kind));
                 gate_key_to_new_id.insert(key, new_id);
                 assert!(new_id < new_gates.len(), "new_id: {new_id}");
             }
@@ -608,7 +608,7 @@ impl GateNetwork {
     /// If more than `IndexType::MAX` are added, or after initialized
     pub(crate) fn add_vertex(&mut self, kind: GateType) -> usize {
         let next_id: IndexType = self.network.gates.len().try_into().unwrap();
-        self.network.gates.push(Gate::from_gate_type(kind));
+        self.network.gates.push(Gate::new(kind));
         next_id.try_into().unwrap()
     }
 

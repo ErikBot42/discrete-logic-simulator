@@ -160,6 +160,14 @@ pub(crate) struct Gate {
     // TODO: "do not merge" flag for gates that are "volatile", for example handling IO
 }
 impl Gate {
+    fn new(kind: GateType) -> Self {
+        Gate {
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+            kind,
+            initial_state: false,
+        }
+    }
     fn is_propably_constant(&self) -> bool {
         self.inputs.is_empty()
     }
@@ -178,33 +186,8 @@ impl Gate {
             GateType::Xnor => 1,
         }
     }
-    fn has_overlapping_ids(&self, other: &Gate) -> bool {
-        self.outputs
-            .iter()
-            .zip(other.outputs.iter())
-            .any(|(a, b)| *a == *b)
-    }
     fn is_cluster_a_xor_is_cluster_b(&self, other: &Gate) -> bool {
         self.kind.is_cluster() != other.kind.is_cluster()
-    }
-    fn new_from_inputs(kind: GateType, inputs: Vec<IndexType>) -> Self {
-        Gate {
-            inputs,
-            outputs: Vec::new(),
-            kind,
-            initial_state: false,
-        }
-    }
-    fn new_from_outputs(kind: GateType, outputs: Vec<IndexType>) -> Self {
-        Gate {
-            inputs: Vec::new(),
-            outputs,
-            kind,
-            initial_state: false,
-        }
-    }
-    fn from_gate_type(kind: GateType) -> Self {
-        Self::new_from_outputs(kind, Vec::new())
     }
 
     /// add inputs and handle internal logic for them
@@ -215,6 +198,7 @@ impl Gate {
         self.inputs.sort_unstable(); // TODO: probably not needed
     }
     #[inline]
+    #[cfg(test)]
     const fn evaluate(acc: AccType, kind: RunTimeGateType) -> bool {
         match kind {
             RunTimeGateType::OrNand => acc != (0),
@@ -238,7 +222,6 @@ impl Gate {
     const fn evaluate_branchless(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
         !is_xor && ((acc != 0) != is_inverted) || is_xor && (acc & 1 == 1)
     }
-    #[inline(always)] // inline always required to keep SIMD in registers.
     //#[must_use]
     #[cfg(test)]
     fn evaluate_simd<const LANES: usize>(
@@ -511,17 +494,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         (packed_output_indexes, packed_outputs)
     }
 
-    pub(crate) fn get_inner_id(&self, gate_id: usize) -> usize {
-        self.i.translation_table[gate_id] as usize
-    }
-
-    /// # Panics
-    /// Not initialized, if `gate_id` is out of range
-    #[must_use]
-    pub(crate) fn get_state(&self, gate_id: usize) -> bool {
-        let gate_id = self.i.translation_table[gate_id];
-        self.get_state_internal(gate_id as usize)
-    }
     fn get_state_internal(&self, gate_id: usize) -> bool {
         match Self::STRATEGY {
             UpdateStrategy::ScalarSimd => {
@@ -532,11 +504,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             },
             _ => panic!(),
         }
-    }
-    pub(crate) fn get_state_vec(&self) -> Vec<bool> {
-        (0..self.i.translation_table.len())
-            .map(|i| self.get_state(i))
-            .collect()
     }
     //#[inline(always)]
     //pub(crate) fn update_simd(&mut self) {
@@ -683,91 +650,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
     }
 
-    #[inline(always)]
-    fn propagate_delta_sparse_vec(
-        packed: &[(IndexType, AccType)],
-        acc: &mut [AccType],
-        packed_output_indexes: &[IndexType],
-        packed_outputs: &[IndexType],
-    ) {
-        //let it = it.filter(|(_, delta)| *delta != 0);
-        for (id, delta) in packed.iter().map(|(id, delta)| (*id as usize, *delta)) {
-            debug_assert_ne!(delta, 0);
-            let from_index = *unsafe { packed_output_indexes.get_unchecked(id) } as usize;
-            let to_index = *unsafe { packed_output_indexes.get_unchecked(id + 1) } as usize;
-            for id in unsafe { packed_outputs.get_unchecked(from_index..to_index) }
-                .iter()
-                .map(|i| *i as usize)
-            {
-                let acc_mut = unsafe { acc.get_unchecked_mut(id) };
-                *acc_mut = acc_mut.wrapping_add(delta);
-                // and add to update list...
-            }
-        }
-    }
-    #[inline(always)]
-    fn propagate_delta_sparse_vec_fixed(
-        packed: &[(IndexType, AccType); gate_status::PACKED_ELEMENTS],
-        acc: &mut [AccType],
-        packed_output_indexes: &[IndexType],
-        packed_outputs: &[IndexType],
-    ) {
-        Self::propagate_delta_sparse_vec(packed, acc, packed_output_indexes, packed_outputs);
-    }
-    #[inline(always)]
-    fn propagate_delta_sparse_vec_simd(
-        packed: [(IndexType, AccType); gate_status::PACKED_ELEMENTS],
-        acc: &mut [AccType],
-        packed_output_indexes: &[IndexType],
-        packed_outputs: &[IndexType],
-    ) {
-        //let it = it.filter(|(_, delta)| *delta != 0);
-        const LANES: usize = gate_status::PACKED_ELEMENTS;
-        let idx = Simd::from_array(packed.map(|p| p.0)).cast();
-        let delta = Simd::from_array(packed.map(|p| p.1));
-
-        let from_index = Simd::gather_select(
-            packed_output_indexes,
-            Mask::splat(true),
-            idx,
-            Simd::splat(IndexType::MAX),
-        )
-        .cast();
-        let to_index = Simd::gather_select(
-            packed_output_indexes,
-            Mask::splat(true),
-            idx + Simd::splat(1),
-            Simd::splat(IndexType::MAX),
-        )
-        .cast();
-        let mut curr_index: Simd<usize, _> = from_index;
-        let mut not_done_mask: Mask<isize, LANES> = Mask::splat(true);
-        loop {
-            not_done_mask &= curr_index.simd_ne(to_index);
-            if not_done_mask == Mask::splat(false) {
-                break;
-            }
-            let output_id: Simd<usize, _> =
-                Simd::gather_select(packed_outputs, not_done_mask, curr_index, Simd::splat(0))
-                    .cast();
-
-            for (id, d) in output_id
-                .as_array()
-                .iter()
-                .zip(delta.as_array())
-                .zip(not_done_mask.to_array())
-                .filter_map(|(a, m)| m.then_some(a))
-            {
-                let acc_mut = unsafe { acc.get_unchecked_mut(*id) };
-                *acc_mut = acc_mut.wrapping_add(*d);
-            }
-
-            //let acc_new =
-            //    Simd::gather_select(acc, Mask::splat(true), output_id, Simd::splat(0)) + delta;
-            //acc_new.scatter_select(acc, not_done_mask, output_id);
-            curr_index += Simd::splat(1);
-        }
-    }
 
     /// NOTE: this assumes that all outputs are non overlapping.
     /// this HAS to be resolved when network is compiled
