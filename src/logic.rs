@@ -1191,10 +1191,10 @@ impl BitPackSimInner /*<LATCH>*/ {
             (&mut self.update_list, &mut self.cluster_update_list)
         };
 
-        //static mut AVG_ONES: f64 = 6.0;
-        //const AVG_ONES_WINDOW: f64 = 4_000_000.0;
+        static mut AVG_ONES: f64 = 6.0;
+        const AVG_ONES_WINDOW: f64 = 4_000_000.0;
 
-        //unsafe { println!("{AVG_ONES}") };
+        unsafe { println!("{AVG_ONES}") };
         for (group_id, is_inverted, is_xor) in unsafe { update_list.iter() }
             .map(|g| g as usize)
             .map(|group_id| {
@@ -1221,10 +1221,10 @@ impl BitPackSimInner /*<LATCH>*/ {
             let changed = *state ^ new_state;
             // println!("{changed:#068b}");
             // println!("{}", changed.count_ones());
-            // unsafe {
-            //     AVG_ONES = changed.count_ones() as f64 / AVG_ONES_WINDOW
-            //         + AVG_ONES * (AVG_ONES_WINDOW - 1.0) / AVG_ONES_WINDOW;
-            // }
+            unsafe {
+                AVG_ONES = changed.count_ones() as f64 / AVG_ONES_WINDOW
+                    + AVG_ONES * (AVG_ONES_WINDOW - 1.0) / AVG_ONES_WINDOW;
+            }
 
             if changed == 0 {
                 continue;

@@ -311,9 +311,10 @@ impl InitializedNetwork {
 
             //panic!("{}", active_set.len());
 
-            let (mut constant, mut dynamic): (Vec<_>, Vec<_>) = v
-                .into_iter()
-                .partition(|(i, _)| constness_level[*i].is_some());
+            let (mut constant, mut dynamic): (Vec<_>, Vec<_>) =
+                v.iter().partition(|(i, _)| constness_level[*i].is_some());
+            let is_dynamic = |id: usize| constness_level[id].is_none();
+
             //let mut dynamic = v;
 
             // PROP:
@@ -329,20 +330,109 @@ impl InitializedNetwork {
 
             // TODO: make nearby have overlapping outputs
 
-            dynamic.sort_by(|(_ia, a), (_ib, b)| {
+            // TODO: recursive sibling ids
+
+            let sibling_ids_not_const2 = |id: usize| {
+                assert_eq!(v[id].0, id);
+                let mut a: Vec<_> = v[id]
+                    .1
+                    .inputs
+                    .iter()
+                    .filter(|id| is_dynamic(**id as usize))
+                    .map(|id| {
+                        v[*id as usize]
+                            .1
+                            .inputs
+                            .iter()
+                            .cloned()
+                            .filter(|id| is_dynamic(*id as usize))
+                    })
+                    .flatten()
+                    .map(|id| v[id as usize].1.outputs.iter().cloned())
+                    .flatten()
+                    .map(|id| v[id as usize].1.outputs.iter().cloned())
+                    .flatten()
+                    .collect();
+                a.sort();
+                a.dedup();
+                a
+            };
+            let sibling_ids_not_const = |id: usize| {
+                assert_eq!(v[id].0, id);
+                let mut a: Vec<_> = v[id]
+                    .1
+                    .inputs
+                    .iter()
+                    .filter(|id| is_dynamic(**id as usize))
+                    .map(|id| v[*id as usize].1.outputs.iter().cloned())
+                    .flatten()
+                    .collect();
+                a.sort();
+                a.dedup();
+                a
+            };
+            //let sibling_ids = sibling_ids(*ia);
+            //let sibling_ids = if sibling_ids.contains(&(*ib as u32)) {
+            //    ia.cmp(&ib)
+            //} else {
+            //    std::cmp::Ordering::Equal
+            //};
+
+            dynamic.sort_by(|(ia, a), (ib, b)| {
                 //let input_degree = a.inputs.len().cmp(&b.inputs.len()).reverse();
                 //let output_degree = a.outputs.len().cmp(&b.outputs.len());
                 //let input_degree_exclude_const = input_count_without_const[*ia]
                 //    .cmp(&input_count_without_const[*ib])
                 //    .reverse();
+
                 let is_cluster = a.kind.is_cluster().cmp(&b.kind.is_cluster());
                 let input_ids = a.inputs.cmp(&b.inputs);
                 let output_ids = a.outputs.cmp(&b.outputs).reverse();
                 //by_is_cluster.then(by_input_degree_exclude_const)
                 //by_is_cluster.then(by_input_degree).then(by_output_degree)
-                is_cluster.then(input_ids).then(output_ids)
                 //.then(by_input_degree)
+
+                //is_cluster.then(input_ids).then(output_ids)
+                //is_cluster
+                //    .then(sibling_ids)
+                input_ids.then(output_ids)
             });
+
+            //dynamic.iter().for_each(|(id, _)| {
+            //    dbg!(sibling_ids_not_const(*id).len());
+            //});
+            {
+                let mut counts_vec: Vec<(usize, usize)> = dynamic
+                    .iter()
+                    .map(|(id, _)| sibling_ids_not_const(*id).len())
+                    .counts()
+                    .into_iter()
+                    .collect();
+                counts_vec.sort_unstable();
+                for (value, count) in counts_vec {
+                    println!("{value}: {count}");
+                }
+            }
+
+            //panic!();
+            dynamic.sort_by_key(|(ia, a)| sibling_ids_not_const(*ia).len());
+            dynamic.reverse();
+            let mut dynamic = {
+                let mut not_added: Vec<_> = v.iter().map(|(id, _)| is_dynamic(*id)).collect();
+                let mut acc: Vec<(usize, &Gate)> = Vec::new();
+                for c in dynamic.iter().cloned() {
+                    let sibling_ids_not_added: Vec<_> = sibling_ids_not_const(c.0)
+                        .iter()
+                        .map(|id| *id as usize)
+                        .filter(|id| not_added[*id])
+                        .collect();
+                    for id in sibling_ids_not_added.iter() {
+                        not_added[*id] = false
+                    }
+                    acc.extend(sibling_ids_not_added.iter().map(|id| v[*id]));
+                }
+                acc
+            };
 
             //panic!("{:?}, {:?}", dynamic[0], dynamic[dynamic.len() - 1]);
 
