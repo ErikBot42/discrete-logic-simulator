@@ -346,17 +346,6 @@ impl BoardElement {
     fn new(trace: Trace) -> Self {
         BoardElement { trace, id: None }
     }
-    fn print<T: LogicSim>(
-        &self,
-        board: &VcbBoard<T>,
-        _i: usize,
-        marked: bool,
-        debug_inner: Option<bool>,
-    ) {
-        let self_id = self.id;
-        let self_trace = self.trace;
-        Self::print_element(board, self_id, debug_inner, self_trace, marked);
-    }
     fn get_state<T: LogicSim>(&self, board: &VcbBoard<T>) -> bool {
         self.id
             .map(|t| {
@@ -369,37 +358,5 @@ impl BoardElement {
     }
     fn get_color<T: LogicSim>(&self, board: &VcbBoard<T>) -> [u8; 4] {
         self.trace.get_color(self.get_state(board))
-    }
-    fn print_element<T: LogicSim>(
-        board: &VcbBoard<T>,
-        self_id: Option<usize>,
-        debug_inner: Option<bool>,
-        self_trace: Trace,
-        marked: bool,
-    ) {
-        let format = |debug: Option<bool>, id: usize| match debug {
-            None => "  ".to_string(),
-            Some(true) => {
-                format!("{:>2}", board.logic_sim.to_internal_id(id))
-            },
-            Some(false) => {
-                format!("{id:>2}")
-            },
-        };
-        let mut state = false;
-        let tmpstr = if let Some(t) = self_id {
-            state = board.nodes[t]
-                .network_id
-                .map(|i| board.logic_sim.get_state(i))
-                .unwrap_or_default();
-            format(debug_inner, t % 100)
-        } else {
-            "  ".to_string()
-        };
-        let col = self_trace.get_color(state);
-        let col1: Color = (col[0], col[1], col[2]).into();
-        let col2: Color = (255 - col[0], 255 - col[1], 255 - col[2]).into();
-        let (col1, col2) = if marked { (col2, col1) } else { (col1, col2) };
-        print!("{}", tmpstr.on(col1).with(col2));
     }
 }
