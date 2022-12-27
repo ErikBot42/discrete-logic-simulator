@@ -77,7 +77,7 @@ pub(crate) enum Trace {
     Filler,
 }
 impl Trace {
-    pub(crate) fn get_color<T: LogicSim>(&self, state: bool) -> [u8; 4] {
+    pub(crate) fn get_color(&self, state: bool) -> [u8; 4] {
         if state {
             self.to_color_on()
         } else {

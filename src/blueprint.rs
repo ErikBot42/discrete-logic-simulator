@@ -48,7 +48,6 @@ impl BoardNode {
     }
 }
 
-
 pub struct VcbBoard<T: LogicSim> {
     traces: Vec<Trace>,
     element_ids: Vec<Option<usize>>,
@@ -300,11 +299,7 @@ impl<T: LogicSim> VcbBoard<T> {
         use arboard::{Clipboard, ImageData};
         use std::borrow::Cow;
 
-        let color_data: Vec<u8> = self
-            .elements
-            .iter()
-            .flat_map(|x| x.trace.to_color_on())
-            .collect();
+        let color_data: Vec<u8> = self.traces.iter().flat_map(|x| x.to_color_on()).collect();
         let mut clipboard = Clipboard::new().unwrap();
         clipboard
             .set_image(ImageData {
@@ -408,6 +403,8 @@ impl BoardElement {
         marked: bool,
         debug_inner: Option<bool>,
     ) {
+        let self_id = self.id;
+        let self_trace = self.trace;
         let format = |debug: Option<bool>, id: usize| match debug {
             None => "  ".to_string(),
             Some(true) => {
@@ -419,7 +416,7 @@ impl BoardElement {
         };
 
         let mut state = false;
-        let tmpstr = if let Some(t) = self.id {
+        let tmpstr = if let Some(t) = self_id {
             state = board.nodes[t]
                 .network_id
                 .map(|i| board.logic_sim.get_state(i))
@@ -428,11 +425,7 @@ impl BoardElement {
         } else {
             "  ".to_string()
         };
-        let col = if state {
-            self.trace.to_color_on()
-        } else {
-            self.trace.to_color_off()
-        };
+        let col = self_trace.get_color(state);
         let col1: Color = (col[0], col[1], col[2]).into();
         let col2: Color = (255 - col[0], 255 - col[1], 255 - col[2]).into();
 
@@ -451,10 +444,9 @@ impl BoardElement {
             .unwrap_or_default()
     }
     fn get_color<T: LogicSim>(&self, board: &VcbBoard<T>) -> [u8; 4] {
-        self.trace.get_color::<T>(self.get_state(board))
+        self.trace.get_color(self.get_state(board))
     }
 }
-
 
 mod explore {
     use super::*;
