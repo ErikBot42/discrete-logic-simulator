@@ -1,16 +1,19 @@
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::inline_always)]
 
-use trace::*;
 pub mod explore;
 pub mod parse;
 pub mod trace;
+
 use crate::logic::{GateNetwork, GateType, LogicSim};
-pub use parse::VcbParser;
+use explore::{compile_network, BoardNode};
+use parse::VcbPlainBoard;
+pub use parse::{VcbInput, VcbParser};
+use trace::*;
 
 use anyhow::{anyhow, Context};
 use crossterm::style::{Color, Colors, Print, ResetColor, SetColors, Stylize};
-use crossterm::QueueableCommand;
+use crossterm::{terminal, QueueableCommand};
 
 use std::array::from_fn;
 use std::collections::BTreeSet;
@@ -18,15 +21,6 @@ use std::io::{stdout, Write};
 use std::mem::size_of;
 use std::thread::sleep;
 use std::time::Duration;
-
-#[derive(Clone)]
-pub enum VcbInput {
-    BlueprintLegacy(String),
-    Blueprint(String),
-    WorldLegacy(String),
-    World(String),
-}
-use explore::{compile_network, BoardNode};
 
 pub struct VcbBoard<T: LogicSim> {
     traces: Vec<Trace>,
@@ -40,7 +34,7 @@ pub struct VcbBoard<T: LogicSim> {
 }
 
 impl<T: LogicSim> VcbBoard<T> {
-    fn new(plain: parse::VcbPlainBoard, optimize: bool) -> Self {
+    fn new(plain: VcbPlainBoard, optimize: bool) -> Self {
         let (height, width, nodes, elements, network) = compile_network::<T>(&plain);
         let element_ids_external: Vec<_> = (0..elements.len())
             .map(|id| Self::element_id_to_external_id(&elements, &nodes, id))
@@ -134,7 +128,7 @@ impl<T: LogicSim> VcbBoard<T> {
     }
     fn print_compact(&self) -> Result<(), std::io::Error> {
         let mut stdout = stdout();
-        let (sx, sy) = crossterm::terminal::size()?;
+        let (sx, sy) = terminal::size()?;
         stdout.queue(Print(format!(
             "{:?} {:?}\n",
             (sx, sy),

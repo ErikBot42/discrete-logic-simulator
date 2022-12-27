@@ -1,6 +1,15 @@
 
 use super::*;
 
+#[derive(Clone)]
+pub enum VcbInput {
+    BlueprintLegacy(String),
+    Blueprint(String),
+    WorldLegacy(String),
+    World(String),
+}
+
+
 fn zstd_decompress(data: &[u8], num_traces: usize) -> std::io::Result<Vec<u8>> {
     const RGBA_SIZE: usize = 4;
     timed!(
