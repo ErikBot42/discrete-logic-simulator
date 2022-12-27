@@ -385,7 +385,7 @@ struct BoardNode {
     inputs: BTreeSet<usize>,
     outputs: BTreeSet<usize>,
     kind: GateType,
-    init_state: bool,
+    initial_state: bool,
     network_id: Option<usize>,
 }
 impl BoardNode {
@@ -394,7 +394,7 @@ impl BoardNode {
         BoardNode {
             inputs: BTreeSet::new(),
             outputs: BTreeSet::new(),
-            init_state: false,
+            initial_state: false,
             kind: trace.to_gatetype(),
             network_id: None,
         }
@@ -411,18 +411,34 @@ pub struct VcbBoard<T: LogicSim> {
 }
 
 impl<T: LogicSim> VcbBoard<T> {
+    // element id to internal compiled network id
+    fn element_id_to_internal_id(&self, id: usize) -> Option<usize> {
+        self.elements[id]
+            .id
+            .and_then(|id| self.nodes[id].network_id)
+            .map(|id| self.compiled_network.to_internal_id(id))
+    }
+    fn get_state_element(&self, id: usize) -> bool {
+        self.element_id_to_internal_id(id)
+            .map(|id| self.compiled_network.get_state(id))
+            .unwrap_or_default()
+    }
+
     /// For regression testing
     #[must_use]
     pub fn make_state_vec(&self) -> Vec<bool> {
         let mut a = Vec::new();
         for i in 0..self.elements.len() {
-            a.push(match self.elements[i].id {
-                None => false,
-                Some(node_id) => match self.nodes[node_id].network_id {
+            a.push(
+                /*self.get_state_element(i),*/
+                match self.elements[i].id {
                     None => false,
-                    Some(id) => self.compiled_network.get_state(id),
+                    Some(node_id) => match self.nodes[node_id].network_id {
+                        None => false,
+                        Some(id) => self.compiled_network.get_state(id),
+                    },
                 },
-            });
+            );
         }
         a
     }
@@ -469,7 +485,7 @@ impl<T: LogicSim> VcbBoard<T> {
 
             // add vertexes to network
             for node in &mut nodes {
-                node.network_id = Some(network.add_vertex(node.kind));
+                node.network_id = Some(network.add_vertex(node.kind, node.initial_state));
             }
             // add edges to network
             for (i, node) in nodes.iter().enumerate() {
@@ -607,7 +623,6 @@ impl<T: LogicSim> VcbBoard<T> {
         // if prev_id is Some, merge should be done.
         // don't merge if id already exists, since that wouldn't make sense
 
-        // all here is correct
         let this = &elements[TryInto::<usize>::try_into(this_x).unwrap()];
         let this_kind = this.trace;
 

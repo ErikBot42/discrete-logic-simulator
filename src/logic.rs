@@ -161,12 +161,12 @@ pub(crate) struct Gate {
     // TODO: "do not merge" flag for gates that are "volatile", for example handling IO
 }
 impl Gate {
-    fn new(kind: GateType) -> Self {
+    fn new(kind: GateType, initial_state: bool) -> Self {
         Gate {
             inputs: Vec::new(),
             outputs: Vec::new(),
             kind,
-            initial_state: false,
+            initial_state,
         }
     }
     fn is_propably_constant(&self) -> bool {
