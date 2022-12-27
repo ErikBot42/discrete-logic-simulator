@@ -128,7 +128,7 @@ mod tests {
                     //correct = false;
                     //break;
                 }
-                optimized_simd.compiled_network.update();
+                optimized_simd.logic_sim.update();
                 optimized.update();
             }
         }

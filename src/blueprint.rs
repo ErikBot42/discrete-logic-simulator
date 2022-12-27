@@ -27,7 +27,6 @@ pub enum VcbInput {
 }
 
 /// Represents one gate or trace
-#[derive(Debug)]
 struct BoardNode {
     inputs: BTreeSet<usize>,
     outputs: BTreeSet<usize>,
@@ -49,58 +48,17 @@ impl BoardNode {
     }
 }
 
-#[derive(Debug)]
 pub struct VcbBoard<T: LogicSim> {
     traces: Vec<Trace>,
     element_ids: Vec<Option<usize>>,
     elements: Vec<BoardElement>,
     nodes: Vec<BoardNode>,
-    pub(crate) compiled_network: T,
+    pub(crate) logic_sim: T,
     pub(crate) width: usize,
     pub(crate) height: usize,
 }
 
 impl<T: LogicSim> VcbBoard<T> {
-    // element id to internal compiled network id
-    fn element_id_to_internal_id(
-        elements: &[BoardElement],
-        nodes: &[BoardNode],
-        compiled_network: &T,
-        id: usize,
-    ) -> Option<usize> {
-        elements[id]
-            .id
-            .and_then(|id| nodes[id].network_id)
-            .map(|id| compiled_network.to_internal_id(id))
-    }
-    fn get_state_element(&self, id: usize) -> bool {
-        //Self::element_id_to_internal_id(&self.elements, &self.nodes, &self.compiled_network, id)
-        self.element_ids[id]
-            .map(|id| self.compiled_network.get_state_internal(id))
-            .unwrap_or_default()
-    }
-
-    /// For regression testing
-    #[must_use]
-    pub fn make_state_vec(&self) -> Vec<bool> {
-        let mut a = Vec::new();
-        for i in 0..self.elements.len() {
-            a.push(self.get_state_element(i));
-        }
-        a
-    }
-    #[must_use]
-    #[cfg(test)]
-    pub(crate) fn make_inner_state_vec(&self) -> Vec<bool> {
-        self.compiled_network.get_state_vec()
-    }
-    pub fn update_i(&mut self, iterations: usize) {
-        self.compiled_network.update_i(iterations);
-    }
-    #[inline(always)]
-    pub fn update(&mut self) {
-        self.compiled_network.update();
-    }
     fn new(plain: parse::VcbPlainBoard, optimize: bool) -> Self {
         let height = plain.height;
         let width = plain.width;
@@ -162,10 +120,52 @@ impl<T: LogicSim> VcbBoard<T> {
             traces: plain.traces,
             elements,
             nodes,
-            compiled_network,
+            logic_sim: compiled_network,
             width,
             height,
         }
+    }
+    fn get_state_element(&self, id: usize) -> bool {
+        //Self::element_id_to_internal_id(&self.elements, &self.nodes, &self.compiled_network, id)
+        self.element_ids[id]
+            .map(|id| self.logic_sim.get_state_internal(id))
+            .unwrap_or_default()
+    }
+
+
+    // element id to internal compiled network id
+    fn element_id_to_internal_id(
+        elements: &[BoardElement],
+        nodes: &[BoardNode],
+        compiled_network: &T,
+        id: usize,
+    ) -> Option<usize> {
+        elements[id]
+            .id
+            .and_then(|id| nodes[id].network_id)
+            .map(|id| compiled_network.to_internal_id(id))
+    }
+
+    /// For regression testing
+    #[must_use]
+    pub fn make_state_vec(&self) -> Vec<bool> {
+        let mut a = Vec::new();
+        for i in 0..self.elements.len() {
+            a.push(self.get_state_element(i));
+        }
+        a
+    }
+    #[must_use]
+    #[cfg(test)]
+    pub(crate) fn make_inner_state_vec(&self) -> Vec<bool> {
+        self.logic_sim.get_state_vec()
+    }
+    pub fn update_i(&mut self, iterations: usize) {
+        self.logic_sim.update_i(iterations);
+    }
+    #[inline(always)]
+    pub fn update(&mut self) {
+        self.logic_sim.update();
     }
     fn add_connection(nodes: &mut [BoardNode], connection: (usize, usize), swp_dir: bool) {
         let (start, end) = if swp_dir {
@@ -509,7 +509,6 @@ impl<T: LogicSim> VcbBoard<T> {
 /// Represents one pixel.
 /// It is probably a mistake to
 /// make a copy of this type.
-#[derive(Debug)]
 struct BoardElement {
     trace: Trace,
     id: Option<usize>,
@@ -528,7 +527,7 @@ impl BoardElement {
         let format = |debug: Option<bool>, id: usize| match debug {
             None => "  ".to_string(),
             Some(true) => {
-                format!("{:>2}", board.compiled_network.to_internal_id(id))
+                format!("{:>2}", board.logic_sim.to_internal_id(id))
             },
             Some(false) => {
                 format!("{id:>2}")
@@ -539,7 +538,7 @@ impl BoardElement {
         let tmpstr = if let Some(t) = self.id {
             state = board.nodes[t]
                 .network_id
-                .map(|i| board.compiled_network.get_state(i))
+                .map(|i| board.logic_sim.get_state(i))
                 .unwrap_or_default();
             format(debug_inner, t % 100)
         } else {
@@ -562,7 +561,7 @@ impl BoardElement {
             .map(|t| {
                 board.nodes[t]
                     .network_id
-                    .map(|i| board.compiled_network.get_state(i))
+                    .map(|i| board.logic_sim.get_state(i))
                     .unwrap_or_default()
             })
             .unwrap_or_default()
