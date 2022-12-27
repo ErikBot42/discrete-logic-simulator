@@ -24,7 +24,7 @@ use std::time::Duration;
 
 pub struct VcbBoard<T: LogicSim> {
     traces: Vec<Trace>,
-    element_ids: Vec<Option<usize>>,
+    element_ids_internal: Vec<Option<usize>>,
     element_ids_external: Vec<Option<usize>>, // to debug
     elements: Vec<BoardElement>,
     nodes: Vec<BoardNode>,
@@ -32,12 +32,19 @@ pub struct VcbBoard<T: LogicSim> {
     pub(crate) width: usize,
     pub(crate) height: usize,
 }
-
 impl<T: LogicSim> VcbBoard<T> {
     fn new(plain: VcbPlainBoard, optimize: bool) -> Self {
+        fn element_id_to_external_id(
+            elements: &[BoardElement],
+            nodes: &[BoardNode],
+            id: usize,
+        ) -> Option<usize> {
+            elements[id].id.and_then(|id| nodes[id].network_id)
+        }
+
         let (height, width, nodes, elements, network) = compile_network::<T>(&plain);
         let element_ids_external: Vec<_> = (0..elements.len())
-            .map(|id| Self::element_id_to_external_id(&elements, &nodes, id))
+            .map(|id| element_id_to_external_id(&elements, &nodes, id))
             .collect();
         let logic_sim: T = network.compiled(optimize);
         let element_ids: Vec<_> = element_ids_external
@@ -46,7 +53,7 @@ impl<T: LogicSim> VcbBoard<T> {
             .collect();
 
         VcbBoard {
-            element_ids,
+            element_ids_internal: element_ids,
             element_ids_external,
             traces: plain.traces,
             elements,
@@ -57,7 +64,6 @@ impl<T: LogicSim> VcbBoard<T> {
         }
     }
 }
-
 impl<T: LogicSim> VcbBoard<T> {
     pub fn update_i(&mut self, iterations: usize) {
         self.logic_sim.update_i(iterations);
@@ -67,65 +73,90 @@ impl<T: LogicSim> VcbBoard<T> {
         self.logic_sim.update();
     }
     /// For regression testing
+    /// Get state for every pixel
     #[must_use]
+    #[cfg(test)]
     pub fn make_state_vec(&self) -> Vec<bool> {
-        let mut a = Vec::new();
-        for i in 0..self.elements.len() {
-            a.push(self.get_state_element(i));
-        }
-        a
+        (0..self.traces.len())
+            .map(|i| self.get_state_element(i))
+            .collect()
     }
-    pub fn print_marked(&self, marked: &[usize]) {
-        println!("\nBoard:");
-        for y in 0..self.height {
-            for x in 0..self.width {
-                let i = x + y * self.width;
-                let element = &self.elements[i];
-                element.print(
-                    self,
-                    i,
-                    element.id.map_or(false, |i| marked.contains(&i)),
-                    Some(true),
-                );
-            }
-            println!();
-        }
-    }
-}
-
-impl<T: LogicSim> VcbBoard<T> {
-    fn get_state_element(&self, id: usize) -> bool {
-        self.element_ids[id]
-            .map(|id| self.logic_sim.get_state_internal(id))
-            .unwrap_or_default()
-    }
-    fn get_color_element(&self, id: usize) -> [u8; 4] {
-        self.traces[id].get_color(self.get_state_element(id))
-    }
-    fn element_id_to_external_id(
-        elements: &[BoardElement],
-        nodes: &[BoardNode],
-        id: usize,
-    ) -> Option<usize> {
-        elements[id].id.and_then(|id| nodes[id].network_id)
-    }
-
     #[must_use]
     #[cfg(test)]
     pub(crate) fn make_inner_state_vec(&self) -> Vec<bool> {
         self.logic_sim.get_state_vec()
     }
+}
 
-    fn print_inner(&self, debug_inner: Option<bool>) {
+impl<T: LogicSim> VcbBoard<T> {
+    /// internal id -> state
+    #[must_use]
+    fn get_state_internal_id(&self, id: usize) -> bool {
+        self.logic_sim.get_state_internal(id)
+    }
+    /// pixel -> state
+    #[must_use]
+    fn get_state_element(&self, id: usize) -> bool {
+        self.get_internal_id(id)
+            .map(|id| self.get_state_internal_id(id))
+            .unwrap_or_default()
+    }
+    /// pixel -> external_id
+    #[must_use]
+    fn get_external_id(&self, id: usize) -> Option<usize> {
+        self.element_ids_external[id]
+    }
+    /// pixel -> internal_id
+    #[must_use]
+    fn get_internal_id(&self, id: usize) -> Option<usize> {
+        self.element_ids_internal[id]
+    }
+    /// pixel -> color
+    #[must_use]
+    fn get_color_element(&self, id: usize) -> [u8; 4] {
+        self.traces[id].get_color(self.get_state_element(id))
+    }
+    /// x,y -> pixel
+    fn pixel_id(&self, x: usize, y: usize) -> usize {
+        x + y * self.width
+    }
+}
+impl<T: LogicSim> VcbBoard<T> {
+    fn print_generic_debug<F: Fn(usize) -> String>(&self, f: F) {
         println!("\nBoard:");
         for y in 0..self.height {
             for x in 0..self.width {
-                let i = x + y * self.width;
-                self.elements[i].print(self, i, false, debug_inner);
+                let id = self.pixel_id(x, y);
+                let s = f(id);
+                let col = self.get_color_element(id);
+                let col1: Color = (col[0], col[1], col[2]).into();
+                let col2: Color = (255 - col[0], 255 - col[1], 255 - col[2]).into();
+                print!("{}", s.on(col1).with(col2));
             }
             println!();
         }
     }
+}
+impl<T: LogicSim> VcbBoard<T> {
+    fn print_inner(&self, debug_inner: Option<bool>) {
+        let format = |id: usize| {
+            debug_inner
+                .map(|s| {
+                    if s {
+                        self.get_internal_id(id)
+                    } else {
+                        self.get_external_id(id)
+                    }
+                    .map(|s| s % 100)
+                })
+                .flatten()
+                .map(|s| format!("{s:>2}"))
+                .unwrap_or("  ".to_string())
+        };
+
+        self.print_generic_debug(format);
+    }
+
     fn print_compact(&self) -> Result<(), std::io::Error> {
         let mut stdout = stdout();
         let (sx, sy) = terminal::size()?;
@@ -196,20 +227,20 @@ impl<T: LogicSim> VcbBoard<T> {
         self.print_compact()
     }
     fn print_legend<F: Fn(Trace) -> String, U: Fn(Trace) -> String>(&self, f1: F, f2: U) {
-        for t in self.get_current_traces() {
+        fn get_current_traces<T: LogicSim>(b: &VcbBoard<T>) -> Vec<Trace> {
+            b.elements
+                .iter()
+                .map(|e| e.trace)
+                .fold(std::collections::HashSet::new(), |mut set, trace| {
+                    set.insert(trace);
+                    set
+                })
+                .into_iter()
+                .collect()
+        }
+        for t in get_current_traces(&self) {
             println!("{} = {}", f1(t), f2(t));
         }
-    }
-    fn get_current_traces(&self) -> Vec<Trace> {
-        self.elements
-            .iter()
-            .map(|e| e.trace)
-            .fold(std::collections::HashSet::new(), |mut set, trace| {
-                set.insert(trace);
-                set
-            })
-            .into_iter()
-            .collect()
     }
 
     /// # Panics
@@ -324,33 +355,7 @@ impl BoardElement {
     ) {
         let self_id = self.id;
         let self_trace = self.trace;
-        let format = |debug: Option<bool>, id: usize| match debug {
-            None => "  ".to_string(),
-            Some(true) => {
-                format!("{:>2}", board.logic_sim.to_internal_id(id))
-            },
-            Some(false) => {
-                format!("{id:>2}")
-            },
-        };
-
-        let mut state = false;
-        let tmpstr = if let Some(t) = self_id {
-            state = board.nodes[t]
-                .network_id
-                .map(|i| board.logic_sim.get_state(i))
-                .unwrap_or_default();
-            format(debug_inner, t % 100)
-        } else {
-            "  ".to_string()
-        };
-        let col = self_trace.get_color(state);
-        let col1: Color = (col[0], col[1], col[2]).into();
-        let col2: Color = (255 - col[0], 255 - col[1], 255 - col[2]).into();
-
-        let (col1, col2) = if marked { (col2, col1) } else { (col1, col2) };
-
-        print!("{}", tmpstr.on(col1).with(col2));
+        Self::print_element(board, self_id, debug_inner, self_trace, marked);
     }
     fn get_state<T: LogicSim>(&self, board: &VcbBoard<T>) -> bool {
         self.id
@@ -364,5 +369,37 @@ impl BoardElement {
     }
     fn get_color<T: LogicSim>(&self, board: &VcbBoard<T>) -> [u8; 4] {
         self.trace.get_color(self.get_state(board))
+    }
+    fn print_element<T: LogicSim>(
+        board: &VcbBoard<T>,
+        self_id: Option<usize>,
+        debug_inner: Option<bool>,
+        self_trace: Trace,
+        marked: bool,
+    ) {
+        let format = |debug: Option<bool>, id: usize| match debug {
+            None => "  ".to_string(),
+            Some(true) => {
+                format!("{:>2}", board.logic_sim.to_internal_id(id))
+            },
+            Some(false) => {
+                format!("{id:>2}")
+            },
+        };
+        let mut state = false;
+        let tmpstr = if let Some(t) = self_id {
+            state = board.nodes[t]
+                .network_id
+                .map(|i| board.logic_sim.get_state(i))
+                .unwrap_or_default();
+            format(debug_inner, t % 100)
+        } else {
+            "  ".to_string()
+        };
+        let col = self_trace.get_color(state);
+        let col1: Color = (col[0], col[1], col[2]).into();
+        let col2: Color = (255 - col[0], 255 - col[1], 255 - col[2]).into();
+        let (col1, col2) = if marked { (col2, col1) } else { (col1, col2) };
+        print!("{}", tmpstr.on(col1).with(col2));
     }
 }

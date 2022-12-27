@@ -123,7 +123,7 @@ mod tests {
                     .map(|(j, (_, _))| j)
                     .collect();
                 if diff_ids.len() != 0 {
-                    optimized.print_marked(&diff_ids);
+                    //optimized.print_marked(&diff_ids);
                     panic!("simd/non simd mismatch for test {name}, in iteration {i} at positions {diff_ids:?}");
                     //correct = false;
                     //break;
@@ -200,7 +200,7 @@ mod tests {
                     .join("\n"),
             );
 
-            reference.print_marked(&diff.iter().map(|d| d.0).collect::<Vec<_>>());
+            //reference.print_marked(&diff.iter().map(|d| d.0).collect::<Vec<_>>());
 
             panic!("state differs with reference after {iteration} iterations in test {name}");
         }
