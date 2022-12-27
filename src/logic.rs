@@ -1012,12 +1012,28 @@ fn pack_sparse_matrix(
     // TODO: pack into single array
     let mut packed_output_indexes: Vec<IndexType> = Vec::new();
     let mut packed_outputs: Vec<IndexType> = Vec::new();
-    for outputs in outputs_list {
+    for mut outputs in outputs_list {
         packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
-        packed_outputs.append(&mut outputs.clone());
+        packed_outputs.append(&mut outputs);
     }
     packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
     (packed_output_indexes, packed_outputs)
+}
+
+fn repack_single_sparse_matrix(
+    packed_output_indexes: &[IndexType],
+    packed_outputs: &[IndexType],
+) -> Vec<IndexType> {
+    let offset = packed_output_indexes.len();
+    let mut arr: Vec<IndexType> =
+        Vec::with_capacity(packed_output_indexes.len() + packed_outputs.len());
+    arr.extend(
+        packed_output_indexes
+            .into_iter()
+            .map(|x| *x + IndexType::try_from(offset).unwrap()),
+    );
+    arr.extend_from_slice(packed_outputs);
+    arr
 }
 
 #[inline(always)]
@@ -1084,8 +1100,9 @@ pub struct BitPackSimInner /*<const LATCH: bool>*/ {
     //kind: Vec<GateType>,
     is_xor: Vec<BitInt>,      // intersperse candidate
     is_inverted: Vec<BitInt>, // intersperse candidate
-    packed_output_indexes: Vec<IndexType>,
-    packed_outputs: Vec<IndexType>,
+    //packed_output_indexes: Vec<IndexType>,
+    //packed_outputs: Vec<IndexType>,
+    single_packed_outputs: Vec<IndexType>,
 
     update_list: UpdateList,
     cluster_update_list: UpdateList,
@@ -1194,7 +1211,7 @@ impl BitPackSimInner /*<LATCH>*/ {
         static mut AVG_ONES: f64 = 6.0;
         const AVG_ONES_WINDOW: f64 = 4_000_000.0;
 
-        unsafe { println!("{AVG_ONES}") };
+        //unsafe { println!("{AVG_ONES}") };
         for (group_id, is_inverted, is_xor) in unsafe { update_list.iter() }
             .map(|g| g as usize)
             .map(|group_id| {
@@ -1221,10 +1238,10 @@ impl BitPackSimInner /*<LATCH>*/ {
             let changed = *state ^ new_state;
             // println!("{changed:#068b}");
             // println!("{}", changed.count_ones());
-            unsafe {
-                AVG_ONES = changed.count_ones() as f64 / AVG_ONES_WINDOW
-                    + AVG_ONES * (AVG_ONES_WINDOW - 1.0) / AVG_ONES_WINDOW;
-            }
+            //unsafe {
+            //    AVG_ONES = changed.count_ones() as f64 / AVG_ONES_WINDOW
+            //        + AVG_ONES * (AVG_ONES_WINDOW - 1.0) / AVG_ONES_WINDOW;
+            //}
 
             if changed == 0 {
                 continue;
@@ -1234,8 +1251,10 @@ impl BitPackSimInner /*<LATCH>*/ {
 
             let group_output_count = *unsafe { self.group_output_count.get_unchecked(group_id) };
 
-            let packed_output_indexes = &self.packed_output_indexes;
-            let packed_outputs = &self.packed_outputs;
+            let packed_output_indexes = &self.single_packed_outputs;
+            let packed_outputs = &self.single_packed_outputs;
+            //let packed_output_indexes = &self.packed_output_indexes;
+            //let packed_outputs = &self.packed_outputs;
             let in_update_list = &mut self.in_update_list;
             Self::propagate_acc(
                 changed,
@@ -1340,6 +1359,9 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
                 .iter()
                 .map(|g| g.as_ref().map_or_else(Vec::new, |g| g.outputs.clone())),
         );
+        let single_packed_outputs =
+            repack_single_sparse_matrix(&packed_output_indexes, &packed_outputs);
+
         let state: Vec<_> = gates
             .iter()
             .map(|g| g.as_ref().map_or(false, |g| g.initial_state))
@@ -1403,8 +1425,9 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
             //kind,
             is_xor,
             is_inverted,
-            packed_output_indexes,
-            packed_outputs,
+            //packed_output_indexes,
+            //packed_outputs,
+            single_packed_outputs,
             update_list,
             cluster_update_list,
             in_update_list,
