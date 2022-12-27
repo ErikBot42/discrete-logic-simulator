@@ -59,6 +59,42 @@ pub struct VcbBoard<T: LogicSim> {
     pub(crate) height: usize,
 }
 
+// API
+impl<T: LogicSim> VcbBoard<T> {
+    pub fn update_i(&mut self, iterations: usize) {
+        self.logic_sim.update_i(iterations);
+    }
+    #[inline(always)]
+    pub fn update(&mut self) {
+        self.logic_sim.update();
+    }
+    /// For regression testing
+    #[must_use]
+    pub fn make_state_vec(&self) -> Vec<bool> {
+        let mut a = Vec::new();
+        for i in 0..self.elements.len() {
+            a.push(self.get_state_element(i));
+        }
+        a
+    }
+    pub fn print_marked(&self, marked: &[usize]) {
+        println!("\nBoard:");
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let i = x + y * self.width;
+                let element = &self.elements[i];
+                element.print(
+                    self,
+                    i,
+                    element.id.map_or(false, |i| marked.contains(&i)),
+                    Some(true),
+                );
+            }
+            println!();
+        }
+    }
+}
+
 impl<T: LogicSim> VcbBoard<T> {
     fn new(plain: parse::VcbPlainBoard, optimize: bool) -> Self {
         let height = plain.height;
@@ -132,25 +168,13 @@ impl<T: LogicSim> VcbBoard<T> {
         }
     }
     fn get_state_element(&self, id: usize) -> bool {
-        //Self::element_id_to_internal_id(&self.elements, &self.nodes, &self.compiled_network, id)
         self.element_ids[id]
             .map(|id| self.logic_sim.get_state_internal(id))
             .unwrap_or_default()
     }
-
-    // element id to internal compiled network id
-    fn element_id_to_internal_id(
-        elements: &[BoardElement],
-        nodes: &[BoardNode],
-        compiled_network: &T,
-        id: usize,
-    ) -> Option<usize> {
-        elements[id]
-            .id
-            .and_then(|id| nodes[id].network_id)
-            .map(|id| compiled_network.to_internal_id(id))
+    fn get_color_element(&self, id: usize) -> [u8; 4] {
+        self.traces[id].get_color(self.get_state_element(id))
     }
-
     fn element_id_to_external_id(
         elements: &[BoardElement],
         nodes: &[BoardNode],
@@ -159,44 +183,12 @@ impl<T: LogicSim> VcbBoard<T> {
         elements[id].id.and_then(|id| nodes[id].network_id)
     }
 
-    /// For regression testing
-    #[must_use]
-    pub fn make_state_vec(&self) -> Vec<bool> {
-        let mut a = Vec::new();
-        for i in 0..self.elements.len() {
-            a.push(self.get_state_element(i));
-        }
-        a
-    }
     #[must_use]
     #[cfg(test)]
     pub(crate) fn make_inner_state_vec(&self) -> Vec<bool> {
         self.logic_sim.get_state_vec()
     }
-    pub fn update_i(&mut self, iterations: usize) {
-        self.logic_sim.update_i(iterations);
-    }
-    #[inline(always)]
-    pub fn update(&mut self) {
-        self.logic_sim.update();
-    }
 
-    pub fn print_marked(&self, marked: &[usize]) {
-        println!("\nBoard:");
-        for y in 0..self.height {
-            for x in 0..self.width {
-                let i = x + y * self.width;
-                let element = &self.elements[i];
-                element.print(
-                    self,
-                    i,
-                    element.id.map_or(false, |i| marked.contains(&i)),
-                    Some(true),
-                );
-            }
-            println!();
-        }
-    }
     fn print_inner(&self, debug_inner: Option<bool>) {
         println!("\nBoard:");
         for y in 0..self.height {
@@ -448,133 +440,5 @@ impl BoardElement {
     }
 }
 
-mod explore {
-    use super::*;
-    fn add_connection(nodes: &mut [BoardNode], connection: (usize, usize), swp_dir: bool) {
-        let (start, end) = if swp_dir {
-            (connection.1, connection.0)
-        } else {
-            connection
-        };
-        assert!(start != end);
-        let a = nodes[start].inputs.insert(end);
-        let b = nodes[end].outputs.insert(start);
-        assert!(a == b);
-        assert_ne!(
-            nodes[start].kind == GateType::Cluster,
-            nodes[end].kind == GateType::Cluster
-        );
-    }
+pub mod explore;
 
-    // Connect gate with immediate neighbor
-    // pre: this is gate, this_x valid, this has id.
-    fn connect_id(
-        elements: &mut Vec<BoardElement>,
-        nodes: &mut Vec<BoardNode>,
-        width: i32,
-        this_x: i32,
-        this_id: usize,
-    ) {
-        let this = &mut elements[TryInto::<usize>::try_into(this_x).unwrap()];
-        let this_kind = this.trace;
-        assert!(this_kind.is_gate());
-        assert!(this.id.is_some());
-
-        'side: for dx in [1, -1, width, -width] {
-            let other_x = this_x + dx;
-            if this_x % width != other_x % width && this_x / width != other_x / width {
-                continue 'side; // prevent wrapping connections
-            }
-            let other = unwrap_or_else!(elements.get(other_x as usize), continue 'side);
-            let dir = match other.trace {
-                Trace::Read => false,
-                Trace::Write => true,
-                _ => continue,
-            };
-            let other_id =
-                unwrap_or_else!(other.id, { add_new_id(elements, nodes, width, other_x) });
-            add_connection(nodes, (this_id, other_id), dir);
-        }
-    }
-
-    // pre: this trace is logic
-    #[must_use]
-    fn add_new_id(
-        elements: &mut Vec<BoardElement>,
-        nodes: &mut Vec<BoardNode>,
-        width: i32,
-        this_x: i32,
-    ) -> usize {
-        let this = &elements[TryInto::<usize>::try_into(this_x).unwrap()];
-        assert!(this.trace.is_logic());
-
-        // create a new id.
-        let this_id = nodes.len();
-        nodes.push(BoardNode::new(this.trace));
-
-        // fill with this_id
-        fill_id(elements, width, this_x, this_id);
-        this_id
-    }
-
-    /// floodfill with `id` at `this_x`
-    /// pre: logic trace, otherwise id could have been
-    /// assigned to nothing, `this_x` valid
-    fn fill_id(elements: &mut Vec<BoardElement>, width: i32, this_x: i32, id: usize) {
-        let this = &mut elements[this_x as usize];
-        let this_kind = this.trace;
-        assert!(this_kind.is_logic());
-        match this.id {
-            None => this.id = Some(id),
-            Some(this_id) => {
-                assert_eq!(this_id, id);
-                return;
-            },
-        }
-        'side: for dx in [1, -1, width, -width] {
-            'forward: for ddx in [1, 2] {
-                let other_x = this_x + dx * ddx;
-                if this_x % width != other_x % width && this_x / width != other_x / width {
-                    continue 'side; // prevent wrapping connections
-                }
-                let other_kind =
-                    unwrap_or_else!(elements.get(other_x as usize), continue 'side).trace;
-                if other_kind == Trace::Cross {
-                    continue 'forward;
-                }
-                if other_kind.is_same_as(this_kind) {
-                    fill_id(elements, width, other_x, id);
-                }
-                continue 'side;
-            }
-        }
-    }
-
-    // this HAS to be recursive since gates have arbitrary shapes.
-    #[inline]
-    pub(super) fn explore(
-        elements: &mut Vec<BoardElement>,
-        nodes: &mut Vec<BoardNode>,
-        width: i32,
-        this_x: i32,
-    ) {
-        // if prev_id is Some, merge should be done.
-        // don't merge if id already exists, since that wouldn't make sense
-
-        let this = &elements[TryInto::<usize>::try_into(this_x).unwrap()];
-        let this_kind = this.trace;
-
-        if !this_kind.is_logic() {
-            return;
-        }
-
-        let this_id = unwrap_or_else!(this.id, { add_new_id(elements, nodes, width, this_x) });
-
-        assert!(this_kind.is_logic());
-        if !this_kind.is_gate() {
-            return;
-        }
-
-        connect_id(elements, nodes, width, this_x, this_id);
-    }
-}
