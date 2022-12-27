@@ -451,7 +451,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
 
         let mut in_update_list: Vec<bool> = (0..number_of_gates).map(|_| false).collect();
-        unsafe { update_list.iter().enumerate() }.for_each(|(_id, i)| {
+        update_list.iter().enumerate().for_each(|(_id, i)| {
             in_update_list[i as usize] = true;
             //dbg!(id);
             //if let Some(i) = in_update_list.get_mut(i as usize) {
@@ -574,9 +574,9 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         cluster_update_list: &mut UpdateList,
     ) {
         let (update_list, next_update_list) = if CLUSTER {
-            (unsafe { cluster_update_list.get_slice() }, gate_update_list)
+            (cluster_update_list.get_slice(), gate_update_list)
         } else {
-            (unsafe { gate_update_list.get_slice() }, cluster_update_list)
+            (gate_update_list.get_slice(), cluster_update_list)
         };
         Self::update_gates_in_list::<CLUSTER>(inner, update_list, next_update_list);
     }
@@ -1196,9 +1196,17 @@ impl BitPackSimInner /*<LATCH>*/ {
     }
     // pass by reference intentional to use intrinsics.
     #[inline(always)] // function used at single call site
-    fn calc_state_pack(acc_p: &BitAccPack, is_xor: &BitInt, is_inverted: &BitInt) -> BitInt {
-        let (acc_zero, acc_parity) = Self::extract_acc_info_simd(acc_p);
-        ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
+    fn calc_state_pack<const CLUSTER: bool>(
+        acc_p: &BitAccPack,
+        is_xor: &BitInt,
+        is_inverted: &BitInt,
+    ) -> BitInt {
+        if CLUSTER {
+            Self::acc_zero_simd(acc_p)
+        } else {
+            let (acc_zero, acc_parity) = Self::extract_acc_info_simd(acc_p);
+            ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
+        }
     }
     #[inline(always)] // function used at 2 call sites
     fn update_inner<const CLUSTER: bool>(&mut self) {
@@ -1226,7 +1234,7 @@ impl BitPackSimInner /*<LATCH>*/ {
             let state = unsafe { self.state.get_unchecked_mut(group_id) };
             let offset = group_id * Self::BITS;
             //debug_assert_eq!(self.kind[offset] == GateType::Cluster, CLUSTER);
-            let new_state = Self::calc_state_pack(
+            let new_state = Self::calc_state_pack::<CLUSTER>(
                 unsafe {
                     self.acc.get_unchecked(
                         offset / Self::BIT_ACC_GROUP, //..((offset + Self::BITS) / Self::BIT_ACC_GROUP),
@@ -1274,15 +1282,15 @@ impl BitPackSimInner /*<LATCH>*/ {
 
     #[inline(always)]
     fn propagate_acc(
-        mut changed: u64,
+        mut changed: BitInt,
         offset: usize,
         group_output_count: Option<u8>,
-        packed_output_indexes: &[u32],
-        new_state: u64,
-        packed_outputs: &[u32],
+        packed_output_indexes: &[IndexType],
+        new_state: BitInt,
+        packed_outputs: &[IndexType],
         acc: &mut [u8],
         in_update_list: &mut [bool],
-        next_update_list: &mut crate::raw_list::RawList<u32>,
+        next_update_list: &mut UpdateList,
     ) {
         while changed != 0 {
             let i_u32 = changed.trailing_zeros();
@@ -1441,7 +1449,7 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
     fn number_of_gates_external(&self) -> usize {
         self.translation_table.len()
     }
-    #[inline(always)] // function used at single call site
+    #[inline(never)] // function used at single call site
     fn update(&mut self) {
         self.update_inner::<false>();
         self.update_inner::<true>();
