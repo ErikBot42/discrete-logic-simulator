@@ -1431,7 +1431,7 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
     fn number_of_gates_external(&self) -> usize {
         self.translation_table.len()
     }
-    #[inline(never)] // function used at single call site
+    #[inline(always)] // function used at single call site
     fn update(&mut self) {
         self.update_inner::<false>();
         self.update_inner::<true>();
