@@ -428,7 +428,8 @@ impl<T: LogicSim> VcbBoard<T> {
             .map(|id| compiled_network.to_internal_id(id))
     }
     fn get_state_element(&self, id: usize) -> bool {
-        Self::element_id_to_internal_id(&self.elements, &self.nodes, &self.compiled_network, id)
+        //Self::element_id_to_internal_id(&self.elements, &self.nodes, &self.compiled_network, id)
+        self.element_ids[id]
             .map(|id| self.compiled_network.get_state_internal(id))
             .unwrap_or_default()
     }
@@ -507,7 +508,9 @@ impl<T: LogicSim> VcbBoard<T> {
         };
 
         let compiled_network = network.compiled(optimize);
-        let element_ids = Vec::new();
+        let element_ids = (0..elements.len())
+            .map(|id| Self::element_id_to_internal_id(&elements, &nodes, &compiled_network, id))
+            .collect();
         VcbBoard {
             element_ids,
             traces: plain.traces,
@@ -935,6 +938,14 @@ enum Trace {
     Filler,
 }
 impl Trace {
+    fn get_color<T: LogicSim>(&self, state: bool) -> [u8; 4] {
+        if state {
+            self.to_color_on()
+        } else {
+            self.to_color_off()
+        }
+    }
+
     #[rustfmt::skip]
     fn to_color_raw(self) -> [u8; 4] {
         match self {
@@ -1256,10 +1267,6 @@ impl BoardElement {
             .unwrap_or_default()
     }
     fn get_color<T: LogicSim>(&self, board: &VcbBoard<T>) -> [u8; 4] {
-        if self.get_state(board) {
-            self.trace.to_color_on()
-        } else {
-            self.trace.to_color_off()
-        }
+        self.trace.get_color::<T>(self.get_state(board))
     }
 }
