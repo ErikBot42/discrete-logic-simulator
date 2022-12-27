@@ -1235,11 +1235,7 @@ impl BitPackSimInner /*<LATCH>*/ {
             let offset = group_id * Self::BITS;
             //debug_assert_eq!(self.kind[offset] == GateType::Cluster, CLUSTER);
             let new_state = Self::calc_state_pack::<CLUSTER>(
-                unsafe {
-                    self.acc.get_unchecked(
-                        offset / Self::BIT_ACC_GROUP, //..((offset + Self::BITS) / Self::BIT_ACC_GROUP),
-                    )
-                },
+                unsafe { self.acc.get_unchecked(group_id) },
                 is_xor,
                 is_inverted,
             );
@@ -1255,17 +1251,13 @@ impl BitPackSimInner /*<LATCH>*/ {
                 continue;
             }
             *state = new_state;
-            let acc: &mut [BitAcc] = cast_slice_mut(&mut self.acc);
-
-            let group_output_count = *unsafe { self.group_output_count.get_unchecked(group_id) };
-
             Self::propagate_acc(
                 changed,
                 offset,
-                group_output_count,
+                *unsafe { self.group_output_count.get_unchecked(group_id) },
                 new_state,
                 &self.single_packed_outputs,
-                acc,
+                cast_slice_mut(&mut self.acc),
                 &mut self.in_update_list,
                 next_update_list,
             );
@@ -1302,6 +1294,16 @@ impl BitPackSimInner /*<LATCH>*/ {
                     let base = *unsafe { single_packed_outputs.get_unchecked(offset) } as usize;
                     let x = x as usize;
                     (base + x * i_usize, base + x * (i_usize + 1))
+                    //unsafe {
+                    //    assert_assume!(
+                    //        cached.0 == *single_packed_outputs.get_unchecked(gate_id) as usize
+                    //    );
+                    //};
+                    //unsafe {
+                    //    assert_assume!(
+                    //        cached.1 == *single_packed_outputs.get_unchecked(gate_id + 1) as usize
+                    //    );
+                    //};
                 },
             );
 
