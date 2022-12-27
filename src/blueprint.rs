@@ -1,30 +1,20 @@
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::inline_always)]
 
+pub mod parse;
 use crate::logic::{GateNetwork, GateType, LogicSim};
+pub use parse::VcbParser;
+
 use anyhow::{anyhow, Context};
 use crossterm::style::{Color, Colors, Print, ResetColor, SetColors, Stylize};
 use crossterm::QueueableCommand;
+
 use std::array::from_fn;
 use std::collections::BTreeSet;
 use std::io::{stdout, Write};
 use std::mem::size_of;
 use std::thread::sleep;
 use std::time::Duration;
-
-fn zstd_decompress(data: &[u8], num_traces: usize) -> std::io::Result<Vec<u8>> {
-    const RGBA_SIZE: usize = 4;
-    timed!(
-        { zstd::bulk::decompress(data, num_traces * RGBA_SIZE) },
-        "zstd decompress in: {:?}"
-    )
-}
-fn base64_decode(data: &str) -> Result<Vec<u8>, base64::DecodeError> {
-    timed!(
-        base64::decode_config(data.trim(), base64::STANDARD),
-        "base64 decode in: {:?}"
-    )
-}
 
 #[derive(Clone)]
 pub enum VcbInput {
@@ -33,8 +23,6 @@ pub enum VcbInput {
     WorldLegacy(String),
     World(String),
 }
-pub mod parse;
-pub use parse::*;
 
 /// Represents one gate or trace
 #[derive(Debug)]

@@ -1,5 +1,20 @@
 
 use super::*;
+
+fn zstd_decompress(data: &[u8], num_traces: usize) -> std::io::Result<Vec<u8>> {
+    const RGBA_SIZE: usize = 4;
+    timed!(
+        { zstd::bulk::decompress(data, num_traces * RGBA_SIZE) },
+        "zstd decompress in: {:?}"
+    )
+}
+fn base64_decode(data: &str) -> Result<Vec<u8>, base64::DecodeError> {
+    timed!(
+        base64::decode_config(data.trim(), base64::STANDARD),
+        "base64 decode in: {:?}"
+    )
+}
+
 #[derive(Default)]
 pub struct VcbParser {}
 impl VcbParser {
