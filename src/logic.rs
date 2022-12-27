@@ -844,7 +844,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     }*/
 
     /// Reference impl
-    #[inline(never)]
+    #[inline(always)]
     fn propagate_delta_to_accs_scalar<F: FnMut(IndexType)>(
         delta_p: gate_status::Packed,
         id_packed: usize,
@@ -1259,20 +1259,14 @@ impl BitPackSimInner /*<LATCH>*/ {
 
             let group_output_count = *unsafe { self.group_output_count.get_unchecked(group_id) };
 
-            let packed_output_indexes = &self.single_packed_outputs;
-            let packed_outputs = &self.single_packed_outputs;
-            //let packed_output_indexes = &self.packed_output_indexes;
-            //let packed_outputs = &self.packed_outputs;
-            let in_update_list = &mut self.in_update_list;
             Self::propagate_acc(
                 changed,
                 offset,
                 group_output_count,
-                packed_output_indexes,
                 new_state,
-                packed_outputs,
+                &self.single_packed_outputs,
                 acc,
-                in_update_list,
+                &mut self.in_update_list,
                 next_update_list,
             );
         }
@@ -1285,9 +1279,8 @@ impl BitPackSimInner /*<LATCH>*/ {
         mut changed: BitInt,
         offset: usize,
         group_output_count: Option<u8>,
-        packed_output_indexes: &[IndexType],
         new_state: BitInt,
-        packed_outputs: &[IndexType],
+        single_packed_outputs: &[IndexType],
         acc: &mut [u8],
         in_update_list: &mut [bool],
         next_update_list: &mut UpdateList,
@@ -1301,24 +1294,16 @@ impl BitPackSimInner /*<LATCH>*/ {
             let (outputs_start, outputs_end) = group_output_count.map_or_else(
                 || {
                     (
-                        *unsafe { packed_output_indexes.get_unchecked(gate_id) } as usize,
-                        *unsafe { packed_output_indexes.get_unchecked(gate_id + 1) } as usize,
+                        *unsafe { single_packed_outputs.get_unchecked(gate_id) } as usize,
+                        *unsafe { single_packed_outputs.get_unchecked(gate_id + 1) } as usize,
                     )
                 },
                 |x| {
-                    let base = *unsafe { packed_output_indexes.get_unchecked(offset) } as usize;
+                    let base = *unsafe { single_packed_outputs.get_unchecked(offset) } as usize;
                     let x = x as usize;
                     (base + x * i_usize, base + x * (i_usize + 1))
                 },
             );
-
-            //let outputs_start =
-            //    *unsafe { packed_output_indexes.get_unchecked(gate_id) } as usize;
-            //let outputs_end =
-            //    *unsafe { packed_output_indexes.get_unchecked(gate_id + 1) } as usize;
-            //group_output_count.map(|x| unsafe {
-            //    assert_assume!(x as usize == outputs_end - outputs_start);
-            //});
 
             // TODO: Store # of outputs in a group if it's constant for the entire group.
 
@@ -1332,7 +1317,7 @@ impl BitPackSimInner /*<LATCH>*/ {
             //    assert_assume!(delta == 1 || delta == 0_u8.wrapping_sub(1));
             //}
 
-            for output in unsafe { packed_outputs.get_unchecked(outputs_start..outputs_end) }
+            for output in unsafe { single_packed_outputs.get_unchecked(outputs_start..outputs_end) }
                 .iter()
                 .map(|&i| i as usize)
             // Truncating cast needed for performance
@@ -1430,11 +1415,8 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
             translation_table,
             acc,
             state,
-            //kind,
             is_xor,
             is_inverted,
-            //packed_output_indexes,
-            //packed_outputs,
             single_packed_outputs,
             update_list,
             cluster_update_list,
