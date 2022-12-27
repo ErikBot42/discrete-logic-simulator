@@ -2,6 +2,7 @@
 #![allow(clippy::inline_always)]
 
 use trace::*;
+pub mod explore;
 pub mod parse;
 pub mod trace;
 use crate::logic::{GateNetwork, GateType, LogicSim};
@@ -95,58 +96,10 @@ impl<T: LogicSim> VcbBoard<T> {
     }
 }
 
+use explore::compile_network;
 impl<T: LogicSim> VcbBoard<T> {
     fn new(plain: parse::VcbPlainBoard, optimize: bool) -> Self {
-        let height = plain.height;
-        let width = plain.width;
-        let num_elements = width * height;
-
-        let mut nodes = Vec::new();
-        let elements = timed!(
-            {
-                let mut elements: Vec<_> = plain
-                    .traces
-                    .iter()
-                    .cloned()
-                    .map(BoardElement::new)
-                    .collect();
-                for x in 0..num_elements {
-                    explore::explore(
-                        &mut elements,
-                        &mut nodes,
-                        width.try_into().unwrap(),
-                        x.try_into().unwrap(),
-                    );
-                }
-                elements
-            },
-            "create elements: {:?}"
-        );
-
-        let network = {
-            let mut network = GateNetwork::default();
-
-            // add vertexes to network
-            for node in &mut nodes {
-                node.network_id = Some(network.add_vertex(node.kind, node.initial_state));
-            }
-            // add edges to network
-            for (i, node) in nodes.iter().enumerate() {
-                for input in &node.inputs {
-                    assert!(nodes[*input].outputs.contains(&i));
-                }
-                let mut inputs: Vec<usize> = node
-                    .inputs
-                    .clone()
-                    .into_iter()
-                    .map(|x| nodes[x].network_id.unwrap())
-                    .collect();
-                inputs.sort_unstable();
-                inputs.dedup();
-                network.add_inputs(node.kind, node.network_id.unwrap(), inputs);
-            }
-            network
-        };
+        let (height, width, nodes, elements, network) = compile_network::<T>(&plain);
         let element_ids_external: Vec<_> = (0..elements.len())
             .map(|id| Self::element_id_to_external_id(&elements, &nodes, id))
             .collect();
@@ -377,6 +330,7 @@ impl<T: LogicSim> VcbBoard<T> {
     }
 }
 
+
 /// Represents one pixel.
 /// It is probably a mistake to
 /// make a copy of this type.
@@ -439,6 +393,3 @@ impl BoardElement {
         self.trace.get_color(self.get_state(board))
     }
 }
-
-pub mod explore;
-
