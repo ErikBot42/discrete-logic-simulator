@@ -1,5 +1,27 @@
 use super::*;
 
+/// Represents one gate or trace
+pub(super) struct BoardNode {
+    inputs: BTreeSet<usize>,
+    outputs: BTreeSet<usize>,
+    kind: GateType,
+    initial_state: bool,
+    pub(crate) network_id: Option<usize>,
+}
+impl BoardNode {
+    #[must_use]
+    pub(super) fn new(trace: Trace) -> Self {
+        let (kind, initial_state) = trace.to_gatetype_state();
+        BoardNode {
+            inputs: BTreeSet::new(),
+            outputs: BTreeSet::new(),
+            initial_state,
+            kind,
+            network_id: None,
+        }
+    }
+}
+
 pub(super) fn compile_network<T: LogicSim>(
     plain: &parse::VcbPlainBoard,
 ) -> (usize, usize, Vec<BoardNode>, Vec<BoardElement>, GateNetwork) {

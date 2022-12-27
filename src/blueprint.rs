@@ -26,28 +26,7 @@ pub enum VcbInput {
     WorldLegacy(String),
     World(String),
 }
-
-/// Represents one gate or trace
-struct BoardNode {
-    inputs: BTreeSet<usize>,
-    outputs: BTreeSet<usize>,
-    kind: GateType,
-    initial_state: bool,
-    network_id: Option<usize>,
-}
-impl BoardNode {
-    #[must_use]
-    fn new(trace: Trace) -> Self {
-        let (kind, initial_state) = trace.to_gatetype_state();
-        BoardNode {
-            inputs: BTreeSet::new(),
-            outputs: BTreeSet::new(),
-            initial_state,
-            kind,
-            network_id: None,
-        }
-    }
-}
+use explore::{compile_network, BoardNode};
 
 pub struct VcbBoard<T: LogicSim> {
     traces: Vec<Trace>,
@@ -60,7 +39,31 @@ pub struct VcbBoard<T: LogicSim> {
     pub(crate) height: usize,
 }
 
-// API
+impl<T: LogicSim> VcbBoard<T> {
+    fn new(plain: parse::VcbPlainBoard, optimize: bool) -> Self {
+        let (height, width, nodes, elements, network) = compile_network::<T>(&plain);
+        let element_ids_external: Vec<_> = (0..elements.len())
+            .map(|id| Self::element_id_to_external_id(&elements, &nodes, id))
+            .collect();
+        let logic_sim: T = network.compiled(optimize);
+        let element_ids: Vec<_> = element_ids_external
+            .iter()
+            .map(|id| id.map(|id| logic_sim.to_internal_id(id)))
+            .collect();
+
+        VcbBoard {
+            element_ids,
+            element_ids_external,
+            traces: plain.traces,
+            elements,
+            nodes,
+            logic_sim,
+            width,
+            height,
+        }
+    }
+}
+
 impl<T: LogicSim> VcbBoard<T> {
     pub fn update_i(&mut self, iterations: usize) {
         self.logic_sim.update_i(iterations);
@@ -96,30 +99,7 @@ impl<T: LogicSim> VcbBoard<T> {
     }
 }
 
-use explore::compile_network;
 impl<T: LogicSim> VcbBoard<T> {
-    fn new(plain: parse::VcbPlainBoard, optimize: bool) -> Self {
-        let (height, width, nodes, elements, network) = compile_network::<T>(&plain);
-        let element_ids_external: Vec<_> = (0..elements.len())
-            .map(|id| Self::element_id_to_external_id(&elements, &nodes, id))
-            .collect();
-        let logic_sim: T = network.compiled(optimize);
-        let element_ids: Vec<_> = element_ids_external
-            .iter()
-            .map(|id| id.map(|id| logic_sim.to_internal_id(id)))
-            .collect();
-
-        VcbBoard {
-            element_ids,
-            element_ids_external,
-            traces: plain.traces,
-            elements,
-            nodes,
-            logic_sim,
-            width,
-            height,
-        }
-    }
     fn get_state_element(&self, id: usize) -> bool {
         self.element_ids[id]
             .map(|id| self.logic_sim.get_state_internal(id))
@@ -329,7 +309,6 @@ impl<T: LogicSim> VcbBoard<T> {
         println!("Gif stored at: {path:?}");
     }
 }
-
 
 /// Represents one pixel.
 /// It is probably a mistake to
