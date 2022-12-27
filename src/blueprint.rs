@@ -420,7 +420,7 @@ impl<T: LogicSim> VcbBoard<T> {
     }
     fn get_state_element(&self, id: usize) -> bool {
         self.element_id_to_internal_id(id)
-            .map(|id| self.compiled_network.get_state(id))
+            .map(|id| self.compiled_network.get_state_internal(id))
             .unwrap_or_default()
     }
 
@@ -430,14 +430,14 @@ impl<T: LogicSim> VcbBoard<T> {
         let mut a = Vec::new();
         for i in 0..self.elements.len() {
             a.push(
-                /*self.get_state_element(i),*/
-                match self.elements[i].id {
-                    None => false,
-                    Some(node_id) => match self.nodes[node_id].network_id {
-                        None => false,
-                        Some(id) => self.compiled_network.get_state(id),
-                    },
-                },
+                self.get_state_element(i),
+                //match self.elements[i].id {
+                //    None => false,
+                //    Some(node_id) => match self.nodes[node_id].network_id {
+                //        None => false,
+                //        Some(id) => self.compiled_network.get_state(id),
+                //    },
+                //},
             );
         }
         a
