@@ -346,6 +346,7 @@ enum Layer {
 }
 
 /// Decoded blueprint or board
+#[derive(Debug)]
 struct VcbPlainBoard {
     traces: Vec<Trace>,
     width: usize,
@@ -404,6 +405,8 @@ impl BoardNode {
 
 #[derive(Debug)]
 pub struct VcbBoard<T: LogicSim> {
+    traces: Vec<Trace>,
+    element_ids: Vec<Option<usize>>,
     elements: Vec<BoardElement>,
     nodes: Vec<BoardNode>,
     pub(crate) compiled_network: T,
@@ -413,14 +416,19 @@ pub struct VcbBoard<T: LogicSim> {
 
 impl<T: LogicSim> VcbBoard<T> {
     // element id to internal compiled network id
-    fn element_id_to_internal_id(&self, id: usize) -> Option<usize> {
-        self.elements[id]
+    fn element_id_to_internal_id(
+        elements: &[BoardElement],
+        nodes: &[BoardNode],
+        compiled_network: &T,
+        id: usize,
+    ) -> Option<usize> {
+        elements[id]
             .id
-            .and_then(|id| self.nodes[id].network_id)
-            .map(|id| self.compiled_network.to_internal_id(id))
+            .and_then(|id| nodes[id].network_id)
+            .map(|id| compiled_network.to_internal_id(id))
     }
     fn get_state_element(&self, id: usize) -> bool {
-        self.element_id_to_internal_id(id)
+        Self::element_id_to_internal_id(&self.elements, &self.nodes, &self.compiled_network, id)
             .map(|id| self.compiled_network.get_state_internal(id))
             .unwrap_or_default()
     }
@@ -446,17 +454,18 @@ impl<T: LogicSim> VcbBoard<T> {
     pub fn update(&mut self) {
         self.compiled_network.update();
     }
-    fn new(plain_board: VcbPlainBoard, optimize: bool) -> Self {
-        let height = plain_board.height;
-        let width = plain_board.width;
+    fn new(plain: VcbPlainBoard, optimize: bool) -> Self {
+        let height = plain.height;
+        let width = plain.width;
         let num_elements = width * height;
 
         let mut nodes = Vec::new();
         let elements = timed!(
             {
-                let mut elements: Vec<_> = plain_board
+                let mut elements: Vec<_> = plain
                     .traces
-                    .into_iter()
+                    .iter()
+                    .cloned()
                     .map(BoardElement::new)
                     .collect();
                 for x in 0..num_elements {
@@ -498,7 +507,10 @@ impl<T: LogicSim> VcbBoard<T> {
         };
 
         let compiled_network = network.compiled(optimize);
+        let element_ids = Vec::new();
         VcbBoard {
+            element_ids,
+            traces: plain.traces,
             elements,
             nodes,
             compiled_network,
@@ -568,7 +580,6 @@ impl<T: LogicSim> VcbBoard<T> {
         assert!(this_kind.is_gate());
         assert!(this.id.is_some());
 
-        //let width: i32 = self.width.try_into().unwrap();
         'side: for dx in [1, -1, width, -width] {
             let other_x = this_x + dx;
             if this_x % width != other_x % width && this_x / width != other_x / width {
