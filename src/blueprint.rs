@@ -391,11 +391,12 @@ struct BoardNode {
 impl BoardNode {
     #[must_use]
     fn new(trace: Trace) -> Self {
+        let (kind, initial_state) = trace.to_gatetype_state();
         BoardNode {
             inputs: BTreeSet::new(),
             outputs: BTreeSet::new(),
-            initial_state: false,
-            kind: trace.to_gatetype(),
+            initial_state,
+            kind,
             network_id: None,
         }
     }
@@ -429,16 +430,7 @@ impl<T: LogicSim> VcbBoard<T> {
     pub fn make_state_vec(&self) -> Vec<bool> {
         let mut a = Vec::new();
         for i in 0..self.elements.len() {
-            a.push(
-                self.get_state_element(i),
-                //match self.elements[i].id {
-                //    None => false,
-                //    Some(node_id) => match self.nodes[node_id].network_id {
-                //        None => false,
-                //        Some(id) => self.compiled_network.get_state(id),
-                //    },
-                //},
-            );
+            a.push(self.get_state_element(i));
         }
         a
     }
@@ -546,8 +538,10 @@ impl<T: LogicSim> VcbBoard<T> {
         }
         'side: for dx in [1, -1, width, -width] {
             'forward: for ddx in [1, 2] {
-                // TODO: handle wrapping
                 let other_x = this_x + dx * ddx;
+                if this_x % width != other_x % width && this_x / width != other_x / width {
+                    continue 'side; // prevent wrapping connections
+                }
                 let other_kind =
                     unwrap_or_else!(elements.get(other_x as usize), continue 'side).trace;
                 if other_kind == Trace::Cross {
@@ -576,10 +570,11 @@ impl<T: LogicSim> VcbBoard<T> {
 
         //let width: i32 = self.width.try_into().unwrap();
         'side: for dx in [1, -1, width, -width] {
-            //TODO: handle wrapping
             let other_x = this_x + dx;
+            if this_x % width != other_x % width && this_x / width != other_x / width {
+                continue 'side; // prevent wrapping connections
+            }
             let other = unwrap_or_else!(elements.get(other_x as usize), continue 'side);
-
             let dir = match other.trace {
                 Trace::Read => false,
                 Trace::Write => true,
@@ -1093,17 +1088,18 @@ impl Trace {
     }
 
     #[inline]
-    fn to_gatetype(self) -> GateType {
+    fn to_gatetype_state(self) -> (GateType, bool) {
+        //TODO: handle latch gatetype
         if self.is_wire() {
-            GateType::Cluster
+            (GateType::Cluster, false)
         } else {
             match self {
-                Trace::Buffer | Trace::Or | Trace::Led => GateType::Or,
-                Trace::Not | Trace::Nor => GateType::Nor,
-                Trace::And => GateType::And,
-                Trace::Nand => GateType::Nand,
-                Trace::Xor | Trace::LatchOff => GateType::Xor,
-                Trace::Xnor | Trace::LatchOn => GateType::Xnor,
+                Trace::Buffer | Trace::Or | Trace::Led => (GateType::Or, false),
+                Trace::Not | Trace::Nor => (GateType::Nor, false),
+                Trace::And => (GateType::And, false),
+                Trace::Nand => (GateType::Nand, false),
+                Trace::Xor | Trace::LatchOff => (GateType::Xor, false),
+                Trace::Xnor | Trace::LatchOn => (GateType::Xnor, false),
                 _ => panic!("unsupported logic trace: {self:?}"),
             }
         }
