@@ -17,6 +17,7 @@ const FLAG_STATE: Inner = 1 << STATE;
 const FLAG_IN_UPDATE_LIST: Inner = 1 << IN_UPDATE_LIST;
 const FLAG_IS_INVERTED: Inner = 1 << IS_INVERTED;
 const FLAG_IS_XOR: Inner = 1 << IS_XOR;
+const FLAG_IS_LATCH: Inner = FLAG_IS_XOR | FLAG_IS_INVERTED;
 
 const FLAGS_MASK: Inner = FLAG_IS_INVERTED | FLAG_IS_XOR;
 //const ANY_MASK: Inner = FLAG_STATE | FLAG_IN_UPDATE_LIST | FLAG_IS_INVERTED | FLAG_IS_XOR;
@@ -36,7 +37,11 @@ pub(crate) fn new(in_update_list: bool, state: bool, kind: RunTimeGateType) -> I
 /// # Returns
 /// Delta (+-1) if state changed (0 = no change)
 #[inline]
-pub(crate) fn eval_mut<const CLUSTER: bool>(inner_mut: &mut Inner, acc: AccType) -> AccType {
+pub(crate) fn eval_mut<const CLUSTER: bool>(
+    inner_mut: &mut Inner,
+    acc: AccType,
+    acc_prev: AccType,
+) -> AccType {
     // <- high, low ->
     //(     3,           2,              1,     0)
     //(is_xor, is_inverted, in_update_list, state)
@@ -57,40 +62,42 @@ pub(crate) fn eval_mut<const CLUSTER: bool>(inner_mut: &mut Inner, acc: AccType)
             0 => Inner::from(acc != 0),
             FLAG_IS_INVERTED => Inner::from(acc == 0),
             FLAG_IS_XOR => acc & 1,
+            FLAG_IS_LATCH => Inner::from((state_1 == 1) != ((acc & 1 == 1) && (acc_prev & 1 == 0))),
+            _ => unreachable!(),
             //_ => 0,
-            _ => unreachable!(), /*unsafe {
-                                     debug_assert!(false);
-                                     std::hint::unreachable_unchecked()
-                                 },*/
+            /*_ => unreachable!(),*/ /*unsafe {
+                debug_assert!(false);
+                std::hint::unreachable_unchecked()
+            },*/
         }
     };
-    {
-        let is_xor = inner >> IS_XOR; // 0|1
-        debug_assert_eq!(is_xor & 1, is_xor);
-        let acc_parity = acc; // XXXXXXXX
-        let xor_term = is_xor & acc_parity; // 0|1
-        debug_assert_eq!(xor_term & 1, xor_term);
-        let acc_not_zero = Inner::from(acc != 0); // 0|1
-        let is_inverted = inner >> IS_INVERTED; // XX
-        let not_xor = !is_xor; // 0|11111111
-        let acc_term = not_xor & (is_inverted ^ acc_not_zero); // XXXXXXXX
-        let new_state_1_other = xor_term | (acc_term & 1);
-        debug_assert_eq!(
-            new_state_1, new_state_1_other,
-            "
-CLUSTER: {CLUSTER}
-FLAG_IS_INVERTED: {FLAG_IS_INVERTED:b}
-FLAG_IS_XOR: {FLAG_IS_XOR:b}
-inner: {inner:b}
-is_xor: {is_xor:b}
-acc_parity: {acc_parity:b}
-xor_term: {xor_term:b}
-acc_not_zero: {acc_not_zero:b}
-is_inverted: {is_inverted:b}
-not_xor: {not_xor:b}
-acc_term: {acc_term:b}",
-        );
-    }
+    /*{
+            let is_xor = inner >> IS_XOR; // 0|1
+            debug_assert_eq!(is_xor & 1, is_xor);
+            let acc_parity = acc; // XXXXXXXX
+            let xor_term = is_xor & acc_parity; // 0|1
+            debug_assert_eq!(xor_term & 1, xor_term);
+            let acc_not_zero = Inner::from(acc != 0); // 0|1
+            let is_inverted = inner >> IS_INVERTED; // XX
+            let not_xor = !is_xor; // 0|11111111
+            let acc_term = not_xor & (is_inverted ^ acc_not_zero); // XXXXXXXX
+            let new_state_1_other = xor_term | (acc_term & 1);
+            debug_assert_eq!(
+                new_state_1, new_state_1_other,
+                "
+    CLUSTER: {CLUSTER}
+    FLAG_IS_INVERTED: {FLAG_IS_INVERTED:b}
+    FLAG_IS_XOR: {FLAG_IS_XOR:b}
+    inner: {inner:b}
+    is_xor: {is_xor:b}
+    acc_parity: {acc_parity:b}
+    xor_term: {xor_term:b}
+    acc_not_zero: {acc_not_zero:b}
+    is_inverted: {is_inverted:b}
+    not_xor: {not_xor:b}
+    acc_term: {acc_term:b}",
+            );
+        }*/
 
     let state_changed_1 = new_state_1 ^ state_1;
 
@@ -155,18 +162,25 @@ const fn mask_if_one(value: Packed) -> Packed {
 }
 // TODO: save on the 4 unused bits, maybe merge 2 iterations?
 // TODO: relaxed or_combine
-pub(crate) fn eval_mut_scalar<const CLUSTER: bool>(inner_mut: &mut Packed, acc: Packed) -> Packed {
+pub(crate) fn eval_mut_scalar<const CLUSTER: bool>(
+    inner_mut: &mut Packed,
+    acc: Packed,
+    acc_prev: Packed,
+) -> Packed {
     let inner = *inner_mut;
     let state_1 = (inner >> STATE) & splat_u32(1);
 
-    let is_xor = inner >> IS_XOR;
-    let xor_term = is_xor & acc;
-    let acc_not_zero = or_combine_1(acc);
-    let is_inverted = inner >> IS_INVERTED;
-    let not_xor = !is_xor;
-    let acc_term = not_xor & (is_inverted ^ acc_not_zero);
+    let is_xor_1 = inner >> IS_XOR & splat_u32(1);
+    let is_inverted_1 = inner >> IS_INVERTED & splat_u32(1);
 
-    let new_state_1 = (xor_term | acc_term) & splat_u32(1);
+    let xor_term = is_xor_1 & acc & !is_inverted_1;
+    let acc_not_zero = or_combine_1(acc);
+    let not_xor = !is_xor_1;
+    let acc_term = not_xor & (is_inverted_1 ^ acc_not_zero);
+
+    let latch_term = is_xor_1 & is_inverted_1 & (state_1 ^ (acc & !acc_prev));
+
+    let new_state_1 = (xor_term | acc_term | latch_term) & splat_u32(1);
     let state_changed_1 = (new_state_1 ^ state_1) & splat_u32(1);
 
     // automatically sets "in_update_list" bit to zero

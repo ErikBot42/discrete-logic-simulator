@@ -21,20 +21,24 @@ pub type BitPackSim = BitPackSimInner;
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, PartialOrd, Ord, Default)]
 /// A = active inputs
 /// T = total inputs
+/// S = State
+/// P = Previous inputs
 pub(crate) enum GateType {
-    ///A == T
+    /// A == T
     And,
-    ///A > 0
+    /// A > 0
     Or,
-    ///A == 0
+    /// A == 0
     Nor,
-    ///A != T
+    /// A != T
     Nand,
-    ///A % 2 == 1
+    /// A % 2 == 1
     Xor,
-    ///A % 2 == 0
+    /// A % 2 == 0
     Xnor,
-    ///A > 0
+    /// S != (A % 2 == 1 && P % 2 == 0)
+    Latch,
+    /// A > 0
     #[default]
     Cluster, // equivalent to OR
 }
@@ -50,6 +54,7 @@ impl GateType {
             GateType::And | GateType::Or | GateType::Nor | GateType::Nand | GateType::Cluster => {
                 false
             },
+            GateType::Latch => todo!(),
         }
     }
     /// can one connection in pair of identical connections be removed without changing behaviour
@@ -59,6 +64,7 @@ impl GateType {
                 true
             },
             GateType::Xor | GateType::Xnor => false,
+            GateType::Latch => todo!(),
         }
     }
     fn is_cluster(self) -> bool {
@@ -74,6 +80,7 @@ pub(crate) enum RunTimeGateType {
     OrNand,
     AndNor,
     XorXnor,
+    Latch,
 }
 impl RunTimeGateType {
     fn new(kind: GateType) -> Self {
@@ -81,6 +88,7 @@ impl RunTimeGateType {
             GateType::And | GateType::Nor => RunTimeGateType::AndNor,
             GateType::Or | GateType::Nand | GateType::Cluster => RunTimeGateType::OrNand,
             GateType::Xor | GateType::Xnor => RunTimeGateType::XorXnor,
+            GateType::Latch => RunTimeGateType::Latch,
         }
     }
 
@@ -90,6 +98,7 @@ impl RunTimeGateType {
             RunTimeGateType::OrNand => (false, false),
             RunTimeGateType::AndNor => (true, false),
             RunTimeGateType::XorXnor => (false, true),
+            RunTimeGateType::Latch => (true, true),
         }
     }
 }
@@ -184,7 +193,7 @@ impl Gate {
                 let a: AccType = 0;
                 a.wrapping_sub(AccType::try_from(inputs).unwrap())
             },
-            GateType::Or | GateType::Nor | GateType::Xor | GateType::Cluster => 0,
+            GateType::Or | GateType::Nor | GateType::Xor | GateType::Cluster | GateType::Latch => 0,
             GateType::Xnor => 1,
         }
     }
@@ -201,28 +210,46 @@ impl Gate {
     }
     #[inline]
     #[cfg(test)]
-    const fn evaluate(acc: AccType, kind: RunTimeGateType) -> bool {
+    const fn evaluate(acc: AccType, acc_prev: AccType, state: bool, kind: RunTimeGateType) -> bool {
         match kind {
-            RunTimeGateType::OrNand => acc != (0),
-            RunTimeGateType::AndNor => acc == (0),
-            RunTimeGateType::XorXnor => acc & (1) == (1),
+            RunTimeGateType::OrNand => acc != 0,
+            RunTimeGateType::AndNor => acc == 0,
+            RunTimeGateType::XorXnor => acc & 1 == 1,
+            RunTimeGateType::Latch => state != ((acc & 1 == 1) && (acc_prev & 1 == 0)),
         }
     }
     #[inline]
     #[cfg(test)]
-    const fn evaluate_from_flags(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
+    const fn evaluate_from_flags(
+        acc: AccType,
+        acc_prev: AccType,
+        state: bool,
+        (is_inverted, is_xor): (bool, bool),
+    ) -> bool {
         // inverted from perspective of or gate
         // hopefully this generates branchless code.
         if !is_xor {
             (acc != 0) != is_inverted
         } else {
-            acc & 1 == 1
+            if is_inverted {
+                state != ((acc & 1 == 1) && (acc_prev & 1 == 1))
+            } else {
+                acc & 1 == 1
+            }
         }
     }
     #[inline]
     #[cfg(test)]
-    const fn evaluate_branchless(acc: AccType, (is_inverted, is_xor): (bool, bool)) -> bool {
-        !is_xor && ((acc != 0) != is_inverted) || is_xor && (acc & 1 == 1)
+    const fn evaluate_branchless(
+        acc: AccType,
+        acc_prev: AccType,
+        state: bool,
+        (is_inverted, is_xor): (bool, bool),
+    ) -> bool {
+        !is_xor && ((acc != 0) != is_inverted)
+            || is_xor
+                && ((!is_inverted && (acc & 1 == 1))
+                    || (is_inverted && (state != ((acc & 1 == 1) && (acc_prev & 1 == 0)))))
     }
     //#[must_use]
     #[cfg(test)]
@@ -263,7 +290,8 @@ impl Gate {
             0 | 1 => match kind {
                 GateType::Nand | GateType::Xnor | GateType::Nor => GateType::Nor,
                 GateType::And | GateType::Or | GateType::Xor => GateType::Or,
-                GateType::Cluster => GateType::Cluster, // merging cluster is invalid
+                GateType::Cluster => GateType::Cluster, // merging cluster with gate is invalid
+                GateType::Latch => GateType::Latch,     // TODO: is merging latch with gate invalid?
             },
             _ => kind,
         };
@@ -305,7 +333,9 @@ pub(crate) struct CompiledNetworkInner {
     //state: Vec<u8>,
     //runtime_gate_kind: Vec<RunTimeGateType>,
     acc_packed: Vec<gate_status::Packed>,
+    acc_packed_prev: Vec<gate_status::Packed>,
     acc: Vec<AccType>,
+    acc_prev: Vec<AccType>,
 
     status_packed: Vec<gate_status::Packed>,
     status: Vec<gate_status::Inner>,
@@ -441,6 +471,8 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             .zip(acc.iter().copied())
             .enumerate()
             .for_each(|(i, (a, b))| debug_assert_eq!(a, b, "{a}, {b}, {i}"));
+        let acc_packed_prev = acc_packed.clone();
+        let acc_prev = acc.clone();
 
         let mut kind: Vec<GateType> = gates
             .iter()
@@ -463,7 +495,9 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         Self {
             i: CompiledNetworkInner {
                 acc_packed,
+                acc_packed_prev,
                 acc,
+                acc_prev,
                 packed_outputs,
                 packed_output_indexes,
                 //state,
@@ -599,9 +633,11 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             .zip(inner.status_packed.iter_mut())
             .filter_map(|((i, b), s)| b.then_some((i, s)))
         {
-            let delta_p = gate_status::eval_mut_scalar::<CLUSTER>(status_mut, *unsafe {
-                inner.acc_packed.get_unchecked(id_packed)
-            });
+            let delta_p = gate_status::eval_mut_scalar::<CLUSTER>(
+                status_mut,
+                *unsafe { inner.acc_packed.get_unchecked(id_packed) },
+                *unsafe { inner.acc_packed_prev.get_unchecked(id_packed) },
+            );
             if delta_p == 0 {
                 continue;
             }
@@ -633,6 +669,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                 gate_status::eval_mut::<CLUSTER>(
                     inner.status.get_unchecked_mut(id),
                     *inner.acc.get_unchecked(id),
+                    *inner.acc_prev.get_unchecked(id),
                 )
             };
             Self::propagate_delta_to_accs(
@@ -1481,6 +1518,7 @@ mod tests {
             (RunTimeGateType::OrNand, false),
             (RunTimeGateType::AndNor, false),
             (RunTimeGateType::XorXnor, false),
+            (RunTimeGateType::Latch, false),
         ] {
             for acc in [
                 (0 as AccType).wrapping_sub(2),
@@ -1489,64 +1527,80 @@ mod tests {
                 1,
                 2,
             ] {
-                for state in [true, false] {
-                    let flags = RunTimeGateType::calc_flags(kind);
-                    let in_update_list = true;
-                    let mut status = gate_status::new(in_update_list, state, kind);
-                    let status_delta = if cluster {
-                        gate_status::eval_mut::<true>(&mut status, acc)
-                    } else {
-                        gate_status::eval_mut::<false>(&mut status, acc)
-                    };
+                for acc_prev in [
+                    (0 as AccType).wrapping_sub(2),
+                    (0 as AccType).wrapping_sub(1),
+                    0,
+                    1,
+                    2,
+                ] {
+                    for state in [true, false] {
+                        let flags = RunTimeGateType::calc_flags(kind);
+                        let in_update_list = true;
+                        let mut status = gate_status::new(in_update_list, state, kind);
+                        let status_delta = if cluster {
+                            gate_status::eval_mut::<true>(&mut status, acc, acc_prev)
+                        } else {
+                            gate_status::eval_mut::<false>(&mut status, acc, acc_prev)
+                        };
 
-                    const LANES: usize = 64;
-                    let mut status_simd: Simd<gate_status::Inner, LANES> =
-                        Simd::splat(gate_status::new(in_update_list, state, kind));
-                    let status_delta_simd = if cluster {
-                        gate_status::eval_mut_simd::<true, LANES>(
-                            &mut status_simd,
-                            Simd::splat(acc),
-                        )
-                    } else {
-                        gate_status::eval_mut_simd::<false, LANES>(
-                            &mut status_simd,
-                            Simd::splat(acc),
-                        )
-                    };
-                    let mut status_scalar =
-                        gate_status::splat_u32(gate_status::new(in_update_list, state, kind));
-                    let status_scalar_pre = status_scalar;
-                    let acc_scalar = gate_status::splat_u32(acc);
-                    let status_delta_scalar = if cluster {
-                        gate_status::eval_mut_scalar::<true>(&mut status_scalar, acc_scalar)
-                    } else {
-                        gate_status::eval_mut_scalar::<false>(&mut status_scalar, acc_scalar)
-                    };
+                        const LANES: usize = 64;
+                        let mut status_simd: Simd<gate_status::Inner, LANES> =
+                            Simd::splat(gate_status::new(in_update_list, state, kind));
+                        let status_delta_simd = if cluster {
+                            gate_status::eval_mut_simd::<true, LANES>(
+                                &mut status_simd,
+                                Simd::splat(acc),
+                            )
+                        } else {
+                            gate_status::eval_mut_simd::<false, LANES>(
+                                &mut status_simd,
+                                Simd::splat(acc),
+                            )
+                        };
+                        let mut status_scalar =
+                            gate_status::splat_u32(gate_status::new(in_update_list, state, kind));
+                        let status_scalar_pre = status_scalar;
+                        let acc_scalar = gate_status::splat_u32(acc);
+                        let acc_scalar_prev = gate_status::splat_u32(acc_prev);
+                        let status_delta_scalar = if cluster {
+                            gate_status::eval_mut_scalar::<true>(
+                                &mut status_scalar,
+                                acc_scalar,
+                                acc_scalar_prev,
+                            )
+                        } else {
+                            gate_status::eval_mut_scalar::<false>(
+                                &mut status_scalar,
+                                acc_scalar,
+                                acc_scalar_prev,
+                            )
+                        };
 
-                    let mut res = vec![
-                        Gate::evaluate_from_flags(acc, flags),
-                        Gate::evaluate_branchless(acc, flags),
-                        Gate::evaluate(acc, kind),
-                        gate_status::state(status),
-                    ];
+                        let mut res = vec![
+                            Gate::evaluate_from_flags(acc, acc_prev, state, flags),
+                            Gate::evaluate_branchless(acc, acc_prev, state, flags),
+                            Gate::evaluate(acc, acc_prev, state, kind),
+                            gate_status::state(status),
+                        ];
 
-                    assert!(
-                        res.windows(2).all(|r| r[0] == r[1]),
-                        "Some gate evaluators have diffrent behavior:
+                        assert!(
+                            res.windows(2).all(|r| r[0] == r[1]),
+                            "Some gate evaluators have diffrent behavior:
                         res: {res:?},
                         kind: {kind:?},
                         flags: {flags:?},
                         acc: {acc},
                         prev state: {state}"
-                    );
+                        );
 
-                    let mut scalar_state_vec: Vec<bool> =
-                        gate_status::packed_state_vec(status_scalar);
-                    res.append(&mut scalar_state_vec);
+                        let mut scalar_state_vec: Vec<bool> =
+                            gate_status::packed_state_vec(status_scalar);
+                        res.append(&mut scalar_state_vec);
 
-                    assert!(
-                        res.windows(2).all(|r| r[0] == r[1]),
-                        "Scalar gate evaluators have diffrent behavior:
+                        assert!(
+                            res.windows(2).all(|r| r[0] == r[1]),
+                            "Scalar gate evaluators have diffrent behavior:
                         res: {res:?},
                         kind: {kind:?},
                         flags: {flags:?},
@@ -1556,48 +1610,48 @@ mod tests {
                         status_scalar: {:?},
                         prev state: {state},
                         state_vec: {:?}",
-                        gate_status::unpack_single(status_scalar_pre),
-                        gate_status::unpack_single(status_scalar),
-                        gate_status::packed_state_vec(status_scalar)
-                    );
+                            gate_status::unpack_single(status_scalar_pre),
+                            gate_status::unpack_single(status_scalar),
+                            gate_status::packed_state_vec(status_scalar)
+                        );
 
-                    let mut simd_state_vec: Vec<bool> = status_simd
-                        .as_array()
-                        .iter()
-                        .cloned()
-                        .map(|s| gate_status::state(s))
-                        .collect();
+                        let mut simd_state_vec: Vec<bool> = status_simd
+                            .as_array()
+                            .iter()
+                            .cloned()
+                            .map(|s| gate_status::state(s))
+                            .collect();
 
-                    res.append(&mut simd_state_vec);
+                        res.append(&mut simd_state_vec);
 
-                    assert!(
-                        res.windows(2).all(|r| r[0] == r[1]),
-                        "SIMD gate evaluators have diffrent behavior:
+                        assert!(
+                            res.windows(2).all(|r| r[0] == r[1]),
+                            "SIMD gate evaluators have diffrent behavior:
                         res: {res:?},
                         kind: {kind:?},
                         flags: {flags:?},
                         acc: {acc},
                         prev state: {state}"
-                    );
+                        );
 
-                    let expected_status_delta = if res[0] != state {
-                        if res[0] {
-                            1
+                        let expected_status_delta = if res[0] != state {
+                            if res[0] {
+                                1
+                            } else {
+                                (0 as AccType).wrapping_sub(1)
+                            }
                         } else {
-                            (0 as AccType).wrapping_sub(1)
+                            0
+                        };
+                        assert_eq!(status_delta, expected_status_delta);
+                        for delta in status_delta_simd.as_array().iter() {
+                            assert_eq!(*delta, expected_status_delta);
                         }
-                    } else {
-                        0
-                    };
-                    assert_eq!(status_delta, expected_status_delta);
-                    for delta in status_delta_simd.as_array().iter() {
-                        assert_eq!(*delta, expected_status_delta);
-                    }
-                    for delta in gate_status::unpack_single(status_delta_scalar) {
-                        assert_eq!(
-                            delta,
-                            expected_status_delta,
-                            "
+                        for delta in gate_status::unpack_single(status_delta_scalar) {
+                            assert_eq!(
+                                delta,
+                                expected_status_delta,
+                                "
 packed scalar has wrong value.
 got delta: {delta:?},
 expected: {expected_status_delta:?}
@@ -1611,11 +1665,12 @@ status_pre: {:?},
 status_scalar: {:?},
 prev state: {state},
 state_vec: {:?}",
-                            gate_status::unpack_single(acc_scalar),
-                            gate_status::unpack_single(status_scalar_pre),
-                            gate_status::unpack_single(status_scalar),
-                            gate_status::packed_state_vec(status_scalar),
-                        );
+                                gate_status::unpack_single(acc_scalar),
+                                gate_status::unpack_single(status_scalar_pre),
+                                gate_status::unpack_single(status_scalar),
+                                gate_status::packed_state_vec(status_scalar),
+                            );
+                        }
                     }
                 }
             }
