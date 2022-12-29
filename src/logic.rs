@@ -1306,23 +1306,27 @@ impl BitPackSimInner /*<LATCH>*/ {
                     //};
                 },
             );
-
-            // TODO: Store # of outputs in a group if it's constant for the entire group.
-
             //unsafe {
             //    assert_assume!(outputs_start <= outputs_end);
             //}
+
             changed &= !(1 << i_u32); // ANY
 
-            let delta = (AccType::from(bit_get(new_state, i_usize)) * 2).wrapping_sub(1);
+            //let delta = (AccType::from(bit_get(new_state, i_usize)) * 2).wrapping_sub(1);
+            let delta = if bit_get(new_state, i_usize) {
+                1
+            } else {
+                (0 as AccType).wrapping_sub(1)
+            };
             //unsafe {
             //    assert_assume!(delta == 1 || delta == 0_u8.wrapping_sub(1));
             //}
 
             for output in unsafe { single_packed_outputs.get_unchecked(outputs_start..outputs_end) }
                 .iter()
-                .map(|&i| i as usize)
-            // Truncating cast needed for performance
+                .map(
+                    |&i| i as usize, /* Truncating cast needed for performance */
+                )
             {
                 let output_group_id = BitPackSimInner::calc_group_id(output);
 
@@ -1332,8 +1336,9 @@ impl BitPackSimInner /*<LATCH>*/ {
                 let in_update_list_mut =
                     unsafe { in_update_list.get_unchecked_mut(output_group_id) };
                 if !*in_update_list_mut {
-                    // Truncating cast is needed for performance
-                    unsafe { next_update_list.push(output_group_id as IndexType) };
+                    unsafe {
+                        next_update_list.push(output_group_id as IndexType /* Truncating cast is needed for performance */ )
+                    };
                     *in_update_list_mut = true;
                 }
             }
