@@ -196,33 +196,35 @@ pub(crate) fn eval_mut_scalar<const CLUSTER: bool>(
 pub(crate) fn eval_mut_simd<const CLUSTER: bool, const LANES: usize>(
     inner_mut: &mut Simd<Inner, LANES>,
     acc: Simd<AccType, LANES>,
+    acc_prev: Simd<AccType, LANES>,
 ) -> Simd<AccType, LANES>
 where
     LaneCount<LANES>: SupportedLaneCount,
 {
     let inner = *inner_mut;
+    let state_1 = (inner >> Simd::splat(STATE)) & Simd::splat(1);
 
     let flag_bits = inner & Simd::splat(FLAGS_MASK);
 
-    let state_1 = (inner >> Simd::splat(STATE)) & Simd::splat(1);
     let acc = acc.cast(); // XXXXXXXX
     let new_state_1: Simd<SimdLogicType, LANES> = if CLUSTER {
         //(acc != 0) as u8
         acc.simd_ne(Simd::splat(0 as SimdLogicType))
             .select(Simd::splat(1), Simd::splat(0))
     } else {
-        let is_xor = inner >> Simd::splat(IS_XOR); // 0|1
-                                                   //debug_assert_eq!(is_xor & Simd::splat(1), is_xor);
-        let acc_parity = acc; // XXXXXXXX
-        let xor_term = is_xor & acc_parity; // 0|1
-                                            //debug_assert_eq!(xor_term & Simd::splat(1), xor_term);
+        let is_inverted = inner >> Simd::splat(IS_INVERTED) & Simd::splat(1);
+        let is_xor = (inner >> Simd::splat(IS_XOR)) & Simd::splat(1);
+        let acc_parity = acc & Simd::splat(1);
+        let acc_parity_prev = acc_prev & Simd::splat(1);
+        let xor_term = is_xor & acc_parity & !(is_inverted);
+        let latch_term = is_xor & is_inverted & (state_1 ^ (acc_parity & !acc_parity_prev));
+
         let acc_not_zero = acc
             .simd_ne(Simd::splat(0))
             .select(Simd::splat(1), Simd::splat(0)); // 0|1
-        let is_inverted = inner >> Simd::splat(IS_INVERTED); // XX
         let not_xor = !is_xor; // 0|11111111
         let acc_term = not_xor & (is_inverted ^ acc_not_zero); // XXXXXXXX
-        xor_term | (acc_term & Simd::splat(1))
+        (xor_term | acc_term | latch_term) & Simd::splat(1)
     };
 
     let state_changed_1 = new_state_1 ^ state_1;

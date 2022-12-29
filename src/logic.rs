@@ -232,7 +232,7 @@ impl Gate {
             (acc != 0) != is_inverted
         } else {
             if is_inverted {
-                state != ((acc & 1 == 1) && (acc_prev & 1 == 1))
+                state != ((acc & 1 == 1) && (acc_prev & 1 == 0))
             } else {
                 acc & 1 == 1
             }
@@ -970,6 +970,14 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     Simd::splat(0),
                 )
             };
+            let acc_prev_simd = unsafe {
+                Simd::gather_select_unchecked(
+                    &inner.acc_prev,
+                    Mask::splat(true),
+                    id_simd_c,
+                    Simd::splat(0),
+                )
+            };
             let mut status_simd = unsafe {
                 Simd::gather_select_unchecked(
                     &inner.status,
@@ -978,8 +986,11 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     Simd::splat(0),
                 )
             };
-            let delta_simd =
-                gate_status::eval_mut_simd::<CLUSTER, LANES>(&mut status_simd, acc_simd);
+            let delta_simd = gate_status::eval_mut_simd::<CLUSTER, LANES>(
+                &mut status_simd,
+                acc_simd,
+                acc_prev_simd,
+            );
 
             unsafe {
                 status_simd.scatter_select_unchecked(
@@ -1551,11 +1562,13 @@ mod tests {
                             gate_status::eval_mut_simd::<true, LANES>(
                                 &mut status_simd,
                                 Simd::splat(acc),
+                                Simd::splat(acc_prev),
                             )
                         } else {
                             gate_status::eval_mut_simd::<false, LANES>(
                                 &mut status_simd,
                                 Simd::splat(acc),
+                                Simd::splat(acc_prev),
                             )
                         };
                         let mut status_scalar =
@@ -1591,6 +1604,7 @@ mod tests {
                         kind: {kind:?},
                         flags: {flags:?},
                         acc: {acc},
+                        acc_prev: {acc_prev},
                         prev state: {state}"
                         );
 
