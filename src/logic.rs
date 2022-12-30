@@ -682,7 +682,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     let other_status =
                         unsafe { inner.status.get_unchecked_mut(output_id as usize) };
                     if !gate_status::in_update_list(*other_status) {
-                        unsafe { next_update_list.push(output_id) };
+                        unsafe { next_update_list.push_unchecked(output_id) };
                         gate_status::mark_in_update_list(other_status);
                     }
                 },
@@ -1024,7 +1024,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
                     let other_status =
                         unsafe { inner.status.get_unchecked_mut(*output_id as usize) };
                     if !gate_status::in_update_list(*other_status) {
-                        unsafe { next_update_list.push(*output_id) };
+                        unsafe { next_update_list.push_unchecked(*output_id) };
                         gate_status::mark_in_update_list(other_status);
                     }
                 }
@@ -1146,6 +1146,7 @@ pub struct BitPackSimInner /*<const LATCH: bool>*/ {
     acc: Vec<BitAccPack>, // 8x BitInt
     state: Vec<BitInt>,   // intersperse candidate
     //kind: Vec<GateType>,
+    parity: Vec<BitInt>,      // intersperse candidate
     is_xor: Vec<BitInt>,      // intersperse candidate
     is_inverted: Vec<BitInt>, // intersperse candidate
     //packed_output_indexes: Vec<IndexType>,
@@ -1167,6 +1168,10 @@ impl BitPackSimInner /*<LATCH>*/ {
     #[inline(always)]
     fn calc_group_id(id: usize) -> usize {
         id / Self::BITS
+    }
+    #[inline(always)]
+    fn calc_inner_id(id: usize) -> usize {
+        id % Self::BITS
     }
     /// Reference implementation TODO: TEST
     #[inline(always)] // function used at single call site
@@ -1246,14 +1251,22 @@ impl BitPackSimInner /*<LATCH>*/ {
     #[inline(always)] // function used at single call site
     fn calc_state_pack<const CLUSTER: bool>(
         acc_p: &BitAccPack,
+        parity_prev: &BitInt,
+        state: &BitInt,
         is_xor: &BitInt,
         is_inverted: &BitInt,
-    ) -> BitInt {
+    ) -> (BitInt, BitInt) {
         if CLUSTER {
-            Self::acc_zero_simd(acc_p)
+            (0, Self::acc_zero_simd(acc_p)) // don't care about parity since only latch uses it.
         } else {
             let (acc_zero, acc_parity) = Self::extract_acc_info_simd(acc_p);
-            ((!is_xor) & (acc_zero ^ is_inverted)) | (is_xor & acc_parity)
+            (
+                acc_parity,
+                ((!is_xor) & (acc_zero ^ is_inverted))
+                    | (is_xor
+                        & ((!is_inverted & acc_parity)
+                            | (is_inverted & (state ^ (acc_parity & !parity_prev))))),
+            )
         }
     }
     #[inline(always)] // function used at 2 call sites
@@ -1280,10 +1293,13 @@ impl BitPackSimInner /*<LATCH>*/ {
         {
             *unsafe { self.in_update_list.get_unchecked_mut(group_id) } = false;
             let state = unsafe { self.state.get_unchecked_mut(group_id) };
+            let parity = unsafe { self.parity.get_unchecked_mut(group_id) };
             let offset = group_id * Self::BITS;
             //debug_assert_eq!(self.kind[offset] == GateType::Cluster, CLUSTER);
-            let new_state = Self::calc_state_pack::<CLUSTER>(
+            let (new_parity, new_state) = Self::calc_state_pack::<CLUSTER>(
                 unsafe { self.acc.get_unchecked(group_id) },
+                parity,
+                state,
                 is_xor,
                 is_inverted,
             );
@@ -1299,6 +1315,7 @@ impl BitPackSimInner /*<LATCH>*/ {
                 continue;
             }
             *state = new_state;
+            *parity = new_parity;
             Self::propagate_acc(
                 changed,
                 offset,
@@ -1312,6 +1329,35 @@ impl BitPackSimInner /*<LATCH>*/ {
         }
 
         update_list.clear();
+    }
+
+    /// SET not reset, only for init
+    /// If called twice, things will explode
+    fn set_state<const CLUSTER: bool>(&mut self, id: usize) {
+        let group_id = Self::calc_group_id(id);
+        let inner_id = Self::calc_inner_id(id);
+        self.state[group_id] = bit_set(self.state[group_id], inner_id, true);
+
+        for id in self.single_packed_outputs[(self.single_packed_outputs[id] as usize)
+            ..(self.single_packed_outputs[id + 1] as usize)]
+            .iter()
+            .map(|id| *id as usize)
+        {
+            dbg!(id);
+            let acc: &mut [u8] = cast_slice_mut(&mut self.acc);
+            acc[id] = acc[id].wrapping_add(1);
+
+            let update_list = if !CLUSTER {
+                &mut self.cluster_update_list
+            } else {
+                &mut self.update_list
+            };
+            let id = Self::calc_group_id(id);
+            if !self.in_update_list[id] {
+                self.in_update_list[id] = true;
+                update_list.push_safe(id.try_into().unwrap());
+            }
+        }
     }
 
     #[inline(always)]
@@ -1385,7 +1431,7 @@ impl BitPackSimInner /*<LATCH>*/ {
                     unsafe { in_update_list.get_unchecked_mut(output_group_id) };
                 if !*in_update_list_mut {
                     unsafe {
-                        next_update_list.push(output_group_id as IndexType /* Truncating cast is needed for performance */ )
+                        next_update_list.push_unchecked(output_group_id as IndexType /* Truncating cast is needed for performance */ )
                     };
                     *in_update_list_mut = true;
                 }
@@ -1412,7 +1458,8 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
 
         let state: Vec<_> = gates
             .iter()
-            .map(|g| g.as_ref().map_or(false, |g| g.initial_state))
+            //.map(|g| g.as_ref().map_or(false, |g| g.initial_state))
+            .map(|_| false)
             .array_chunks()
             .map(pack_bits)
             .collect();
@@ -1438,13 +1485,28 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
         let update_list = UpdateList::collect_size(
             kind.iter()
                 .step_by(Self::BITS)
-                .map(|k| *k != GateType::Cluster)
+                .map(|k| !k.is_cluster())
                 .enumerate()
                 .filter_map(|(i, b)| b.then_some(i.try_into().unwrap())),
             number_of_buckets,
         );
-        let in_update_list = (0..gates.len()).map(|_| false).collect();
-        let cluster_update_list = UpdateList::new(update_list.capacity());
+        let cluster_update_list = UpdateList::collect_size(
+            kind.iter()
+                .step_by(Self::BITS)
+                .map(|k| k.is_cluster())
+                .enumerate()
+                .filter_map(|(i, b)| b.then_some(i.try_into().unwrap())),
+            number_of_buckets,
+        );
+
+        let mut in_update_list: Vec<_> = (0..gates.len()).map(|_| false).collect();
+        for id in update_list
+            .iter()
+            .chain(cluster_update_list.iter())
+            .map(|id| id as usize)
+        {
+            in_update_list[id] = true;
+        }
 
         let group_output_count: Vec<_> = {
             let from = packed_output_indexes.array_chunks::<{ Self::BITS }>();
@@ -1465,11 +1527,13 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
                 .collect()
         };
         dbg!(group_output_count.iter().counts());
+        let parity = (0..is_xor.len()).map(|_| 0).collect(); //TODO: revise this
 
-        Self {
+        let mut this = Self {
             translation_table,
             acc,
             state,
+            parity,
             is_xor,
             is_inverted,
             single_packed_outputs,
@@ -1477,7 +1541,26 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
             cluster_update_list,
             in_update_list,
             group_output_count,
+        };
+
+        for (id, (cluster, state)) in gates
+            .iter()
+            .map(|g| {
+                g.as_ref()
+                    .map_or((false, false), |g| (g.kind.is_cluster(), g.initial_state))
+            })
+            .enumerate()
+        {
+            if state {
+                if cluster {
+                    this.set_state::<true>(id);
+                } else {
+                    this.set_state::<false>(id);
+                }
+            }
         }
+
+        this
     }
     fn get_state_internal(&self, gate_id: usize) -> bool {
         let index = Self::calc_group_id(gate_id);

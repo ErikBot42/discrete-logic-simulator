@@ -55,7 +55,7 @@ where
     /// # Safety
     /// Length must not become longer than capacity.
     #[inline(always)]
-    pub(crate) unsafe fn push(&mut self, el: T) {
+    pub(crate) unsafe fn push_unchecked(&mut self, el: T) {
         *unsafe { self.list.get_unchecked_mut(self.len) } = el;
         self.len += 1;
         debug_assert!(

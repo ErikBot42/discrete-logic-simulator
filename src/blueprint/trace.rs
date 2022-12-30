@@ -259,8 +259,10 @@ impl Trace {
                 Trace::Not | Trace::Nor => (GateType::Nor, false),
                 Trace::And => (GateType::And, false),
                 Trace::Nand => (GateType::Nand, false),
-                Trace::Xor | Trace::LatchOff => (GateType::Xor, false),
-                Trace::Xnor | Trace::LatchOn => (GateType::Xnor, false),
+                Trace::Xor => (GateType::Xor, false),
+                Trace::Xnor => (GateType::Xnor, false),
+                Trace::LatchOn => (GateType::Latch, true),
+                Trace::LatchOff => (GateType::Latch, false),
                 _ => panic!("unsupported logic trace: {self:?}"),
             }
         }
