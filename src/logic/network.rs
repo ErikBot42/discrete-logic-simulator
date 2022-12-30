@@ -545,7 +545,7 @@ impl InitializedNetwork {
         timed!(
             {
                 let network = self.optimize_remove_redundant();
-                //let network = self.optimize_reorder_cache(); //TODO: FINDME
+                let network = self.optimize_reorder_cache(); //TODO: FINDME
                 network.print_info();
                 network
             },
@@ -561,6 +561,18 @@ impl InitializedNetwork {
                 v,
                 gate_status::PACKED_ELEMENTS,
                 Gate::is_cluster_a_xor_is_cluster_b,
+            )
+        })
+    }
+    pub(crate) fn prepare_for_bitpack_packing_no_type_overlap(
+        &self,
+        bits: usize,
+    ) -> NetworkWithGaps {
+        self.reordered_by_gaps(|v| {
+            Self::aligned_by_inner(
+                v,
+                bits,
+                Gate::is_cluster_a_xor_is_cluster_b_and_no_type_overlap,
             )
         })
     }

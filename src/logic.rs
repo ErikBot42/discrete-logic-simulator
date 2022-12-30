@@ -195,6 +195,15 @@ impl Gate {
             GateType::Xnor => 1,
         }
     }
+
+    fn kind_runtime(&self) -> RunTimeGateType {
+        RunTimeGateType::new(self.kind)
+    }
+
+    fn is_cluster_a_xor_is_cluster_b_and_no_type_overlap(&self, other: &Gate) -> bool {
+        self.is_cluster_a_xor_is_cluster_b(other) || (self.kind_runtime() != other.kind_runtime())
+    }
+
     fn is_cluster_a_xor_is_cluster_b(&self, other: &Gate) -> bool {
         self.kind.is_cluster() != other.kind.is_cluster()
     }
@@ -1092,6 +1101,10 @@ where
     })
 }
 
+//fn bit_slice(int: BitInt, from: usize, to: usize) {
+//    
+//}
+
 #[must_use]
 #[inline(always)]
 fn bit_set(int: BitInt, index: usize, set: bool) -> BitInt {
@@ -1147,6 +1160,8 @@ pub struct BitPackSimInner /*<const LATCH: bool>*/ {
     //packed_output_indexes: Vec<IndexType>,
     //packed_outputs: Vec<IndexType>,
     single_packed_outputs: Vec<IndexType>,
+
+    group_run_type: Vec<RunTimeGateType>,
 
     update_list: UpdateList,
     cluster_update_list: UpdateList,
@@ -1300,9 +1315,8 @@ impl BitPackSimInner /*<LATCH>*/ {
         const AVG_ONES_WINDOW: f64 = 4_000_000.0;
 
         //unsafe { println!("{AVG_ONES}") };
-        for (group_id, offset, is_inverted, is_xor) in unsafe { update_list.iter() }
-            .map(|g| g as usize)
-            .map(|group_id| {
+        for (group_id, offset, is_inverted, is_xor) in
+            update_list.iter().map(|g| g as usize).map(|group_id| {
                 (
                     group_id,
                     group_id * Self::BITS,
@@ -1315,12 +1329,19 @@ impl BitPackSimInner /*<LATCH>*/ {
             let state_mut = unsafe { self.state.get_unchecked_mut(group_id) };
             let parity_mut = unsafe { self.parity.get_unchecked_mut(group_id) };
             //debug_assert_eq!(self.kind[offset] == GateType::Cluster, CLUSTER);
-            let new_state = Self::calc_state_pack_parity::<CLUSTER>(
+
+            /*let new_state = Self::calc_state_pack_parity::<CLUSTER>(
                 unsafe { self.acc.get_unchecked(group_id) },
                 parity_mut,
                 state_mut,
                 is_xor,
                 is_inverted,
+            );*/
+            let new_state = Self::calc_state_pack_parity_gatetype::<CLUSTER>(
+                unsafe { self.acc.get_unchecked(group_id) },
+                parity_mut,
+                state_mut,
+                unsafe { self.group_run_type.get_unchecked(group_id) },
             );
             let changed = *state_mut ^ new_state;
             // println!("{changed:#068b}");
@@ -1459,7 +1480,9 @@ impl BitPackSimInner /*<LATCH>*/ {
 
 impl LogicSim for BitPackSimInner /*<LATCH>*/ {
     fn create(network: InitializedNetwork) -> Self {
-        let network = network.prepare_for_bitpack_packing(Self::BITS);
+        //let network = network.prepare_for_bitpack_packing(Self::BITS);
+        let network = network.prepare_for_bitpack_packing_no_type_overlap(Self::BITS);
+
         let number_of_gates_with_padding = network.gates.len();
         assert_eq!(number_of_gates_with_padding % Self::BITS, 0);
         let number_of_buckets = number_of_gates_with_padding / Self::BITS;
@@ -1544,9 +1567,16 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
                 .collect()
         };
         dbg!(group_output_count.iter().counts());
-        let parity = (0..is_xor.len()).map(|_| 0).collect(); //TODO: revise this
+        let parity = (0..is_xor.len()).map(|_| 0).collect(); // TODO: calc parity instead
+
+        let group_run_type = kind
+            .iter()
+            .step_by(Self::BITS)
+            .map(|k| RunTimeGateType::new(*k))
+            .collect();
 
         let mut this = Self {
+            group_run_type,
             translation_table,
             acc,
             state,
