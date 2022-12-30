@@ -1263,6 +1263,31 @@ impl BitPackSimInner /*<LATCH>*/ {
             new_state
         }
     }
+    // pass by reference intentional to use intrinsics.
+    #[inline(always)] // function used at single call site
+    fn calc_state_pack_parity_gatetype<const CLUSTER: bool>(
+        acc_p: &BitAccPack,
+        parity_prev: &mut BitInt,
+        state: &BitInt,
+        kind: &RunTimeGateType,
+    ) -> BitInt {
+        let (acc_zero, acc_parity) = Self::extract_acc_info_simd(acc_p);
+        if CLUSTER {
+            acc_zero // don't care about parity since only latch uses it.
+        } else {
+            match kind {
+                RunTimeGateType::OrNand => acc_zero,
+                RunTimeGateType::AndNor => !acc_zero,
+                RunTimeGateType::XorXnor => acc_parity,
+                RunTimeGateType::Latch => {
+                    let new_state = state ^ (acc_parity & !*parity_prev);
+                    *parity_prev = acc_parity;
+                    new_state
+                },
+            }
+        }
+    }
+
     #[inline(always)] // function used at 2 call sites
     fn update_inner<const CLUSTER: bool>(&mut self) {
         let (update_list, next_update_list) = if CLUSTER {
@@ -1275,11 +1300,12 @@ impl BitPackSimInner /*<LATCH>*/ {
         const AVG_ONES_WINDOW: f64 = 4_000_000.0;
 
         //unsafe { println!("{AVG_ONES}") };
-        for (group_id, is_inverted, is_xor) in unsafe { update_list.iter() }
+        for (group_id, offset, is_inverted, is_xor) in unsafe { update_list.iter() }
             .map(|g| g as usize)
             .map(|group_id| {
                 (
                     group_id,
+                    group_id * Self::BITS,
                     unsafe { self.is_inverted.get_unchecked(group_id) },
                     unsafe { self.is_xor.get_unchecked(group_id) },
                 )
@@ -1288,7 +1314,6 @@ impl BitPackSimInner /*<LATCH>*/ {
             *unsafe { self.in_update_list.get_unchecked_mut(group_id) } = false;
             let state_mut = unsafe { self.state.get_unchecked_mut(group_id) };
             let parity_mut = unsafe { self.parity.get_unchecked_mut(group_id) };
-            let offset = group_id * Self::BITS;
             //debug_assert_eq!(self.kind[offset] == GateType::Cluster, CLUSTER);
             let new_state = Self::calc_state_pack_parity::<CLUSTER>(
                 unsafe { self.acc.get_unchecked(group_id) },
