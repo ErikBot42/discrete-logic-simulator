@@ -1106,7 +1106,7 @@ where
 #[must_use]
 #[inline(always)]
 fn bit_slice(int: BitInt, range: Range<usize>) -> BitInt {
-    (int >> range.start) & ((1 << range.len()) - 1)
+    (int >> range.start) & (((1 as BitInt) << range.len()).wrapping_sub(1))
 }
 
 #[must_use]
