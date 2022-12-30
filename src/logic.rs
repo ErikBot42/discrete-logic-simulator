@@ -50,11 +50,10 @@ impl GateType {
     /// can a pair of identical connections be removed without changing behaviour
     fn can_delete_double_identical_inputs(self) -> bool {
         match self {
-            GateType::Xor | GateType::Xnor => true,
+            GateType::Xor | GateType::Xnor | GateType::Latch => true,
             GateType::And | GateType::Or | GateType::Nor | GateType::Nand | GateType::Cluster => {
                 false
             },
-            GateType::Latch => todo!(),
         }
     }
     /// can one connection in pair of identical connections be removed without changing behaviour
@@ -63,8 +62,7 @@ impl GateType {
             GateType::And | GateType::Or | GateType::Nor | GateType::Nand | GateType::Cluster => {
                 true
             },
-            GateType::Xor | GateType::Xnor => false,
-            GateType::Latch => todo!(),
+            GateType::Xor | GateType::Xnor | GateType::Latch => false,
         }
     }
     fn is_cluster(self) -> bool {
@@ -121,7 +119,7 @@ type SimdLogicType = AccTypeInner;
 type IndexType = u32; //AccTypeInner;
 type UpdateList = crate::raw_list::RawList<IndexType>;
 
-type GateKey = (GateType, Vec<IndexType>);
+type GateKey = (GateType, Vec<IndexType>, bool);
 
 pub trait LogicSim {
     // test: get acc optional
@@ -284,6 +282,8 @@ impl Gate {
         // TODO: can potentially include inverted.
         // but then every connection would have to include
         // connection information
+
+        // TODO: merge latch further
         let kind = self.kind;
         let inputs_len = self.inputs.len();
         let kind = match inputs_len {
@@ -296,7 +296,7 @@ impl Gate {
             _ => kind,
         };
         assert!(self.inputs.is_sorted());
-        (kind, self.inputs.clone())
+        (kind, self.inputs.clone(), self.initial_state)
     }
 }
 
@@ -485,11 +485,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         let mut in_update_list: Vec<bool> = (0..number_of_gates).map(|_| false).collect();
         update_list.iter().enumerate().for_each(|(_id, i)| {
             in_update_list[i as usize] = true;
-            //dbg!(id);
-            //if let Some(i) = in_update_list.get_mut(i as usize) {
-            //    dbg!(id);
-            //    *i = true;
-            //};
         });
 
         Self {
@@ -1249,24 +1244,23 @@ impl BitPackSimInner /*<LATCH>*/ {
     }
     // pass by reference intentional to use intrinsics.
     #[inline(always)] // function used at single call site
-    fn calc_state_pack<const CLUSTER: bool>(
+    fn calc_state_pack_parity<const CLUSTER: bool>(
         acc_p: &BitAccPack,
-        parity_prev: &BitInt,
+        parity_prev: &mut BitInt,
         state: &BitInt,
         is_xor: &BitInt,
         is_inverted: &BitInt,
-    ) -> (BitInt, BitInt) {
+    ) -> BitInt {
         if CLUSTER {
-            (0, Self::acc_zero_simd(acc_p)) // don't care about parity since only latch uses it.
+            Self::acc_zero_simd(acc_p) // don't care about parity since only latch uses it.
         } else {
             let (acc_zero, acc_parity) = Self::extract_acc_info_simd(acc_p);
-            (
-                acc_parity,
-                ((!is_xor) & (acc_zero ^ is_inverted))
-                    | (is_xor
-                        & ((!is_inverted & acc_parity)
-                            | (is_inverted & (state ^ (acc_parity & !parity_prev))))),
-            )
+            let new_state = ((!is_xor) & (acc_zero ^ is_inverted))
+                | (is_xor
+                    & ((!is_inverted & acc_parity)
+                        | (is_inverted & (state ^ (acc_parity & !*parity_prev)))));
+            *parity_prev = acc_parity;
+            new_state
         }
     }
     #[inline(always)] // function used at 2 call sites
@@ -1292,18 +1286,18 @@ impl BitPackSimInner /*<LATCH>*/ {
             })
         {
             *unsafe { self.in_update_list.get_unchecked_mut(group_id) } = false;
-            let state = unsafe { self.state.get_unchecked_mut(group_id) };
-            let parity = unsafe { self.parity.get_unchecked_mut(group_id) };
+            let state_mut = unsafe { self.state.get_unchecked_mut(group_id) };
+            let parity_mut = unsafe { self.parity.get_unchecked_mut(group_id) };
             let offset = group_id * Self::BITS;
             //debug_assert_eq!(self.kind[offset] == GateType::Cluster, CLUSTER);
-            let (new_parity, new_state) = Self::calc_state_pack::<CLUSTER>(
+            let new_state = Self::calc_state_pack_parity::<CLUSTER>(
                 unsafe { self.acc.get_unchecked(group_id) },
-                parity,
-                state,
+                parity_mut,
+                state_mut,
                 is_xor,
                 is_inverted,
             );
-            let changed = *state ^ new_state;
+            let changed = *state_mut ^ new_state;
             // println!("{changed:#068b}");
             // println!("{}", changed.count_ones());
             //unsafe {
@@ -1314,8 +1308,7 @@ impl BitPackSimInner /*<LATCH>*/ {
             if changed == 0 {
                 continue;
             }
-            *state = new_state;
-            *parity = new_parity;
+            *state_mut = new_state;
             Self::propagate_acc(
                 changed,
                 offset,
@@ -1343,7 +1336,6 @@ impl BitPackSimInner /*<LATCH>*/ {
             .iter()
             .map(|id| *id as usize)
         {
-            dbg!(id);
             let acc: &mut [u8] = cast_slice_mut(&mut self.acc);
             acc[id] = acc[id].wrapping_add(1);
 

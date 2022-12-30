@@ -87,7 +87,6 @@ pub struct Args {
     /// Iterations to run in bench
     #[arg(short = 'i', long)]
     pub iterations: Option<usize>,
-
 }
 
 fn main() {
@@ -133,7 +132,7 @@ fn main() {
 
 fn handle_board<T: LogicSim>(args: &Args, parser_input: VcbInput) {
     let now = Instant::now();
-    let mut board = { VcbParser::parse_compile::<T>(parser_input, false).unwrap() };
+    let mut board = { VcbParser::parse_compile::<T>(parser_input, true).unwrap() };
     println!("parsed entire board in {:?}", now.elapsed());
     match args.mode {
         RunMode::Parse => (),
