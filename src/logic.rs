@@ -11,6 +11,7 @@ pub(crate) use crate::logic::network::{GateNetwork, InitializedNetwork};
 use bytemuck::cast_slice_mut;
 use itertools::Itertools;
 use std::mem::{align_of, size_of, transmute};
+use std::ops::Range;
 use std::simd::{Mask, Simd};
 
 pub type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
@@ -1101,9 +1102,12 @@ where
     })
 }
 
-//fn bit_slice(int: BitInt, from: usize, to: usize) {
-//    
-//}
+/// Mask out range of bits
+#[must_use]
+#[inline(always)]
+fn bit_slice(int: BitInt, range: Range<usize>) -> BitInt {
+    (int >> range.start) & ((1 << range.len()) - 1)
+}
 
 #[must_use]
 #[inline(always)]
