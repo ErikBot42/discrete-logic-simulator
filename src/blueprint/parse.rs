@@ -1,5 +1,6 @@
-
 use super::*;
+use json::JsonValue;
+use std::fs::read_to_string;
 
 #[derive(Clone)]
 pub enum VcbInput {
@@ -8,7 +9,6 @@ pub enum VcbInput {
     WorldLegacy(String),
     World(String),
 }
-
 
 fn zstd_decompress(data: &[u8], num_traces: usize) -> std::io::Result<Vec<u8>> {
     const RGBA_SIZE: usize = 4;
@@ -99,16 +99,45 @@ impl VcbParser {
     }
     fn parse_world(s: &str) -> anyhow::Result<VcbPlainBoard> {
         let parsed = json::parse(s)?;
-        let world_str: &json::JsonValue = &parsed["layers"][0];
-        if let json::JsonValue::String(data) = world_str {
+
+        let vmem_settings = if let JsonValue::Array(vmem_settings) = &parsed["vmem_settings"] {
+            let mut a: Vec<isize> = Vec::new();
+            for v in vmem_settings {
+                a.push(match v {
+                    JsonValue::Number(number) => {
+                        number.as_fixed_point_i64(0).unwrap().try_into().unwrap()
+                    },
+                    _ => return Err(anyhow!("invalid number format")),
+                })
+            }
+            Ok(a)
+        } else {
+            Err(anyhow!("vmem_settings tag missing"))
+        }?;
+        let vmem_enabled = if let JsonValue::Boolean(vmem_enabled) = &parsed["is_vmem_enabled"] {
+            Ok(*vmem_enabled)
+        } else {
+            Err(anyhow!("is_vmem_enabled tag missing"))
+        }?;
+        let vmem = VmemInfo::new(&vmem_settings, vmem_enabled)?;
+        if let JsonValue::String(data) = &parsed["layers"][0] {
             let bytes = base64_decode(data)?;
             let (color_data, footer_bytes) = bytes.split_at(bytes.len() - BoardFooter::SIZE);
             let footer = BoardFooter::from_bytes(footer_bytes.try_into().context("")?)?;
             let data = zstd_decompress(color_data, footer.count()?)?;
-            VcbPlainBoard::from_color_data(&data, footer.width, footer.height)
+            VcbPlainBoard::from_color_data_vmem(&data, footer.width, footer.height, vmem)
         } else {
-            Err(anyhow!("json parsing went wrong"))
+            Err(anyhow!("layers tag missing"))
         }
+    }
+
+    fn parse(input: VcbInput) -> anyhow::Result<VcbPlainBoard> {
+        Ok(match input {
+            VcbInput::BlueprintLegacy(b) => Self::parse_legacy_blueprint(&b)?,
+            VcbInput::Blueprint(b) => Self::parse_blueprint(&b)?,
+            VcbInput::WorldLegacy(w) => Self::parse_legacy_world(&w)?,
+            VcbInput::World(w) => Self::parse_world(&w)?,
+        })
     }
 
     /// # Errors
@@ -117,13 +146,7 @@ impl VcbParser {
         input: VcbInput,
         optimize: bool,
     ) -> anyhow::Result<VcbBoard<T>> {
-        let plain_board = match input {
-            VcbInput::BlueprintLegacy(b) => Self::parse_legacy_blueprint(&b)?,
-            VcbInput::Blueprint(b) => Self::parse_blueprint(&b)?,
-            VcbInput::WorldLegacy(w) => Self::parse_legacy_world(&w)?,
-            VcbInput::World(w) => Self::parse_world(&w)?,
-        };
-        Ok(VcbBoard::new(plain_board, optimize))
+        Ok(VcbBoard::new(Self::parse(input)?, optimize))
     }
 }
 
@@ -334,16 +357,88 @@ enum Layer {
     On,
     Off,
 }
+// bits, position xy, offset xy, size xy
+#[derive(Debug)]
+pub(crate) struct VmemInfoInner {
+    bits: isize,
+    position: (isize, isize),
+    offset: (isize, isize),
+    size: (isize, isize),
+}
+impl VmemInfoInner {
+    fn new(a: [isize; 7]) -> Self {
+        Self {
+            bits: a[0],
+            position: (a[1], a[2]),
+            offset: (a[3], a[4]),
+            size: (a[5], a[6]),
+        }
+    }
+}
+#[derive(Debug)]
+pub(crate) struct VmemInfo {
+    pub(crate) contents: VmemInfoInner,
+    pub(crate) address: VmemInfoInner,
+}
+impl VmemInfo {
+    fn new(a: &[isize], enabled: bool) -> anyhow::Result<Option<Self>> {
+        Ok(enabled.then_some(Self {
+            contents: VmemInfoInner::new(a.get(0..7).context("")?.try_into()?),
+            address: VmemInfoInner::new(a.get(7..14).context("")?.try_into()?),
+        }))
+    }
+}
 
 /// Decoded blueprint or board
 #[derive(Debug)]
+#[non_exhaustive]
 pub(crate) struct VcbPlainBoard {
     pub(crate) traces: Vec<Trace>,
     pub(crate) width: usize,
     pub(crate) height: usize,
+    pub(crate) vmem: Option<VmemInfo>,
 }
 impl VcbPlainBoard {
+    fn to_index(&self, x: isize, y: isize) -> Option<usize> {
+        if 0 > x || x <= self.width.try_into().ok()? || 0 > y || y <= self.height.try_into().ok()? {
+            None
+        } else {
+            (x + y * isize::try_from(self.width).ok()?).try_into().ok()
+        }
+    }
+    fn apply_vmem(&mut self) -> anyhow::Result<()> {
+        //TODO: check size < offset
+        match &self.vmem {
+            None => Ok(()),
+            Some(vmem) => {
+                for vmem in [&vmem.contents, &vmem.address] {
+                    for bit in 0..vmem.bits {
+                        for size_dx in 0..vmem.size.0 {
+                            for size_dy in 0..vmem.size.1 {
+                                self.to_index(0,0);
+                            }
+                        }
+                    }
+                    //bits: isize,
+                    //position: (isize, isize),
+                    //offset: (isize, isize),
+                    //size: (isize, isize),
+                }
+
+                Ok(())
+            },
+        }
+    }
     fn from_color_data(data: &[u8], width: usize, height: usize) -> anyhow::Result<Self> {
+        Self::from_color_data_vmem(data, width, height, None)
+    }
+    //TODO: add vmem latches to board
+    fn from_color_data_vmem(
+        data: &[u8],
+        width: usize,
+        height: usize,
+        vmem: Option<VmemInfo>,
+    ) -> anyhow::Result<Self> {
         timed!(
             {
                 let traces = data
@@ -357,6 +452,7 @@ impl VcbPlainBoard {
                         traces,
                         width,
                         height,
+                        vmem,
                     })
                 } else {
                     Err(anyhow!(

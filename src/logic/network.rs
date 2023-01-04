@@ -227,7 +227,6 @@ impl InitializedNetwork {
         let mut new_network = self.optimization_pass_remove_redundant();
         loop {
             if new_network.gates.len() == prev_network_gate_count {
-                new_network.print_info();
                 break new_network;
             }
             prev_network_gate_count = new_network.gates.len();
@@ -544,8 +543,8 @@ impl InitializedNetwork {
     fn optimized(&self) -> Self {
         timed!(
             {
-                let network = self.optimize_remove_redundant();
-                let network = self.optimize_reorder_cache(); //TODO: FINDME
+                self.print_info();
+                let network = self.optimize_remove_redundant().optimize_reorder_cache();
                 network.print_info();
                 network
             },
