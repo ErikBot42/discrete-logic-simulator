@@ -418,7 +418,7 @@ impl VcbPlainBoard {
                                 let y = vmem.position.1 + dy - bit * vmem.offset.1;
                                 dbg!(x, y);
                                 self.to_index(x, y)
-                                    .map(|i| self.traces.get_mut(i).map(|t| *t = Trace::Orange1));
+                                    .map(|i| self.traces.get_mut(i).map(|t| *t = Trace::Vmem));
                             }
                         }
                     }
