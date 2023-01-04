@@ -400,11 +400,10 @@ pub(crate) struct VcbPlainBoard {
 }
 impl VcbPlainBoard {
     fn to_index(&self, x: isize, y: isize) -> Option<usize> {
-        if 0 > x || x <= self.width.try_into().ok()? || 0 > y || y <= self.height.try_into().ok()? {
-            None
-        } else {
-            (x + y * isize::try_from(self.width).ok()?).try_into().ok()
-        }
+        let x: usize = x.try_into().ok()?;
+        let y: usize = y.try_into().ok()?;
+        dbg!(x, y, self.width, self.height);
+        (x < self.width && y < self.height).then_some(x + y * self.width)
     }
     fn apply_vmem(&mut self) -> anyhow::Result<()> {
         //TODO: check size < offset
@@ -413,9 +412,13 @@ impl VcbPlainBoard {
             Some(vmem) => {
                 for vmem in [&vmem.contents, &vmem.address] {
                     for bit in 0..vmem.bits {
-                        for size_dx in 0..vmem.size.0 {
-                            for size_dy in 0..vmem.size.1 {
-                                self.to_index(0,0);
+                        for dx in 0..vmem.size.0 {
+                            for dy in 0..vmem.size.1 {
+                                let x = vmem.position.0 + dx - bit * vmem.offset.0;
+                                let y = vmem.position.1 + dy - bit * vmem.offset.1;
+                                dbg!(x, y);
+                                self.to_index(x, y)
+                                    .map(|i| self.traces.get_mut(i).map(|t| *t = Trace::Orange1));
                             }
                         }
                     }
@@ -424,7 +427,6 @@ impl VcbPlainBoard {
                     //offset: (isize, isize),
                     //size: (isize, isize),
                 }
-
                 Ok(())
             },
         }
@@ -448,12 +450,14 @@ impl VcbPlainBoard {
                     .collect::<Option<Vec<_>>>()
                     .context("invalid color found")?;
                 if traces.len() == width * height {
-                    Ok(VcbPlainBoard {
+                    let mut this = VcbPlainBoard {
                         traces,
                         width,
                         height,
                         vmem,
-                    })
+                    };
+                    this.apply_vmem()?;
+                    Ok(this)
                 } else {
                     Err(anyhow!(
                         "Wrong trace len: len: {}, width: {width}, height: {height}",
