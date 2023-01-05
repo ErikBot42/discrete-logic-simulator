@@ -33,6 +33,9 @@ pub struct VcbBoard<T: LogicSim> {
     pub(crate) height: usize,
 }
 impl<T: LogicSim> VcbBoard<T> {
+    fn num_elements(&self) -> usize {
+        self.width * self.height
+    }
     fn new(plain: VcbPlainBoard, optimize: bool) -> Self {
         fn element_id_to_external_id(
             elements: &[BoardElement],
@@ -124,10 +127,14 @@ impl<T: LogicSim> VcbBoard<T> {
 impl<T: LogicSim> VcbBoard<T> {
     fn print_generic_debug<F: Fn(usize) -> String>(&self, f: F, constrain: bool) {
         let (sx, sy) = terminal::size().unwrap_or((50, 50));
-        let (max_print_width, max_print_height) = if constrain {(
-            self.width.min((sx as usize)/2),
-            self.height.min(sy as usize - 2),
-        )} else {(self.width, self.height)};
+        let (max_print_width, max_print_height) = if constrain {
+            (
+                self.width.min((sx as usize) / 2),
+                self.height.min(sy as usize - 2),
+            )
+        } else {
+            (self.width, self.height)
+        };
         println!("\nBoard:");
         for y in 0..max_print_height {
             for x in 0..max_print_width {
@@ -176,11 +183,15 @@ impl<T: LogicSim> VcbBoard<T> {
             for x in 0..max_print_width {
                 let i = x + y * self.width;
                 let i2 = x + (y + 1) * self.width;
-                let col = self.elements[i].get_color(self);
-                let col2 = self
-                    .elements
-                    .get(i2)
-                    .map_or(Trace::Empty.to_color_off(), |s| s.get_color(self));
+                //let col = self.elements[i].get_color(self);
+                let col = self.get_color_element(i);
+                let col2 = (i2 / self.width < self.height)
+                    .then(|| self.get_color_element(i2))
+                    .unwrap_or(Trace::Empty.to_color_off());
+                //let col2 = self
+                //    .elements
+                //    .get(i2)
+                //    .map_or(Trace::Empty.to_color_off(), |s| s.get_color(self));
 
                 stdout.queue(SetColors(Colors::new(
                     (col2[0], col2[1], col2[2]).into(),
@@ -290,10 +301,8 @@ impl<T: LogicSim> VcbBoard<T> {
 
         println!("Generating colors...");
         let a = loop {
-            let color_data: BoardColorData = self
-                .elements
-                .iter()
-                .flat_map(|x| x.get_color(self))
+            let color_data: BoardColorData = (0..self.num_elements())
+                .flat_map(|i| self.get_color_element(i))
                 .collect();
 
             v.push(color_data.clone()); // optimization is my passion
@@ -354,18 +363,5 @@ struct BoardElement {
 impl BoardElement {
     fn new(trace: Trace) -> Self {
         BoardElement { trace, id: None }
-    }
-    fn get_state<T: LogicSim>(&self, board: &VcbBoard<T>) -> bool {
-        self.id
-            .map(|t| {
-                board.nodes[t]
-                    .network_id
-                    .map(|i| board.logic_sim.get_state(i))
-                    .unwrap_or_default()
-            })
-            .unwrap_or_default()
-    }
-    fn get_color<T: LogicSim>(&self, board: &VcbBoard<T>) -> [u8; 4] {
-        self.trace.get_color(self.get_state(board))
     }
 }
