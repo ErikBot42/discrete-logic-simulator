@@ -1159,8 +1159,8 @@ pub struct BitPackSimInner /*<const LATCH: bool>*/ {
     state: Vec<BitInt>,   // intersperse candidate
     //kind: Vec<GateType>,
     parity: Vec<BitInt>,      // intersperse candidate
-    is_xor: Vec<BitInt>,      // intersperse candidate
-    is_inverted: Vec<BitInt>, // intersperse candidate
+    //is_xor: Vec<BitInt>,      // intersperse candidate
+    //is_inverted: Vec<BitInt>, // intersperse candidate
     //packed_output_indexes: Vec<IndexType>,
     //packed_outputs: Vec<IndexType>,
     single_packed_outputs: Vec<IndexType>,
@@ -1319,13 +1319,13 @@ impl BitPackSimInner /*<LATCH>*/ {
         const AVG_ONES_WINDOW: f64 = 4_000_000.0;
 
         //unsafe { println!("{AVG_ONES}") };
-        for (group_id, offset, is_inverted, is_xor) in
+        for (group_id, offset /*is_inverted, is_xor*/) in
             update_list.iter().map(|g| g as usize).map(|group_id| {
                 (
                     group_id,
                     group_id * Self::BITS,
-                    unsafe { self.is_inverted.get_unchecked(group_id) },
-                    unsafe { self.is_xor.get_unchecked(group_id) },
+                    //unsafe { self.is_inverted.get_unchecked(group_id) },
+                    //unsafe { self.is_xor.get_unchecked(group_id) },
                 )
             })
         {
@@ -1571,7 +1571,7 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
                 .collect()
         };
         dbg!(group_output_count.iter().counts());
-        let parity = (0..is_xor.len()).map(|_| 0).collect(); // TODO: calc parity instead
+        let parity = (0..kind.len()).map(|_| 0).collect(); // TODO: calc parity instead
 
         let group_run_type = kind
             .iter()
@@ -1585,8 +1585,8 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
             acc,
             state,
             parity,
-            is_xor,
-            is_inverted,
+            //is_xor,
+            //is_inverted,
             single_packed_outputs,
             update_list,
             cluster_update_list,

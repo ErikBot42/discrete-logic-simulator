@@ -26,7 +26,6 @@ pub struct VcbBoard<T: LogicSim> {
     traces: Vec<Trace>,
     element_ids_internal: Vec<Option<usize>>,
     element_ids_external: Vec<Option<usize>>, // to debug
-    elements: Vec<BoardElement>,
     pub(crate) logic_sim: T,
     pub(crate) width: usize,
     pub(crate) height: usize,
@@ -58,7 +57,6 @@ impl<T: LogicSim> VcbBoard<T> {
             element_ids_internal: element_ids,
             element_ids_external,
             traces: plain.traces,
-            elements,
             logic_sim,
             width,
             height,
@@ -208,14 +206,14 @@ impl<T: LogicSim> VcbBoard<T> {
             let mut min_print_width = 0;
             for x in 0..self.width {
                 let i = x + y * self.width;
-                if !matches!(self.elements[i].trace, Trace::Empty) {
+                if !matches!(self.traces[i], Trace::Empty) {
                     min_print_width = x;
                 }
             }
             min_print_width += 1;
             for x in 0..min_print_width {
                 let i = x + y * self.width;
-                let trace = self.elements[i].trace;
+                let trace = self.traces[i];
                 let printed_str = fun(trace);
                 print!("{printed_str}");
             }
@@ -246,9 +244,9 @@ impl<T: LogicSim> VcbBoard<T> {
     }
     fn print_legend<F: Fn(Trace) -> String, U: Fn(Trace) -> String>(&self, f1: F, f2: U) {
         fn get_current_traces<T: LogicSim>(b: &VcbBoard<T>) -> Vec<Trace> {
-            b.elements
+            b.traces
                 .iter()
-                .map(|e| e.trace)
+                .cloned()
                 .fold(std::collections::HashSet::new(), |mut set, trace| {
                     set.insert(trace);
                     set
