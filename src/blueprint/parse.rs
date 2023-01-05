@@ -367,6 +367,23 @@ pub(crate) struct VmemInfoInner {
     size: (isize, isize), // should only be positive
 }
 impl VmemInfoInner {
+    // calc pos with given offset
+    fn bit_pos_offset(&self, bit: isize, (ox, oy): (isize, isize)) -> Option<(isize, isize)> {
+        let (x, y) = self.bit_pos(bit)?;
+        Some((x.checked_add(ox)?, y.checked_add(oy)?))
+    }
+
+    // calc base pos of given vmem bit
+    fn bit_pos(&self, bit: isize) -> Option<(isize, isize)> {
+        Some((
+            self.position
+                .0
+                .checked_sub(bit.checked_mul(self.offset.0)?)?,
+            self.position
+                .1
+                .checked_sub(bit.checked_mul(self.offset.1)?)?,
+        ))
+    }
     fn new(a: [isize; 7]) -> anyhow::Result<Self> {
         let v = Self {
             bits: a[0],
@@ -415,7 +432,7 @@ pub(crate) struct VcbPlainBoard {
     pub(crate) vmem: Option<VmemInfo>,
 }
 impl VcbPlainBoard {
-    fn to_index(&self, x: isize, y: isize) -> Option<usize> {
+    fn to_index(&self, (x, y): (isize, isize)) -> Option<usize> {
         let x: usize = x.try_into().ok()?;
         let y: usize = y.try_into().ok()?;
         (x < self.width && y < self.height).then_some(x + y * self.width)
@@ -429,19 +446,10 @@ impl VcbPlainBoard {
                     for dy in 0..vmem.size.1 {
                         for bit in 0..vmem.bits {
                             for dx in 0..vmem.size.0 {
-                                // f(n, k) = position - n * offset + k
-                                // f - position + k = - n * offset
-                                // position - f - k  = n * offset
-                                // position - (f + k) = n * offset
-                                // (position - (f + k))/offset = n
-                                // floor((position - f)/offset) = n
-                                // assume: integer division floor implicit
-                                // (position - f) / offset = n
-                                let index = self
-                                    .to_index(
-                                        vmem.position.0 + dx - bit * vmem.offset.0,
-                                        vmem.position.1 + dy - bit * vmem.offset.1,
-                                    )
+                                let index = vmem
+                                    .bit_pos_offset(bit, (dx, dy))
+                                    .map(|s| self.to_index(s))
+                                    .flatten()
                                     .context("vmem position bounds")?;
                                 let trace =
                                     self.traces.get_mut(index).context("vmem index bounds")?;
