@@ -1,5 +1,6 @@
 //#![warn(clippy::cargo)]
 //#![warn(clippy::all)]
+#![feature(try_blocks)]
 #![feature(portable_simd)]
 #![feature(core_intrinsics)]
 #![feature(generic_arg_infer)]

@@ -1,4 +1,5 @@
 use super::*;
+use itertools::iproduct;
 use json::JsonValue;
 use std::fs::read_to_string;
 
@@ -361,17 +362,28 @@ enum Layer {
 #[derive(Debug)]
 pub(crate) struct VmemInfoInner {
     bits: isize,
-    position: (isize, isize),
+    position: (isize, isize), // should only be positive
     offset: (isize, isize),
-    size: (isize, isize),
+    size: (isize, isize), // should only be positive
 }
 impl VmemInfoInner {
-    fn new(a: [isize; 7]) -> Self {
-        Self {
+    fn new(a: [isize; 7]) -> anyhow::Result<Self> {
+        let v = Self {
             bits: a[0],
             position: (a[1], a[2]),
             offset: (a[3], a[4]),
             size: (a[5], a[6]),
+        };
+        if v.position.0 < 0
+            || v.position.1 < 0
+            || v.size.0 < 0
+            || v.size.1 < 0
+            || v.bits < 0
+            || (v.offset.0.abs() <= v.size.0.abs() && v.offset.1.abs() <= v.size.1.abs())
+        {
+            Err(anyhow!("Invalid vmem: {v:?}"))
+        } else {
+            Ok(v)
         }
     }
 }
@@ -382,10 +394,14 @@ pub(crate) struct VmemInfo {
 }
 impl VmemInfo {
     fn new(a: &[isize], enabled: bool) -> anyhow::Result<Option<Self>> {
-        Ok(enabled.then_some(Self {
-            contents: VmemInfoInner::new(a.get(0..7).context("")?.try_into()?),
-            address: VmemInfoInner::new(a.get(7..14).context("")?.try_into()?),
-        }))
+        Ok(if enabled {
+            Some(Self {
+                contents: VmemInfoInner::new(a.get(0..7).context("")?.try_into()?)?,
+                address: VmemInfoInner::new(a.get(7..14).context("")?.try_into()?)?,
+            })
+        } else {
+            None
+        })
     }
 }
 
@@ -402,32 +418,40 @@ impl VcbPlainBoard {
     fn to_index(&self, x: isize, y: isize) -> Option<usize> {
         let x: usize = x.try_into().ok()?;
         let y: usize = y.try_into().ok()?;
-        dbg!(x, y, self.width, self.height);
         (x < self.width && y < self.height).then_some(x + y * self.width)
     }
-    fn apply_vmem(&mut self) -> anyhow::Result<()> {
-        //TODO: check size < offset
+    //TODO: check size < offset
+    fn apply_vmem(mut self) -> anyhow::Result<Self> {
         match &self.vmem {
-            None => Ok(()),
+            None => Ok(self),
             Some(vmem) => {
                 for vmem in [&vmem.contents, &vmem.address] {
-                    for bit in 0..vmem.bits {
-                        for dx in 0..vmem.size.0 {
-                            for dy in 0..vmem.size.1 {
-                                let x = vmem.position.0 + dx - bit * vmem.offset.0;
-                                let y = vmem.position.1 + dy - bit * vmem.offset.1;
-                                dbg!(x, y);
-                                self.to_index(x, y)
-                                    .map(|i| self.traces.get_mut(i).map(|t| *t = Trace::Vmem));
+                    for dy in 0..vmem.size.1 {
+                        for bit in 0..vmem.bits {
+                            for dx in 0..vmem.size.0 {
+                                // f(n, k) = position - n * offset + k
+                                // f - position + k = - n * offset
+                                // position - f - k  = n * offset
+                                // position - (f + k) = n * offset
+                                // (position - (f + k))/offset = n
+                                // floor((position - f)/offset) = n
+                                // assume: integer division floor implicit
+                                // (position - f) / offset = n
+                                let index = self
+                                    .to_index(
+                                        vmem.position.0 + dx - bit * vmem.offset.0,
+                                        vmem.position.1 + dy - bit * vmem.offset.1,
+                                    )
+                                    .context("vmem position bounds")?;
+                                let trace =
+                                    self.traces.get_mut(index).context("vmem index bounds")?;
+                                assert_ne!(*trace, Trace::Vmem);
+                                *trace = Trace::Vmem;
                             }
                         }
                     }
-                    //bits: isize,
-                    //position: (isize, isize),
-                    //offset: (isize, isize),
-                    //size: (isize, isize),
                 }
-                Ok(())
+                Ok(self)
             },
         }
     }
@@ -450,14 +474,13 @@ impl VcbPlainBoard {
                     .collect::<Option<Vec<_>>>()
                     .context("invalid color found")?;
                 if traces.len() == width * height {
-                    let mut this = VcbPlainBoard {
+                    VcbPlainBoard {
                         traces,
                         width,
                         height,
                         vmem,
-                    };
-                    this.apply_vmem()?;
-                    Ok(this)
+                    }
+                    .apply_vmem()
                 } else {
                     Err(anyhow!(
                         "Wrong trace len: len: {}, width: {width}, height: {height}",

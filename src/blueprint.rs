@@ -122,10 +122,15 @@ impl<T: LogicSim> VcbBoard<T> {
     }
 }
 impl<T: LogicSim> VcbBoard<T> {
-    fn print_generic_debug<F: Fn(usize) -> String>(&self, f: F) {
+    fn print_generic_debug<F: Fn(usize) -> String>(&self, f: F, constrain: bool) {
+        let (sx, sy) = terminal::size().unwrap_or((50, 50));
+        let (max_print_width, max_print_height) = if constrain {(
+            self.width.min((sx as usize)/2),
+            self.height.min(sy as usize - 2),
+        )} else {(self.width, self.height)};
         println!("\nBoard:");
-        for y in 0..self.height {
-            for x in 0..self.width {
+        for y in 0..max_print_height {
+            for x in 0..max_print_width {
                 let id = self.pixel_id(x, y);
                 let s = f(id);
                 let col = self.get_color_element(id);
@@ -138,7 +143,7 @@ impl<T: LogicSim> VcbBoard<T> {
     }
 }
 impl<T: LogicSim> VcbBoard<T> {
-    fn print_inner(&self, debug_inner: Option<bool>) {
+    fn print_inner(&self, debug_inner: Option<bool>, constrain: bool) {
         let format = |id: usize| {
             debug_inner
                 .map(|s| {
@@ -154,19 +159,19 @@ impl<T: LogicSim> VcbBoard<T> {
                 .unwrap_or("  ".to_string())
         };
 
-        self.print_generic_debug(format);
+        self.print_generic_debug(format, constrain);
     }
 
     fn print_compact(&self) -> Result<(), std::io::Error> {
         let mut stdout = stdout();
         let (sx, sy) = terminal::size()?;
+        let max_print_width = self.width.min(sx as usize);
+        let max_print_height = self.height.min(2 * sy as usize - 4);
         stdout.queue(Print(format!(
             "{:?} {:?}\n",
             (sx, sy),
             (self.width, self.height)
         )))?;
-        let max_print_width = self.width.min(sx as usize);
-        let max_print_height = self.height.min(2 * sy as usize - 4);
         for y in (0..max_print_height).step_by(2) {
             for x in 0..max_print_width {
                 let i = x + y * self.width;
@@ -218,8 +223,12 @@ impl<T: LogicSim> VcbBoard<T> {
         self.print_using_translation(Trace::as_discord_emoji, legend);
     }
     pub fn print_debug(&self) {
-        self.print_inner(Some(true));
-        self.print_inner(Some(false));
+        self.print_inner(Some(true), false);
+        self.print_inner(Some(false), false);
+    }
+    pub fn print_debug_constrain(&self) {
+        self.print_inner(Some(true), true);
+        self.print_inner(Some(false), true);
     }
     /// # Errors
     /// cannot print
