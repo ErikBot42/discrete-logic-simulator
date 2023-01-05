@@ -27,7 +27,6 @@ pub struct VcbBoard<T: LogicSim> {
     element_ids_internal: Vec<Option<usize>>,
     element_ids_external: Vec<Option<usize>>, // to debug
     elements: Vec<BoardElement>,
-    nodes: Vec<BoardNode>,
     pub(crate) logic_sim: T,
     pub(crate) width: usize,
     pub(crate) height: usize,
@@ -60,7 +59,6 @@ impl<T: LogicSim> VcbBoard<T> {
             element_ids_external,
             traces: plain.traces,
             elements,
-            nodes,
             logic_sim,
             width,
             height,
