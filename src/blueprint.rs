@@ -184,11 +184,6 @@ impl<T: LogicSim> VcbBoard<T> {
                 let col2 = (i2 / self.width < self.height)
                     .then(|| self.get_color_element(i2))
                     .unwrap_or(Trace::Empty.to_color_off());
-                //let col2 = self
-                //    .elements
-                //    .get(i2)
-                //    .map_or(Trace::Empty.to_color_off(), |s| s.get_color(self));
-
                 stdout.queue(SetColors(Colors::new(
                     (col2[0], col2[1], col2[2]).into(),
                     (col[0], col[1], col[2]).into(),

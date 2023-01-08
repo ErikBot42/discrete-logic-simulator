@@ -1,7 +1,5 @@
 use super::*;
-use itertools::iproduct;
 use json::JsonValue;
-use std::fs::read_to_string;
 
 #[derive(Clone)]
 pub enum VcbInput {
@@ -109,7 +107,7 @@ impl VcbParser {
                         number.as_fixed_point_i64(0).unwrap().try_into().unwrap()
                     },
                     _ => return Err(anyhow!("invalid number format")),
-                })
+                });
             }
             Ok(a)
         } else {
@@ -448,8 +446,7 @@ impl VcbPlainBoard {
                             for dx in 0..vmem.size.0 {
                                 let index = vmem
                                     .bit_pos_offset(bit, (dx, dy))
-                                    .map(|s| self.to_index(s))
-                                    .flatten()
+                                    .and_then(|s| self.to_index(s))
                                     .context("vmem position bounds")?;
                                 let trace =
                                     self.traces.get_mut(index).context("vmem index bounds")?;

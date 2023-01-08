@@ -39,6 +39,8 @@ pub(crate) enum GateType {
     Xnor,
     /// S != (A % 2 == 1 && P % 2 == 0)
     Latch,
+    /// S != (A % 2 == 1 && P % 2 == 0) 
+    Interface(u8),
     /// A > 0
     #[default]
     Cluster, // equivalent to OR
@@ -51,7 +53,7 @@ impl GateType {
     /// can a pair of identical connections be removed without changing behaviour
     fn can_delete_double_identical_inputs(self) -> bool {
         match self {
-            GateType::Xor | GateType::Xnor | GateType::Latch => true,
+            GateType::Xor | GateType::Xnor | GateType::Latch | GateType::Interface(_) => true,
             GateType::And | GateType::Or | GateType::Nor | GateType::Nand | GateType::Cluster => {
                 false
             },
@@ -63,7 +65,7 @@ impl GateType {
             GateType::And | GateType::Or | GateType::Nor | GateType::Nand | GateType::Cluster => {
                 true
             },
-            GateType::Xor | GateType::Xnor | GateType::Latch => false,
+            GateType::Xor | GateType::Xnor | GateType::Latch | GateType::Interface(_) => false,
         }
     }
     fn is_cluster(self) -> bool {
@@ -88,6 +90,7 @@ impl RunTimeGateType {
             GateType::Or | GateType::Nand | GateType::Cluster => RunTimeGateType::OrNand,
             GateType::Xor | GateType::Xnor => RunTimeGateType::XorXnor,
             GateType::Latch => RunTimeGateType::Latch,
+            GateType::Interface(_) => RunTimeGateType::Latch,
         }
     }
 
@@ -192,7 +195,12 @@ impl Gate {
                 let a: AccType = 0;
                 a.wrapping_sub(AccType::try_from(inputs).unwrap())
             },
-            GateType::Or | GateType::Nor | GateType::Xor | GateType::Cluster | GateType::Latch => 0,
+            GateType::Or
+            | GateType::Nor
+            | GateType::Xor
+            | GateType::Cluster
+            | GateType::Latch
+            | GateType::Interface(_) => 0,
             GateType::Xnor => 1,
         }
     }
@@ -302,6 +310,7 @@ impl Gate {
                 GateType::And | GateType::Or | GateType::Xor => GateType::Or,
                 GateType::Cluster => GateType::Cluster, // merging cluster with gate is invalid
                 GateType::Latch => GateType::Latch,     // TODO: is merging latch with gate invalid?
+                GateType::Interface(s) => GateType::Interface(s), // never merge interface
             },
             _ => kind,
         };
@@ -1158,7 +1167,7 @@ pub struct BitPackSimInner /*<const LATCH: bool>*/ {
     acc: Vec<BitAccPack>, // 8x BitInt
     state: Vec<BitInt>,   // intersperse candidate
     //kind: Vec<GateType>,
-    parity: Vec<BitInt>,      // intersperse candidate
+    parity: Vec<BitInt>, // intersperse candidate
     //is_xor: Vec<BitInt>,      // intersperse candidate
     //is_inverted: Vec<BitInt>, // intersperse candidate
     //packed_output_indexes: Vec<IndexType>,
@@ -1580,14 +1589,12 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
             .collect();
 
         let mut this = Self {
-            group_run_type,
             translation_table,
             acc,
             state,
             parity,
-            //is_xor,
-            //is_inverted,
             single_packed_outputs,
+            group_run_type,
             update_list,
             cluster_update_list,
             in_update_list,
