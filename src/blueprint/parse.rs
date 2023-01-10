@@ -1,5 +1,7 @@
 use super::*;
+use itertools::iproduct;
 use json::JsonValue;
+use std::iter::repeat;
 
 #[derive(Clone)]
 pub enum VcbInput {
@@ -430,12 +432,15 @@ pub(crate) struct VcbPlainBoard {
     pub(crate) vmem: Option<VmemInfo>,
 }
 impl VcbPlainBoard {
-    fn to_index(&self, (x, y): (isize, isize)) -> Option<usize> {
+    fn pos_to_index(&self, (x, y): (isize, isize)) -> Option<usize> {
         let x: usize = x.try_into().ok()?;
         let y: usize = y.try_into().ok()?;
         (x < self.width && y < self.height).then_some(x + y * self.width)
     }
-    //TODO: check size < offset
+    /// Iterate origin of all vmem bits, contents then address
+    fn iter_vmem_bits(&self) {
+        todo!()
+    }
     fn apply_vmem(mut self) -> anyhow::Result<Self> {
         match &self.vmem {
             None => Ok(self),
@@ -446,7 +451,7 @@ impl VcbPlainBoard {
                             for dx in 0..vmem.size.0 {
                                 let index = vmem
                                     .bit_pos_offset(bit, (dx, dy))
-                                    .and_then(|s| self.to_index(s))
+                                    .and_then(|s| self.pos_to_index(s))
                                     .context("vmem position bounds")?;
                                 let trace =
                                     self.traces.get_mut(index).context("vmem index bounds")?;
@@ -463,7 +468,6 @@ impl VcbPlainBoard {
     fn from_color_data(data: &[u8], width: usize, height: usize) -> anyhow::Result<Self> {
         Self::from_color_data_vmem(data, width, height, None)
     }
-    //TODO: add vmem latches to board
     fn from_color_data_vmem(
         data: &[u8],
         width: usize,

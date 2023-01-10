@@ -268,7 +268,7 @@ impl Trace {
                 Trace::Xnor => (GateType::Xnor, false),
                 Trace::LatchOn => (GateType::Latch, true),
                 Trace::LatchOff => (GateType::Latch, false),
-                Trace::Vmem => (GateType::Latch, false),
+                Trace::Vmem => (GateType::Interface(None), false),
                 _ => panic!("unsupported logic trace: {self:?}"),
             }
         }

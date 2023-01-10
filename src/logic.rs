@@ -39,8 +39,8 @@ pub(crate) enum GateType {
     Xnor,
     /// S != (A % 2 == 1 && P % 2 == 0)
     Latch,
-    /// S != (A % 2 == 1 && P % 2 == 0) 
-    Interface(u8),
+    /// S != (A % 2 == 1 && P % 2 == 0)
+    Interface(Option<u8>),
     /// A > 0
     #[default]
     Cluster, // equivalent to OR
