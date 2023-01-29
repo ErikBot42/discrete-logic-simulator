@@ -951,9 +951,9 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         cluster_update_list: &mut UpdateList,
     ) {
         let (update_list, next_update_list) = if CLUSTER {
-            (unsafe { cluster_update_list.get_slice() }, gate_update_list)
+            (cluster_update_list.get_slice(), gate_update_list)
         } else {
-            (unsafe { gate_update_list.get_slice() }, cluster_update_list)
+            (gate_update_list.get_slice(), cluster_update_list)
         };
         Self::update_gates_in_list_simd::<CLUSTER>(inner, update_list, next_update_list);
     }

@@ -149,7 +149,7 @@ impl<T: LogicSim> VcbBoard<T> {
     fn print_inner(&self, debug_inner: Option<bool>, constrain: bool) {
         let format = |id: usize| {
             debug_inner
-                .map(|s| {
+                .and_then(|s| {
                     if s {
                         self.get_internal_id(id)
                     } else {
@@ -157,7 +157,6 @@ impl<T: LogicSim> VcbBoard<T> {
                     }
                     .map(|s| s % 100)
                 })
-                .flatten()
                 .map(|s| format!("{s:>2}"))
                 .unwrap_or("  ".to_string())
         };
@@ -249,7 +248,7 @@ impl<T: LogicSim> VcbBoard<T> {
                 .into_iter()
                 .collect()
         }
-        for t in get_current_traces(&self) {
+        for t in get_current_traces(self) {
             println!("{} = {}", f1(t), f2(t));
         }
     }
