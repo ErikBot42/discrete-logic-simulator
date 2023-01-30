@@ -160,16 +160,10 @@ pub trait LogicSim {
 /// data needed after processing network
 #[derive(Debug, Clone)]
 pub(crate) struct Gate {
-    // constant:
     inputs: Vec<IndexType>,  // list of ids
     outputs: Vec<IndexType>, // list of ids
     kind: GateType,
-
-    // variable:
-    // acc: AccType,
     initial_state: bool,
-    // in_update_list: bool,
-    // TODO: "do not merge" flag for gates that are "volatile", for example handling IO
 }
 impl Gate {
     fn new(kind: GateType, initial_state: bool) -> Self {
@@ -362,8 +356,6 @@ pub(crate) struct CompiledNetworkInner {
     pub iterations: usize,
 
     kind: Vec<GateType>,
-    #[cfg(test)]
-    number_of_gates: usize,
 }
 
 /// Contains prepared datastructures to run the network.
@@ -376,8 +368,6 @@ pub struct CompiledNetwork<const STRATEGY: u8> {
 }
 impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     const STRATEGY: UpdateStrategy = UpdateStrategy::from(STRATEGY_I);
-
-    //unsafe { transmute::<u8, UpdateStrategy>(STRATEGY_I)};
     #[cfg(test)]
     pub(crate) fn get_acc_test(&self) -> Box<dyn Iterator<Item = u8>> {
         match Self::STRATEGY {
@@ -395,26 +385,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
     }
 
-    /// Adds all non-cluster gates to update list
-    #[cfg(test)]
-    pub(crate) fn add_all_to_update_list(&mut self) {
-        for (s, k) in self.i.status.iter_mut().zip(self.i.kind.iter()) {
-            if *k != GateType::Cluster {
-                gate_status::mark_in_update_list(s)
-            } else {
-                assert!(!gate_status::in_update_list(*s));
-            }
-        }
-        self.update_list.clear();
-        self.update_list.collect(
-            (0..self.i.number_of_gates as IndexType)
-                .into_iter()
-                .zip(self.i.kind.iter())
-                .filter(|(_, k)| **k != GateType::Cluster)
-                .map(|(i, _)| i),
-        );
-        assert_eq!(self.cluster_update_list.len(), 0);
-    }
     fn create(network: InitializedNetwork) -> Self {
         let mut network = network.with_gaps(Self::STRATEGY);
 
@@ -521,8 +491,6 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
 
                 iterations: 0,
                 translation_table: network.translation_table,
-                #[cfg(test)]
-                number_of_gates,
                 kind,
             },
             update_list,
