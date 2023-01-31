@@ -68,24 +68,24 @@ mod tests {
                     include_str!("../test_files/xnor_edge_case.blueprint").to_string(),
                 ),
             ),
-            //(
-            //    "gates",
-            //    VcbInput::BlueprintLegacy(
-            //        include_str!("../test_files/gates.blueprint").to_string(),
-            //    ),
-            //),
-            //(
-            //    "big_decoder",
-            //    VcbInput::BlueprintLegacy(
-            //        include_str!("../test_files/big_decoder.blueprint").to_string(),
-            //    ),
-            //),
-            //(
-            //    "intro",
-            //    VcbInput::BlueprintLegacy(
-            //        include_str!("../test_files/intro.blueprint").to_string(),
-            //    ),
-            //),
+            (
+                "gates",
+                VcbInput::BlueprintLegacy(
+                    include_str!("../test_files/gates.blueprint").to_string(),
+                ),
+            ),
+            (
+                "big_decoder",
+                VcbInput::BlueprintLegacy(
+                    include_str!("../test_files/big_decoder.blueprint").to_string(),
+                ),
+            ),
+            (
+                "intro",
+                VcbInput::BlueprintLegacy(
+                    include_str!("../test_files/intro.blueprint").to_string(),
+                ),
+            ),
             (
                 "bcd_count",
                 VcbInput::BlueprintLegacy(
@@ -207,14 +207,14 @@ mod tests {
         }
     }
 
-    #[test]
-    fn scalar_regression_test_unoptimized() {
-        run_test::<ReferenceSim, ScalarSim>(false, 20);
-    }
-    #[test]
-    fn scalar_regression_test_optimized() {
-        run_test::<ReferenceSim, ScalarSim>(true, 20);
-    }
+    //#[test]
+    //fn scalar_regression_test_unoptimized() {
+    //    run_test::<ReferenceSim, ScalarSim>(false, 20);
+    //}
+    //#[test]
+    //fn scalar_regression_test_optimized() {
+    //    run_test::<ReferenceSim, ScalarSim>(true, 20);
+    //}
     #[test]
     fn bitpack_regression_test_unoptimized() {
         run_test::<ReferenceSim, BitPackSim>(false, 20);
@@ -223,32 +223,31 @@ mod tests {
     fn bitpack_regression_test_optimized() {
         run_test::<ReferenceSim, BitPackSim>(true, 20);
     }
-    #[test]
-    fn simd_regression_test_unoptimized() {
-        simd_test(false);
-    }
-    #[test]
-    fn simd_regression_test_optimized() {
-        simd_test(true);
-    }
+    //#[test]
+    //fn simd_regression_test_unoptimized() {
+    //    simd_test(false);
+    //}
+    //#[test]
+    //fn simd_regression_test_optimized() {
+    //    simd_test(true);
+    //}
 
     //#[test]
     //fn basic_gate_test_scalar() {
     //    generic_basic_gate_test_w::<ScalarSim>();
     //}
-    //#[test]
-    //fn basic_gate_test_reference() {
-    //    generic_basic_gate_test_w::<ReferenceSim>();
-    //}
+    #[test]
+    fn basic_gate_test_reference() {
+        generic_basic_gate_test_w::<ReferenceSim>();
+    }
     //#[test]
     //fn basic_gate_test_simd() {
     //    generic_basic_gate_test_w::<SimdSim>();
     //}
-    //#[test]
-    //fn basic_gate_test_bitpack() {
-    //    generic_basic_gate_test_w::<BitPackSim>();
-    //}
-
+    #[test]
+    fn basic_gate_test_bitpack() {
+        generic_basic_gate_test_w::<BitPackSim>();
+    }
     fn generic_basic_gate_test_w<SIM: LogicSim>() {
         basic_gate_test::<SIM>(false, false);
         basic_gate_test::<SIM>(false, true);

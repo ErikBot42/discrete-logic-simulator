@@ -14,7 +14,8 @@ use std::mem::{align_of, size_of, transmute};
 use std::ops::Range;
 use std::simd::{Mask, Simd};
 
-pub type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
+//pub type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
+pub type ReferenceSim = reference_sim::ReferenceLogicSim;
 pub type SimdSim = CompiledNetwork<{ UpdateStrategy::Simd as u8 }>;
 pub type ScalarSim = CompiledNetwork<{ UpdateStrategy::ScalarSimd as u8 }>;
 pub type BitPackSim = BitPackSimInner;

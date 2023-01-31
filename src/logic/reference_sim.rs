@@ -2,7 +2,7 @@
 //! As simple as possible, and therefore slow.
 use super::{AccType, Gate, IndexType, LogicSim, RunTimeGateType};
 use itertools::Itertools;
-pub(crate) struct ReferenceLogicSim {
+pub struct ReferenceLogicSim {
     update_list: Vec<usize>,
     cluster_update_list: Vec<usize>,
     in_update_list: Vec<bool>,
