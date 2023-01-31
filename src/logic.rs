@@ -219,7 +219,6 @@ impl Gate {
         self.inputs.sort_unstable(); // TODO: probably not needed
     }
     #[inline]
-    #[cfg(test)]
     const fn evaluate(acc: AccType, acc_prev: AccType, state: bool, kind: RunTimeGateType) -> bool {
         match kind {
             RunTimeGateType::OrNand => acc != 0,
