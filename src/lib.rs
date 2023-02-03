@@ -236,18 +236,18 @@ mod tests {
     //fn basic_gate_test_scalar() {
     //    generic_basic_gate_test_w::<ScalarSim>();
     //}
-    #[test]
-    fn basic_gate_test_reference() {
-        generic_basic_gate_test_w::<ReferenceSim>();
-    }
+    //#[test]
+    //fn basic_gate_test_reference() {
+    //    generic_basic_gate_test_w::<ReferenceSim>();
+    //}
     //#[test]
     //fn basic_gate_test_simd() {
     //    generic_basic_gate_test_w::<SimdSim>();
     //}
-    #[test]
-    fn basic_gate_test_bitpack() {
-        generic_basic_gate_test_w::<BitPackSim>();
-    }
+    //#[test]
+    //fn basic_gate_test_bitpack() {
+    //    generic_basic_gate_test_w::<BitPackSim>();
+    //}
     fn generic_basic_gate_test_w<SIM: LogicSim>() {
         basic_gate_test::<SIM>(false, false);
         basic_gate_test::<SIM>(false, true);

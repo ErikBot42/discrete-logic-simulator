@@ -44,7 +44,7 @@ fn pre_parse_tests<S: LogicSim>() -> Vec<(&'static str, VcbBoard<S>)> {
 #[rustfmt::skip]
 fn criterion_benchmark_runtime(c: &mut Criterion) {
     bench_pre_parsed("run_bitpack", c, &mut black_box(pre_parse_tests::<BitPackSim>()));
-    bench_pre_parsed("run_reference", c, &mut black_box(pre_parse_tests::<ReferenceSim>()));
+    //bench_pre_parsed("run_reference", c, &mut black_box(pre_parse_tests::<ReferenceSim>()));
     //bench_pre_parsed("run_scalar", c, &mut black_box(pre_parse_tests::<ScalarSim>()));
     //bench_pre_parsed("run_simd", c, &mut black_box(pre_parse_tests::<SimdSim>()));
 }

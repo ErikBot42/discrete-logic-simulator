@@ -1132,18 +1132,11 @@ fn bit_acc_pack(arr: [BitAcc; BIT_PACK_SIM_BITS]) -> BitAccPack {
 #[derive(Debug)]
 pub struct BitPackSimInner /*<const LATCH: bool>*/ {
     translation_table: Vec<IndexType>,
-    acc: Vec<BitAccPack>, // 8x BitInt
-    state: Vec<BitInt>,   // intersperse candidate
-    //kind: Vec<GateType>,
-    parity: Vec<BitInt>, // intersperse candidate
-    //is_xor: Vec<BitInt>,      // intersperse candidate
-    //is_inverted: Vec<BitInt>, // intersperse candidate
-    //packed_output_indexes: Vec<IndexType>,
-    //packed_outputs: Vec<IndexType>,
+    acc: Vec<BitAccPack>,
+    state: Vec<BitInt>,
+    parity: Vec<BitInt>,
     single_packed_outputs: Vec<IndexType>,
-
     group_run_type: Vec<RunTimeGateType>,
-
     update_list: UpdateList,
     cluster_update_list: UpdateList,
     in_update_list: Vec<bool>,
@@ -1292,32 +1285,12 @@ impl BitPackSimInner /*<LATCH>*/ {
             (&mut self.update_list, &mut self.cluster_update_list)
         };
 
-        static mut AVG_ONES: f64 = 6.0;
-        const AVG_ONES_WINDOW: f64 = 4_000_000.0;
-
-        //unsafe { println!("{AVG_ONES}") };
-        for (group_id, offset /*is_inverted, is_xor*/) in
-            update_list.iter().map(|g| g as usize).map(|group_id| {
-                (
-                    group_id,
-                    group_id * Self::BITS,
-                    //unsafe { self.is_inverted.get_unchecked(group_id) },
-                    //unsafe { self.is_xor.get_unchecked(group_id) },
-                )
-            })
-        {
+        for group_id in update_list.iter().map(|g| g as usize) {
+            let offset = group_id * Self::BITS;
             *unsafe { self.in_update_list.get_unchecked_mut(group_id) } = false;
             let state_mut = unsafe { self.state.get_unchecked_mut(group_id) };
             let parity_mut = unsafe { self.parity.get_unchecked_mut(group_id) };
-            //debug_assert_eq!(self.kind[offset] == GateType::Cluster, CLUSTER);
 
-            /*let new_state = Self::calc_state_pack_parity::<CLUSTER>(
-                unsafe { self.acc.get_unchecked(group_id) },
-                parity_mut,
-                state_mut,
-                is_xor,
-                is_inverted,
-            );*/
             let new_state = Self::calc_state_pack_parity_gatetype::<CLUSTER>(
                 unsafe { self.acc.get_unchecked(group_id) },
                 parity_mut,
@@ -1325,27 +1298,19 @@ impl BitPackSimInner /*<LATCH>*/ {
                 unsafe { self.group_run_type.get_unchecked(group_id) },
             );
             let changed = *state_mut ^ new_state;
-            // println!("{changed:#068b}");
-            // println!("{}", changed.count_ones());
-            //unsafe {
-            //    AVG_ONES = changed.count_ones() as f64 / AVG_ONES_WINDOW
-            //        + AVG_ONES * (AVG_ONES_WINDOW - 1.0) / AVG_ONES_WINDOW;
-            //}
 
-            if changed == 0 {
-                continue;
+            if changed != 0 {
+                *state_mut = new_state;
+                Self::propagate_acc(
+                    changed,
+                    offset,
+                    new_state,
+                    &self.single_packed_outputs,
+                    cast_slice_mut(&mut self.acc),
+                    &mut self.in_update_list,
+                    next_update_list,
+                );
             }
-            *state_mut = new_state;
-            Self::propagate_acc(
-                changed,
-                offset,
-                *unsafe { self.group_output_count.get_unchecked(group_id) },
-                new_state,
-                &self.single_packed_outputs,
-                cast_slice_mut(&mut self.acc),
-                &mut self.in_update_list,
-                next_update_list,
-            );
         }
 
         update_list.clear();
@@ -1383,7 +1348,6 @@ impl BitPackSimInner /*<LATCH>*/ {
     fn propagate_acc(
         mut changed: BitInt,
         offset: usize,
-        group_output_count: Option<u8>,
         new_state: BitInt,
         single_packed_outputs: &[IndexType],
         acc: &mut [u8],
@@ -1396,32 +1360,10 @@ impl BitPackSimInner /*<LATCH>*/ {
 
             let gate_id = offset + i_usize;
 
-            let (outputs_start, outputs_end) = group_output_count.map_or_else(
-                || {
-                    (
-                        *unsafe { single_packed_outputs.get_unchecked(gate_id) } as usize,
-                        *unsafe { single_packed_outputs.get_unchecked(gate_id + 1) } as usize,
-                    )
-                },
-                |x| {
-                    let base = *unsafe { single_packed_outputs.get_unchecked(offset) } as usize;
-                    let x = x as usize;
-                    (base + x * i_usize, base + x * (i_usize + 1))
-                    //unsafe {
-                    //    assert_assume!(
-                    //        cached.0 == *single_packed_outputs.get_unchecked(gate_id) as usize
-                    //    );
-                    //};
-                    //unsafe {
-                    //    assert_assume!(
-                    //        cached.1 == *single_packed_outputs.get_unchecked(gate_id + 1) as usize
-                    //    );
-                    //};
-                },
+            let (outputs_start, outputs_end) = (
+                *unsafe { single_packed_outputs.get_unchecked(gate_id) } as usize,
+                *unsafe { single_packed_outputs.get_unchecked(gate_id + 1) } as usize,
             );
-            //unsafe {
-            //    assert_assume!(outputs_start <= outputs_end);
-            //}
 
             changed &= !(1 << i_u32); // ANY
 
@@ -1431,9 +1373,6 @@ impl BitPackSimInner /*<LATCH>*/ {
             } else {
                 (0 as AccType).wrapping_sub(1)
             };
-            //unsafe {
-            //    assert_assume!(delta == 1 || delta == 0_u8.wrapping_sub(1));
-            //}
 
             for output in unsafe { single_packed_outputs.get_unchecked(outputs_start..outputs_end) }
                 .iter()
@@ -1495,14 +1434,14 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
             .iter()
             .map(|g| g.as_ref().map_or(GateType::Cluster, |g| g.kind))
             .collect();
-        let (is_inverted, is_xor): (Vec<_>, Vec<_>) = kind
-            .iter()
-            .copied()
-            .map(RunTimeGateType::new)
-            .map(RunTimeGateType::calc_flags)
-            .array_chunks::<{ BIT_PACK_SIM_BITS }>()
-            .map(|arr| (pack_bits(arr.map(|a| a.0)), pack_bits(arr.map(|a| a.1))))
-            .unzip();
+        //let (is_inverted, is_xor): (Vec<_>, Vec<_>) = kind
+        //    .iter()
+        //    .copied()
+        //    .map(RunTimeGateType::new)
+        //    .map(RunTimeGateType::calc_flags)
+        //    .array_chunks::<{ BIT_PACK_SIM_BITS }>()
+        //    .map(|arr| (pack_bits(arr.map(|a| a.0)), pack_bits(arr.map(|a| a.1))))
+        //    .unzip();
         let update_list = UpdateList::collect_size(
             kind.iter()
                 .step_by(Self::BITS)
@@ -1599,28 +1538,6 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
     fn update(&mut self) {
         self.update_inner::<false>();
         self.update_inner::<true>();
-
-        //static mut I: usize = 0;
-
-        // inf: 3494, -8.5%
-        //
-        // 128: 3645, -12.8%
-        //
-        // 64: 3531,  -14%
-        //
-        // 32: 3659,  -6.9%
-        //
-        // 8: 3513,   -11.2%
-        //
-        // 1/2: 2300
-
-        //unsafe {
-        //    I += 1;
-        //    I %= 64;
-        //    if I == 0 {
-        //        self.update_list.get_slice_mut().sort_unstable();
-        //    }
-        //}
     }
     fn to_internal_id(&self, gate_id: usize) -> usize {
         self.translation_table[gate_id].try_into().unwrap()
