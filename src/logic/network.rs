@@ -677,6 +677,30 @@ impl InitializedNetwork {
             translation_table,
         }
     }
+    fn _fgo_connections_grouping(self) {
+        // viable FGO: unique outputs, same type, unique ids
+        // ASSUME: graph is connected for optimal perf
+
+        const SIZE: usize = 64;
+
+        let gates = self.gates;
+        let _ids = (0..gates.len()).collect::<Vec<_>>();
+
+        let mut map: HashMap<GateType, Vec<usize>> = HashMap::new();
+        for (i, gate) in gates.iter().enumerate() {
+            map.entry(gate.kind).or_default().push(i);
+        }
+
+        // sort by output degree
+        for (kind, ids) in map.iter_mut() {
+            ids.sort_reverse_by_key(|&i| gates[i].outputs.len());
+        }
+        
+        // sort by elements in kind
+        let mut map: Vec<(GateType, Vec<usize>)> = map.into_iter().collect();
+        map.sort_by_key(|(_,v)| v.len());
+        for w in map.windows(SIZE) {}
+    }
 }
 
 /// Contains gate graph in order to do network optimization

@@ -290,8 +290,8 @@ impl Trace {
             | Trace::Blue2
             | Trace::Purple
             | Trace::Magenta
-            | Trace::Pink => "🔘",
-            Trace::Write => "✏",
+            | Trace::Pink => "⬛",
+            Trace::Write => "  ",
             Trace::Empty => "⬛",
             Trace::Cross => "➕",
             Trace::Read => "👓",
