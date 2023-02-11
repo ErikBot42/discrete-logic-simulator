@@ -1,6 +1,7 @@
 //! network.rs: Manage and optimize the network while preserving behaviour.
 use crate::logic::{gate_status, Gate, GateKey, GateType, IndexType, UpdateStrategy};
 use itertools::Itertools;
+use std::cmp::Reverse;
 use std::collections::HashMap;
 
 /// Iterate through all gates, skipping any
@@ -681,25 +682,55 @@ impl InitializedNetwork {
         // viable FGO: unique outputs, same type, unique ids
         // ASSUME: graph is connected for optimal perf
 
+        // NOTE: 2x32 output groups viable because of how SIMD is done.
         const SIZE: usize = 64;
 
-        let gates = self.gates;
-        let _ids = (0..gates.len()).collect::<Vec<_>>();
+        let ids = (0..self.gates.len()).collect::<Vec<_>>();
+        let (kind, mut outputs): (Vec<_>, Vec<_>) = self
+            .gates
+            .into_iter()
+            .map(|g| {
+                (
+                    g.kind,
+                    g.outputs
+                        .into_iter()
+                        .map(|i| i as usize)
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .unzip();
 
-        let mut map: HashMap<GateType, Vec<usize>> = HashMap::new();
-        for (i, gate) in gates.iter().enumerate() {
-            map.entry(gate.kind).or_default().push(i);
+        // sort gate outputs by kind
+        for &i in ids.iter() {
+            outputs[i].sort_by_key(|&i| kind[i]);
         }
 
-        // sort by output degree
-        for (kind, ids) in map.iter_mut() {
-            ids.sort_reverse_by_key(|&i| gates[i].outputs.len());
+        // All groups that could be turned into AFGOs,
+        // Filter completely non viable
+        let candidate_groups = ids
+            .iter()
+            .cloned()
+            .into_group_map_by(|&i| kind[i])
+            .into_iter()
+            .flat_map(|(_, ids)| {
+                ids.iter()
+                    .cloned()
+                    .into_group_map_by(|&i| outputs[i].iter().map(|&i| kind[i]).collect::<Vec<_>>())
+                    .into_iter()
+            })
+            .filter(|(v, _)| v.len() >= SIZE)
+            //.sorted_by_key(|(v, _)| Reverse(v.len()))
+            .collect::<Vec<_>>();
+
+        {
+            // make seed group
+            for (candidate_kinds, candidate_group) in candidate_groups {
+                // choose (candidate_group, SIZE)
+                // internal output ordering
+                
+                // ALL output ids must be unique
+            }
         }
-        
-        // sort by elements in kind
-        let mut map: Vec<(GateType, Vec<usize>)> = map.into_iter().collect();
-        map.sort_by_key(|(_,v)| v.len());
-        for w in map.windows(SIZE) {}
     }
 }
 
