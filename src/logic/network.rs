@@ -545,7 +545,9 @@ impl InitializedNetwork {
         timed!(
             {
                 self.print_info();
-                let network = self.optimize_remove_redundant().optimize_reorder_cache();
+                let network = self.clone();
+                //let network = self.optimize_remove_redundant().optimize_reorder_cache();
+                network.clone()._fgo_connections_grouping();
                 network.print_info();
                 network
             },
@@ -683,7 +685,7 @@ impl InitializedNetwork {
         // ASSUME: graph is connected for optimal perf
 
         // NOTE: 2x32 output groups viable because of how SIMD is done.
-        const SIZE: usize = 64;
+        const SIZE: usize = 4;
 
         let ids = (0..self.gates.len()).collect::<Vec<_>>();
         let (kind, mut outputs): (Vec<_>, Vec<_>) = self
@@ -707,30 +709,32 @@ impl InitializedNetwork {
 
         // All groups that could be turned into AFGOs,
         // Filter completely non viable
-        let candidate_groups = ids
+        let (candidate_groups, rejected): (Vec<_>, Vec<_>) = ids
             .iter()
             .cloned()
             .into_group_map_by(|&i| kind[i])
             .into_iter()
-            .flat_map(|(_, ids)| {
+            .flat_map(|(group_kind, ids)| {
                 ids.iter()
                     .cloned()
                     .into_group_map_by(|&i| outputs[i].iter().map(|&i| kind[i]).collect::<Vec<_>>())
                     .into_iter()
             })
-            .filter(|(v, _)| v.len() >= SIZE)
-            //.sorted_by_key(|(v, _)| Reverse(v.len()))
-            .collect::<Vec<_>>();
-
-        {
-            // make seed group
-            for (candidate_kinds, candidate_group) in candidate_groups {
-                // choose (candidate_group, SIZE)
-                // internal output ordering
-                
-                // ALL output ids must be unique
-            }
-        }
+            .partition(|(_, v)| v.len() >= SIZE);
+        //.filter(|(v, _)| v.len() >= SIZE)
+        //.sorted_by_key(|(v, _)| Reverse(v.len()))
+        //.collect::<Vec<_>>();
+        dbg!(rejected);
+        dbg!(candidate_groups);
+        //{
+        //    // make seed group
+        //    for (candidate_kinds, candidate_group) in candidate_groups {
+        //        // choose (candidate_group, SIZE)
+        //        // internal output ordering
+        //        dbg!(candidate_group);
+        //        // ALL output ids must be unique
+        //    }
+        //}
     }
 }
 
