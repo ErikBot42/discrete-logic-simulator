@@ -545,9 +545,9 @@ impl InitializedNetwork {
         timed!(
             {
                 self.print_info();
-                let network = self.clone();
-                //let network = self.optimize_remove_redundant().optimize_reorder_cache();
-                network.clone()._fgo_connections_grouping();
+                //let network = self.clone();
+                let network = self.optimize_remove_redundant().optimize_reorder_cache();
+                //network.clone()._fgo_connections_grouping();
                 network.print_info();
                 network
             },
