@@ -143,7 +143,7 @@ fn fill_id(elements: &mut Vec<BoardElement>, width: i32, this_x: i32, id: usize)
             if other_kind == Trace::Cross {
                 continue 'forward;
             }
-            if other_kind.is_same_as(this_kind) {
+            if other_kind.will_connect(this_kind) {
                 fill_id(elements, width, other_x, id);
             }
             continue 'side;

@@ -1,6 +1,7 @@
 //! network.rs: Manage and optimize the network while preserving behaviour.
 use crate::logic::{gate_status, Gate, GateKey, GateType, IndexType, UpdateStrategy};
 use itertools::Itertools;
+use std::cmp::Reverse;
 use std::collections::HashMap;
 
 /// Iterate through all gates, skipping any
@@ -225,16 +226,12 @@ impl InitializedNetwork {
     fn optimize_remove_redundant(&self) -> InitializedNetwork {
         let mut prev_network_gate_count = self.gates.len();
         let mut new_network = self.optimization_pass_remove_redundant();
-        let mut i = 0;
-        let limit = 0;
         loop {
-            if new_network.gates.len() == prev_network_gate_count || i == limit {
-                new_network.print_info();
+            if new_network.gates.len() == prev_network_gate_count {
                 break new_network;
             }
             prev_network_gate_count = new_network.gates.len();
             new_network = new_network.optimization_pass_remove_redundant();
-            i += 1;
         }
     }
 
@@ -547,8 +544,10 @@ impl InitializedNetwork {
     fn optimized(&self) -> Self {
         timed!(
             {
-                let network = self.optimize_remove_redundant();
-                let network = network.optimize_reorder_cache();
+                self.print_info();
+                //let network = self.clone();
+                let network = self.optimize_remove_redundant().optimize_reorder_cache();
+                //network.clone()._fgo_connections_grouping();
                 network.print_info();
                 network
             },
@@ -564,6 +563,18 @@ impl InitializedNetwork {
                 v,
                 gate_status::PACKED_ELEMENTS,
                 Gate::is_cluster_a_xor_is_cluster_b,
+            )
+        })
+    }
+    pub(crate) fn prepare_for_bitpack_packing_no_type_overlap(
+        &self,
+        bits: usize,
+    ) -> NetworkWithGaps {
+        self.reordered_by_gaps(|v| {
+            Self::aligned_by_inner(
+                v,
+                bits,
+                Gate::is_cluster_a_xor_is_cluster_b_and_no_type_overlap,
             )
         })
     }
@@ -668,6 +679,62 @@ impl InitializedNetwork {
             gates,
             translation_table,
         }
+    }
+    fn _fgo_connections_grouping(self) {
+        // viable FGO: unique outputs, same type, unique ids
+        // ASSUME: graph is connected for optimal perf
+
+        // NOTE: 2x32 output groups viable because of how SIMD is done.
+        const SIZE: usize = 4;
+
+        let ids = (0..self.gates.len()).collect::<Vec<_>>();
+        let (kind, mut outputs): (Vec<_>, Vec<_>) = self
+            .gates
+            .into_iter()
+            .map(|g| {
+                (
+                    g.kind,
+                    g.outputs
+                        .into_iter()
+                        .map(|i| i as usize)
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .unzip();
+
+        // sort gate outputs by kind
+        for &i in ids.iter() {
+            outputs[i].sort_by_key(|&i| kind[i]);
+        }
+
+        // All groups that could be turned into AFGOs,
+        // Filter completely non viable
+        let (candidate_groups, rejected): (Vec<_>, Vec<_>) = ids
+            .iter()
+            .cloned()
+            .into_group_map_by(|&i| kind[i])
+            .into_iter()
+            .flat_map(|(_, ids)| {
+                ids.iter()
+                    .cloned()
+                    .into_group_map_by(|&i| outputs[i].iter().map(|&i| kind[i]).collect::<Vec<_>>())
+                    .into_iter()
+            })
+            .partition(|(_, v)| v.len() >= SIZE);
+        //.filter(|(v, _)| v.len() >= SIZE)
+        //.sorted_by_key(|(v, _)| Reverse(v.len()))
+        //.collect::<Vec<_>>();
+        dbg!(&rejected);
+        dbg!(&candidate_groups);
+        //{
+        //    // make seed group
+        //    for (candidate_kinds, candidate_group) in candidate_groups {
+        //        // choose (candidate_group, SIZE)
+        //        // internal output ordering
+        //        dbg!(candidate_group);
+        //        // ALL output ids must be unique
+        //    }
+        //}
     }
 }
 

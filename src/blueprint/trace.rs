@@ -36,6 +36,7 @@ mod vcb_colors {
     pub(crate) const COLOR_LED:        [u8; 4] = [ 255, 255, 255, 255 ];
     pub(crate) const COLOR_ANNOTATION: [u8; 4] = [  58,  69,  81, 255 ];
     pub(crate) const COLOR_FILLER:     [u8; 4] = [ 140, 171, 161, 255 ];
+    pub(crate) const COLOR_VMEM:       [u8; 4] = COLOR_LATCHOFF;
 }
 use super::*;
 #[non_exhaustive]
@@ -75,6 +76,7 @@ pub(crate) enum Trace {
     Led,
     Annotation,
     Filler,
+    Vmem,
 }
 impl Trace {
     pub(crate) fn get_color(&self, state: bool) -> [u8; 4] {
@@ -122,6 +124,7 @@ impl Trace {
             Trace::Led        => vcb_colors::COLOR_LED,
             Trace::Annotation => vcb_colors::COLOR_ANNOTATION,
             Trace::Filler     => vcb_colors::COLOR_FILLER,
+            Trace::Vmem       => vcb_colors::COLOR_VMEM,
         }
     }
     pub(crate) fn to_color_on(self) -> [u8; 4] {
@@ -231,20 +234,22 @@ impl Trace {
                 | Trace::LatchOff
                 | Trace::Clock
                 | Trace::Led
+                | Trace::Vmem
         )
     }
     #[inline]
     pub(crate) fn is_logic(self) -> bool {
         self.is_wire() || self.is_gate()
     }
+    /// non logical
     #[inline]
-    fn is_passive(self) -> bool {
+    pub(crate) fn is_passive(self) -> bool {
         !self.is_logic()
     }
 
-    // is logically same as other, will connect
+    /// should this trace connect to other
     #[inline]
-    pub(crate) fn is_same_as(self, other: Self) -> bool {
+    pub(crate) fn will_connect(self, other: Self) -> bool {
         (self == other) || (self.is_wire() && other.is_wire())
     }
 
@@ -259,8 +264,11 @@ impl Trace {
                 Trace::Not | Trace::Nor => (GateType::Nor, false),
                 Trace::And => (GateType::And, false),
                 Trace::Nand => (GateType::Nand, false),
-                Trace::Xor | Trace::LatchOff => (GateType::Xor, false),
-                Trace::Xnor | Trace::LatchOn => (GateType::Xnor, false),
+                Trace::Xor => (GateType::Xor, false),
+                Trace::Xnor => (GateType::Xnor, false),
+                Trace::LatchOn => (GateType::Latch, true),
+                Trace::LatchOff => (GateType::Latch, false),
+                Trace::Vmem => (GateType::Interface(None), false),
                 _ => panic!("unsupported logic trace: {self:?}"),
             }
         }
@@ -282,8 +290,8 @@ impl Trace {
             | Trace::Blue2
             | Trace::Purple
             | Trace::Magenta
-            | Trace::Pink => "🔘",
-            Trace::Write => "✏",
+            | Trace::Pink => "⬛",
+            Trace::Write => "  ",
             Trace::Empty => "⬛",
             Trace::Cross => "➕",
             Trace::Read => "👓",
@@ -297,6 +305,7 @@ impl Trace {
             Trace::Xnor => "🔶",
             Trace::LatchOn => "🔺",
             Trace::LatchOff => "🔻",
+            Trace::Vmem => "🔻",
             Trace::Clock => "🥞",
             Trace::Led => "🏁",
             Trace::Annotation => "🥚",
@@ -335,7 +344,7 @@ impl Trace {
             Trace::Nor => ":nor:",
             Trace::Xnor => ":xnr:",
             Trace::LatchOn => ":lt1:",
-            Trace::LatchOff => ":lt0:",
+            Trace::LatchOff | Trace::Vmem => ":lt0:",
             Trace::Clock => "CLOCK",
             Trace::Led => ":led:",
             Trace::Annotation => ":non:",

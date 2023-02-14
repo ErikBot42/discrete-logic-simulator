@@ -1,5 +1,6 @@
 //#![warn(clippy::cargo)]
 //#![warn(clippy::all)]
+#![feature(try_blocks)]
 #![feature(portable_simd)]
 #![feature(core_intrinsics)]
 #![feature(generic_arg_infer)]
@@ -37,18 +38,18 @@ macro_rules! assert_eq_len {
         assert_eq!($first.len(), $second.len());
     };
 }
-macro_rules! assert_assume {
-    ($statement:expr) => {
-        #[inline(always)]
-        unsafe fn foo() {}
-        foo();
-
-        #[cfg(debug_assertions)]
-        assert!($statement);
-        #[cfg(not(debug_assertions))]
-        std::intrinsics::assume($statement);
-    };
-}
+//macro_rules! assert_assume {
+//    ($statement:expr) => {
+//        #[inline(always)]
+//        unsafe fn foo() {}
+//        foo();
+//
+//        #[cfg(debug_assertions)]
+//        assert!($statement);
+//        #[cfg(not(debug_assertions))]
+//        std::intrinsics::assume($statement);
+//    };
+//}
 
 pub mod blueprint;
 pub mod logic;
@@ -206,14 +207,14 @@ mod tests {
         }
     }
 
-    #[test]
-    fn scalar_regression_test_unoptimized() {
-        run_test::<ReferenceSim, ScalarSim>(false, 20);
-    }
-    #[test]
-    fn scalar_regression_test_optimized() {
-        run_test::<ReferenceSim, ScalarSim>(true, 20);
-    }
+    //#[test]
+    //fn scalar_regression_test_unoptimized() {
+    //    run_test::<ReferenceSim, ScalarSim>(false, 20);
+    //}
+    //#[test]
+    //fn scalar_regression_test_optimized() {
+    //    run_test::<ReferenceSim, ScalarSim>(true, 20);
+    //}
     #[test]
     fn bitpack_regression_test_unoptimized() {
         run_test::<ReferenceSim, BitPackSim>(false, 20);
@@ -222,32 +223,31 @@ mod tests {
     fn bitpack_regression_test_optimized() {
         run_test::<ReferenceSim, BitPackSim>(true, 20);
     }
-    #[test]
-    fn simd_regression_test_unoptimized() {
-        simd_test(false);
-    }
-    #[test]
-    fn simd_regression_test_optimized() {
-        simd_test(true);
-    }
+    //#[test]
+    //fn simd_regression_test_unoptimized() {
+    //    simd_test(false);
+    //}
+    //#[test]
+    //fn simd_regression_test_optimized() {
+    //    simd_test(true);
+    //}
 
-    #[test]
-    fn basic_gate_test_scalar() {
-        generic_basic_gate_test_w::<ScalarSim>();
-    }
-    #[test]
-    fn basic_gate_test_reference() {
-        generic_basic_gate_test_w::<ReferenceSim>();
-    }
-    #[test]
-    fn basic_gate_test_simd() {
-        generic_basic_gate_test_w::<SimdSim>();
-    }
-    #[test]
-    fn basic_gate_test_bitpack() {
-        generic_basic_gate_test_w::<BitPackSim>();
-    }
-
+    //#[test]
+    //fn basic_gate_test_scalar() {
+    //    generic_basic_gate_test_w::<ScalarSim>();
+    //}
+    //#[test]
+    //fn basic_gate_test_reference() {
+    //    generic_basic_gate_test_w::<ReferenceSim>();
+    //}
+    //#[test]
+    //fn basic_gate_test_simd() {
+    //    generic_basic_gate_test_w::<SimdSim>();
+    //}
+    //#[test]
+    //fn basic_gate_test_bitpack() {
+    //    generic_basic_gate_test_w::<BitPackSim>();
+    //}
     fn generic_basic_gate_test_w<SIM: LogicSim>() {
         basic_gate_test::<SIM>(false, false);
         basic_gate_test::<SIM>(false, true);

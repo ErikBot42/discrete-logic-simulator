@@ -87,7 +87,6 @@ pub struct Args {
     /// Iterations to run in bench
     #[arg(short = 'i', long)]
     pub iterations: Option<usize>,
-
 }
 
 fn main() {
@@ -143,7 +142,7 @@ fn handle_board<T: LogicSim>(args: &Args, parser_input: VcbInput) {
         RunMode::EmojiVcb => board.print_vcb_discord_emoji(args.legend),
         RunMode::PrintDebug => {
             board.update();
-            board.print_debug();
+            board.print_debug_constrain();
         },
         RunMode::Print => {
             board.update();
