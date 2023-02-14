@@ -714,7 +714,7 @@ impl InitializedNetwork {
             .cloned()
             .into_group_map_by(|&i| kind[i])
             .into_iter()
-            .flat_map(|(group_kind, ids)| {
+            .flat_map(|(_, ids)| {
                 ids.iter()
                     .cloned()
                     .into_group_map_by(|&i| outputs[i].iter().map(|&i| kind[i]).collect::<Vec<_>>())
@@ -724,8 +724,8 @@ impl InitializedNetwork {
         //.filter(|(v, _)| v.len() >= SIZE)
         //.sorted_by_key(|(v, _)| Reverse(v.len()))
         //.collect::<Vec<_>>();
-        dbg!(rejected);
-        dbg!(candidate_groups);
+        dbg!(&rejected);
+        dbg!(&candidate_groups);
         //{
         //    // make seed group
         //    for (candidate_kinds, candidate_group) in candidate_groups {
