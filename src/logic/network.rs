@@ -1,8 +1,7 @@
 //! network.rs: Manage and optimize the network while preserving behaviour.
 use crate::logic::{gate_status, Gate, GateKey, GateType, IndexType, UpdateStrategy};
 use itertools::Itertools;
-use std::cmp::Reverse;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Iterate through all gates, skipping any
 /// placeholder gates.
@@ -545,9 +544,9 @@ impl InitializedNetwork {
         timed!(
             {
                 self.print_info();
-                //let network = self.clone();
-                let network = self.optimize_remove_redundant().optimize_reorder_cache();
-                //network.clone()._fgo_connections_grouping();
+                let network = self.clone();
+                //let network = self.optimize_remove_redundant().optimize_reorder_cache();
+                network.clone()._fgo_connections_grouping();
                 network.print_info();
                 network
             },
@@ -680,6 +679,7 @@ impl InitializedNetwork {
             translation_table,
         }
     }
+
     fn _fgo_connections_grouping(self) {
         // viable FGO: unique outputs, same type, unique ids
         // ASSUME: graph is connected for optimal perf
@@ -706,6 +706,7 @@ impl InitializedNetwork {
         for &i in ids.iter() {
             outputs[i].sort_by_key(|&i| kind[i]);
         }
+        use itertools::Either;
 
         // All groups that could be turned into AFGOs,
         // Filter completely non viable
@@ -718,14 +719,30 @@ impl InitializedNetwork {
                 ids.iter()
                     .cloned()
                     .into_group_map_by(|&i| outputs[i].iter().map(|&i| kind[i]).collect::<Vec<_>>())
-                    .into_iter()
             })
-            .partition(|(_, v)| v.len() >= SIZE);
-        //.filter(|(v, _)| v.len() >= SIZE)
-        //.sorted_by_key(|(v, _)| Reverse(v.len()))
-        //.collect::<Vec<_>>();
+            .partition_map(|(k, v)| {
+                if v.len() >= SIZE {
+                    Either::Left((k, HggData::new(v, &outputs)))
+                } else {
+                    Either::Right((k, v))
+                }
+            });
+
         dbg!(&rejected);
         dbg!(&candidate_groups);
+        // output kind key/id, MUST match
+        type Oid = Vec<GateType>;
+
+        // Input kind key/id, SHOULD match
+        type Iid = Vec<GateType>;
+
+        // Disjoint sets of gates
+        type Hgg = HashMap<GateType, HashMap<Oid, HashMap<Iid, HggData>>>;
+
+        struct foo {
+            v: Vec<Box<foo>>,
+        }
+
         //{
         //    // make seed group
         //    for (candidate_kinds, candidate_group) in candidate_groups {
@@ -735,6 +752,32 @@ impl InitializedNetwork {
         //        // ALL output ids must be unique
         //    }
         //}
+    }
+}
+
+// find similar multi dimensional? => clustering problem.
+#[derive(Debug)]
+struct HggData {
+    intersecting: Vec<usize>,
+    disjoint: Vec<usize>,
+}
+impl HggData {
+    fn new(ids: Vec<usize>, outputs: &[Vec<usize>]) -> Self {
+        // NOTE: should work with gates with double outputs
+        // NOTE: this allows a single arbitrary gate with intersecting outputs into the
+        // disjoint group, therefore pre-sort based on gate priority
+        let mut out_set: HashSet<usize> = HashSet::new();
+        let (intersecting, disjoint): (Vec<_>, Vec<_>) = ids.into_iter().partition(|&i| {
+            let is_intersecting = outputs[i]
+                .iter()
+                .any(|output| out_set.get(output).is_some());
+            out_set.extend(outputs[i].iter());
+            is_intersecting
+        });
+        HggData {
+            intersecting,
+            disjoint,
+        }
     }
 }
 
