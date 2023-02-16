@@ -706,11 +706,10 @@ impl InitializedNetwork {
         for &i in ids.iter() {
             outputs[i].sort_by_key(|&i| kind[i]);
         }
-        use itertools::Either;
 
         // All groups that could be turned into AFGOs,
         // Filter completely non viable
-        let (candidate_groups, rejected): (Vec<_>, Vec<_>) = ids
+        let candidate_groups: Vec<_> = ids
             .iter()
             .cloned()
             .into_group_map_by(|&i| kind[i])
@@ -720,15 +719,11 @@ impl InitializedNetwork {
                     .cloned()
                     .into_group_map_by(|&i| outputs[i].iter().map(|&i| kind[i]).collect::<Vec<_>>())
             })
-            .partition_map(|(k, v)| {
-                if v.len() >= SIZE {
-                    Either::Left((k, HggData::new(v, &outputs)))
-                } else {
-                    Either::Right((k, v))
-                }
-            });
+            .map(|(k, v)| (k, HggData::new(v, &outputs)))
+            .collect();
 
-        dbg!(&rejected);
+        // unzip
+
         dbg!(&candidate_groups);
         // output kind key/id, MUST match
         type Oid = Vec<GateType>;
@@ -739,8 +734,8 @@ impl InitializedNetwork {
         // Disjoint sets of gates
         type Hgg = HashMap<GateType, HashMap<Oid, HashMap<Iid, HggData>>>;
 
-        struct foo {
-            v: Vec<Box<foo>>,
+        struct Tree {
+            v: Vec<Box<Tree>>,
         }
 
         //{
