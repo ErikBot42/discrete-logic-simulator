@@ -709,33 +709,46 @@ impl InitializedNetwork {
 
         // All groups that could be turned into AFGOs,
         // Filter completely non viable
-        let candidate_groups: Vec<_> = ids
+
+        let mut id_fgo: Vec<Option<usize>> = ids.iter().map(|_| None).collect();
+
+        // output kind key/id, MUST match
+        type Oid = Vec<GateType>;
+
+        // Disjoint sets of gates, with MINIMAL requirements
+        let hgg: HashMap<GateType, HashMap<Oid, Vec<usize>>> = ids
             .iter()
             .cloned()
             .into_group_map_by(|&i| kind[i])
             .into_iter()
-            .flat_map(|(_, ids)| {
-                ids.iter()
-                    .cloned()
-                    .into_group_map_by(|&i| outputs[i].iter().map(|&i| kind[i]).collect::<Vec<_>>())
+            .map(|(this_kind, ids)| {
+                (
+                    this_kind,
+                    ids.iter().cloned().into_group_map_by(|&i| {
+                        outputs[i].iter().map(|&i| kind[i]).collect::<Vec<_>>()
+                    }),
+                )
             })
-            .map(|(k, v)| (k, HggData::new(v, &outputs)))
             .collect();
 
-        // unzip
+        dbg!(&hgg);
 
-        dbg!(&candidate_groups);
-        // output kind key/id, MUST match
-        type Oid = Vec<GateType>;
-
-        // Input kind key/id, SHOULD match
-        type Iid = Vec<GateType>;
-
-        // Disjoint sets of gates
-        type Hgg = HashMap<GateType, HashMap<Oid, HashMap<Iid, HggData>>>;
-
-        struct Tree {
-            v: Vec<Box<Tree>>,
+        'c: for candidate in hgg.iter().flat_map(|(_, map)| map.iter()) {
+            
+            loop {
+                // make single new seed from remaining parts of candidate
+                loop {
+                    if true {
+                        break;
+                    } else {
+                        continue 'c;
+                    }
+                }
+                // expand current fgo nodes
+                loop {
+                    break;
+                }
+            }
         }
 
         //{
