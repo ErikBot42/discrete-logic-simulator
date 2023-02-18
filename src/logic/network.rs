@@ -714,6 +714,9 @@ impl InitializedNetwork {
 
         // output kind key/id, MUST match
         type Oid = Vec<GateType>;
+        
+        // fgo output key/id
+        type Fid = Vec<Option<usize>>;
 
         // Disjoint sets of gates, with MINIMAL requirements
         let hgg: HashMap<GateType, HashMap<Oid, Vec<usize>>> = ids
@@ -733,16 +736,21 @@ impl InitializedNetwork {
 
         dbg!(&hgg);
 
-        'c: for candidate in hgg.iter().flat_map(|(_, map)| map.iter()) {
-            
+        for (oid, mut group) in hgg
+            .iter()
+            .flat_map(|(_, map)| map.into_iter())
+            .map(|(oid, group)| (oid, group.clone()))
+        {
+            // iterate through candidate data
             loop {
                 // make single new seed from remaining parts of candidate
-                loop {
-                    if true {
-                        break;
-                    } else {
-                        continue 'c;
-                    }
+                group.retain(|&i| id_fgo[i].is_none()); 
+
+
+                if !!true {
+                    break;
+                } else {
+                    //continue 'c;
                 }
                 // expand current fgo nodes
                 loop {
