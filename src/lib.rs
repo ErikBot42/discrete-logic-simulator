@@ -9,6 +9,7 @@
 #![feature(iter_next_chunk)]
 #![feature(is_sorted)]
 #![feature(array_chunks)]
+#![feature(array_try_map)]
 #![feature(stdsimd)]
 macro_rules! timed {
     ($block:expr, $print_str:expr) => {{

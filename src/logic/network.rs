@@ -709,16 +709,31 @@ impl InitializedNetwork {
 
         // All groups that could be turned into AFGOs,
         // Filter completely non viable
+        //
+        // TODO: reorder to align diffrent FGO groups
 
-        let mut id_fgo: Vec<Option<usize>> = ids.iter().map(|_| None).collect();
+        let mut max_fgo_id = 0;
+
+        // ALL 3 below are set at the creation of a fgo
+
+        #[derive(Copy, Clone)]
+        struct FgoInfo {
+            id: usize, // what fgo group
+            //id_graph: usize, // what fgo network (for merging disconnected networks)
+            pos: usize, // what internal fgo position
+        }
+
+        let mut fgo_infos: Vec<Option<FgoInfo>> = ids.iter().map(|_| None).collect();
 
         // output kind key/id, MUST match
         type Oid = Vec<GateType>;
-        
+
         // fgo output key/id
+        // (fgo group, position in group)
         type Fid = Vec<Option<usize>>;
 
         // Disjoint sets of gates, with MINIMAL requirements
+        // TODO: compress to single HashMap?
         let hgg: HashMap<GateType, HashMap<Oid, Vec<usize>>> = ids
             .iter()
             .cloned()
@@ -736,26 +751,114 @@ impl InitializedNetwork {
 
         dbg!(&hgg);
 
+        fn calc_fgo_id(id: usize, outputs: &[Vec<usize>], fgo_infos: &[Option<FgoInfo>]) -> Fid {
+            // TODO: sort internally based on kind, then fgo id
+            // Just sort this using a sinle fancy sort function
+            outputs[id]
+                .iter()
+                .map(|&id| fgo_infos[id].map(|f| f.id))
+                .collect()
+        }
+
+        let active_groups: Vec<usize> = Vec::new(); // groups that can expore their outputs/inputs
+
         for (oid, mut group) in hgg
             .iter()
-            .flat_map(|(_, map)| map.into_iter())
-            .map(|(oid, group)| (oid, group.clone()))
+            .flat_map(|(_, map)| map.into_iter().map(|(oid, group)| (oid, group.clone())))
         {
             // iterate through candidate data
             loop {
                 // make single new seed from remaining parts of candidate
-                group.retain(|&i| id_fgo[i].is_none()); 
+
+                // filter elements already added.
+                group.retain(|&i| fgo_infos[i].is_none());
+
+                // filter elements with contradictory outputs
+                group.retain(|&i| {
+                    // TODO: network merging
+                    outputs[i]
+                        .iter()
+                        .filter_map(|&output| fgo_infos[output].map(|f| f.pos))
+                        .all_equal()
+                });
+
+                // recalculate Fid for each element in group and iter unique
+                // => output groups are correct here.
+                'fid: for (this_fgo_id, group) in group
+                    .iter()
+                    .map(|&id| (calc_fgo_id(id, &outputs, &fgo_infos), id))
+                    .into_group_map()
+                    .into_iter()
+                //.filter(|(_, group)| group.len() >= SIZE) // TODO: optim
+                {
+                    // this group is fine to merge as long as:
+                    // * outputs (ids) are disjoint, -> HashSet unique in arbitrary order?
+                    // * that the internal fgo orders are ok -> HashMap<pos | None, Vec<id>>
+
+                    // pick non disjoint from pos constraints
+
+                    let pos_constraints = group
+                        .iter()
+                        .map(|&i| {
+                            (
+                                outputs[i]
+                                    .iter()
+                                    .find_map(|&output| fgo_infos[output].map(|f| f.pos)),
+                                i,
+                            )
+                        })
+                        .into_group_map()
+                        .into_iter()
+                        .sorted();
+                    let mut remaining = Vec::new();
+                    let mut pos_choices: [Option<usize>; SIZE] = std::array::from_fn(|_| None);
+                    let mut out_set: HashSet<usize> = HashSet::new();
+                    for (pos, ids) in pos_constraints {
+                        match pos {
+                            None => remaining.extend(ids),
+                            Some(pos) => {
+                                // Using first disjoint
+                                for id in ids {
+                                    let is_disjoint = outputs[id]
+                                        .iter()
+                                        .all(|output| out_set.get(output).is_none());
+                                    if is_disjoint {
+                                        out_set.extend(outputs[id].iter());
+                                        pos_choices[pos] = Some(id);
+                                        break;
+                                    }
+                                }
+                            },
+                        }
+                    }
+                    let mut remaining = remaining.iter().filter_map(|&id| {
+                        let is_disjoint = outputs[id]
+                            .iter()
+                            .all(|output| out_set.get(output).is_none());
+                        out_set.extend(outputs[id].iter());
+                        is_disjoint.then_some(id)
+                    });
+                    let pos_choices = unwrap_or_else!(
+                        pos_choices.try_map(|pos_choice| match pos_choice {
+                            Some(s) => Some(s),
+                            None => remaining.next(),
+                        }),
+                        continue 'fid
+                    );
 
 
-                if !!true {
-                    break;
-                } else {
-                    //continue 'c;
+                    // TODO: do something with pos_choices
                 }
-                // expand current fgo nodes
-                loop {
-                    break;
-                }
+
+                //if !!true {
+                //    break;
+                //} else {
+                //    //continue 'c;
+                //}
+                //// expand current fgo nodes
+                //loop {
+                //    break;
+                //}
             }
         }
 
@@ -787,7 +890,8 @@ impl HggData {
             let is_intersecting = outputs[i]
                 .iter()
                 .any(|output| out_set.get(output).is_some());
-            out_set.extend(outputs[i].iter());
+            out_set.extend(outputs[i].iter()); // <- ??? should be conditional based on whether it
+                                               // was added to set.
             is_intersecting
         });
         HggData {
