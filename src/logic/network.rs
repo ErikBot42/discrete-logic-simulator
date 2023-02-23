@@ -3,6 +3,7 @@ use crate::logic::{gate_status, Gate, GateKey, GateType, IndexType, UpdateStrate
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::iter::repeat;
+use std::ops::Index;
 
 /// Iterate through all gates, skipping any
 /// placeholder gates.
@@ -545,9 +546,9 @@ impl InitializedNetwork {
         timed!(
             {
                 self.print_info();
-                let network = self.clone();
-                let network = self.optimize_remove_redundant();//.optimize_reorder_cache();
-                //network.clone()._fgo_connections_grouping();
+                //let network = self.clone();
+                let network = self.optimize_remove_redundant(); //.optimize_reorder_cache();
+                network.clone()._fgo_connections_grouping();
                 network.print_info();
                 network
             },
@@ -682,311 +683,8 @@ impl InitializedNetwork {
     }
 
     fn _fgo_connections_grouping(self) {
-        // set of "active" & iter through groups
-
-        // viable FGO: unique outputs, same type, unique ids
-
-        // NOTE: 2x32 output groups viable because of how SIMD is done.
-        const SIZE: usize = 16;
-
-        let ids = (0..self.gates.len()).collect::<Vec<_>>();
-        let (kind, mut outputs, inputs): (Vec<_>, Vec<_>, Vec<_>) = self
-            .gates
-            .into_iter()
-            .map(|g| {
-                (
-                    g.kind,
-                    g.outputs
-                        .into_iter()
-                        .map(|i| i as usize)
-                        .collect::<Vec<_>>(),
-                    g.inputs.into_iter().map(|i| i as usize).collect::<Vec<_>>(),
-                )
-            })
-            .multiunzip();
-
-        // sort gate outputs by kind
-        for &i in ids.iter() {
-            outputs[i].sort_by_key(|&i| kind[i]);
-        }
-
-        // All groups that could be turned into AFGOs,
-        // Filter completely non viable
-        //
-        // TODO: reorder to align diffrent FGO groups
-
-        /// FGO data associated with single gate
-        #[derive(Copy, Clone)]
-        struct FgoInfo {
-            id: usize, // what fgo group
-            //id_graph: usize, // what fgo network (for merging disconnected networks)
-            pos: usize, // what internal fgo position
-        }
-
-        let mut fgo_infos: Vec<Option<FgoInfo>> = ids.iter().map(|_| None).collect();
-
-        let mut fgos: Vec<[usize; SIZE]> = Vec::new();
-
-        // output kind key/id, MUST match
-        type Oid = Vec<GateType>;
-
-        // fgo output key/id
-        // (fgo group, position in group)
-        type Fid = Vec<Option<usize>>;
-
-        // Disjoint sets of gates, with MINIMAL requirements
-        let hgg: HashMap<GateType, HashMap<Oid, Vec<usize>>> = ids
-            .iter()
-            .cloned()
-            .into_group_map_by(|&i| kind[i])
-            .into_iter()
-            .map(|(this_kind, ids)| {
-                (
-                    this_kind,
-                    ids.iter().cloned().into_group_map_by(|&i| {
-                        outputs[i].iter().map(|&i| kind[i]).collect::<Vec<_>>()
-                    }),
-                )
-            })
-            .collect();
-
-        #[derive(Hash, Eq, PartialEq)]
-        struct StaticCandidateGroup<'a> {
-            kind: &'a GateType,
-            oid: &'a Oid,
-            group: &'a Vec<usize>,
-        }
-
-        let static_candidate_groups: Vec<_> = hgg
-            .iter()
-            .flat_map(|(g, h)| repeat(g).zip(h))
-            .map(|(kind, (oid, group))| StaticCandidateGroup { kind, oid, group })
-            .collect();
-
-        let static_candidate_map: HashMap<_, _> = static_candidate_groups
-            .iter()
-            .flat_map(|scg| scg.group.iter().copied().zip(repeat(scg)))
-            .collect();
-
-        /// calc fid, sort outputs to normalize it.
-        fn calc_fgo_id_normalize(
-            id: usize,
-            outputs: &mut [Vec<usize>],
-            fgo_infos: &[Option<FgoInfo>],
-            kind: &[GateType],
-        ) -> Fid {
-            outputs[id].sort_by(|&a, &b| {
-                let by_kind = kind[a].cmp(&kind[b]);
-                let by_fid = fgo_infos[a].map(|f| f.id).cmp(&fgo_infos[b].map(|f| f.id));
-                by_kind.then(by_fid)
-            });
-            outputs[id]
-                .iter()
-                .map(|&id| fgo_infos[id].map(|f| f.id))
-                .collect()
-        }
-
-        fn get_pos_constraints(
-            group: Vec<usize>,
-            outputs: &[Vec<usize>],
-            fgo_infos: &[Option<FgoInfo>],
-        ) -> (Vec<usize>, HashMap<usize, Vec<usize>>) {
-            let mut remaining = Vec::new();
-            let pos_constraints = group
-                .iter()
-                .filter_map(|&i| {
-                    Some((
-                        match outputs[i]
-                            .iter()
-                            .find_map(|&output| fgo_infos[output].map(|f| f.pos))
-                        {
-                            Some(pos) => pos,
-                            None => {
-                                remaining.push(i);
-                                return None;
-                            },
-                        },
-                        i,
-                    ))
-                })
-                .into_group_map();
-            (remaining, pos_constraints)
-        }
-
-        fn try_make_fgo<const SIZE: usize>(
-            pos_constraints: HashMap<usize, Vec<usize>>,
-            outputs: &[Vec<usize>],
-            remaining: Vec<usize>,
-        ) -> Option<[usize; SIZE]> {
-            let mut pos_choices: [Option<usize>; SIZE] = std::array::from_fn(|_| None);
-            let mut out_set: HashSet<usize> = HashSet::new();
-            for (pos, ids) in pos_constraints {
-                // Using first disjoint
-                for id in ids {
-                    let is_disjoint = outputs[id]
-                        .iter()
-                        .all(|output| out_set.get(output).is_none());
-                    if is_disjoint {
-                        out_set.extend(outputs[id].iter());
-                        pos_choices[pos] = Some(id);
-                        break;
-                    }
-                }
-            }
-            let mut remaining_iter = remaining.iter().filter_map(|&id| {
-                let is_disjoint = outputs[id]
-                    .iter()
-                    .all(|output| out_set.get(output).is_none());
-                out_set.extend(outputs[id].iter());
-                is_disjoint.then_some(id)
-            });
-            let this_fgo =
-                pos_choices.try_map(|pos_choice| pos_choice.or_else(|| remaining_iter.next()));
-            this_fgo
-        }
-
-        fn add_fgo<const SIZE: usize>(
-            fgos: &mut Vec<[usize; SIZE]>,
-            new_fgo: [usize; SIZE],
-            fgo_infos: &mut [Option<FgoInfo>],
-        ) -> bool {
-            let is_empty = new_fgo.iter().all(|&f| fgo_infos[f].is_none());
-            assert_ne!(new_fgo.iter().all(|&f| fgo_infos[f].is_some()), is_empty);
-            if is_empty {
-                let next_fgo_id = fgos.len();
-                fgos.push(new_fgo);
-
-                for (pos, &id) in new_fgo.iter().enumerate() {
-                    fgo_infos[id] = Some(FgoInfo {
-                        id: next_fgo_id,
-                        pos,
-                    });
-                }
-            }
-            is_empty
-        }
-
-        fn mark_active_static_candidates<'a, const SIZE: usize>(
-            active_static_candidate_groups: &mut Vec<&'a StaticCandidateGroup<'a>>,
-            this_fgo: [usize; SIZE],
-            inputs: &[Vec<usize>],
-            output_fgos: Vec<[usize; SIZE]>,
-            outputs: &Vec<Vec<usize>>,
-            static_candidate_map: &HashMap<usize, &'a StaticCandidateGroup<'a>>,
-        ) {
-            // if candidate real, any id is sufficient
-            // TODO: current strategy may not explore optimally
-            active_static_candidate_groups.extend(
-                inputs[this_fgo[0]]
-                    .iter()
-                    .chain(output_fgos.iter().flat_map(|fgo| outputs[fgo[0]].iter()))
-                    .chain(output_fgos.iter().flat_map(|fgo| inputs[fgo[0]].iter()))
-                    .map(|i| static_candidate_map[i])
-            )
-        }
-
-        let mut fully_explored: HashSet<&StaticCandidateGroup> = HashSet::new();
-        let mut active_static_candidate_groups: Vec<&StaticCandidateGroup> = Vec::new();
-        let mut pass_all = static_candidate_groups.iter();
-        'new_static: while let Some(scg) = active_static_candidate_groups
-            .pop()
-            .or_else(|| pass_all.next())
-        {
-            if let Some(_) = fully_explored.replace(scg) {
-                continue 'new_static;
-            }
-            let oid = scg.oid;
-            let mut group = scg.group.clone();
-            'same_static: while {
-                // filter explored
-                group.retain(|&i| fgo_infos[i].is_none());
-
-                // filter contradictory output position constraints
-                group.retain(|&i| {
-                    // NOTE: ignores network merging, ok if exploration order is network based.
-                    outputs[i]
-                        .iter()
-                        .filter_map(|&output| fgo_infos[output].map(|f| f.pos))
-                        .all_equal()
-                });
-                group.len() >= SIZE
-            } {
-                'fid: for (_fid, group) in group
-                    .iter()
-                    .map(|&id| {
-                        (
-                            calc_fgo_id_normalize(id, &mut outputs, &fgo_infos, &kind),
-                            id,
-                        )
-                    })
-                    .into_group_map()
-                    .into_iter()
-                    .filter(|(_, group)| group.len() >= SIZE)
-                {
-                    let (remaining, pos_constraints) =
-                        get_pos_constraints(group, &outputs, &fgo_infos);
-                    let this_fgo: [usize; SIZE] = unwrap_or_else!(
-                        try_make_fgo(pos_constraints, &outputs, remaining),
-                        continue 'fid
-                    );
-                    assert!(add_fgo(&mut fgos, this_fgo, &mut fgo_infos));
-                    let output_fgos: Vec<_> = (0..oid.len())
-                        .map(|i| this_fgo.map(|this_id| outputs[this_id][i]))
-                        .collect();
-                    for fgo in output_fgos.iter().copied() {
-                        add_fgo(&mut fgos, fgo, &mut fgo_infos);
-                    }
-
-                    mark_active_static_candidates(
-                        &mut active_static_candidate_groups,
-                        this_fgo,
-                        &inputs,
-                        output_fgos,
-                        &outputs,
-                        &static_candidate_map,
-                    );
-
-                    continue 'same_static;
-                }
-                continue 'new_static;
-            }
-        }
-        dbg!(&fgos);
-
-        let mut remaining = ids.iter().copied().collect::<HashSet<_>>();
-        for f in fgos.iter().flat_map(|f| f.iter()) {
-            remaining.remove(f);
-        }
-        dbg!(&remaining);
-
-        dbg!(remaining.len() as f64 / ids.len() as f64 * 100.0);
-    }
-}
-
-// find similar multi dimensional? => clustering problem.
-#[derive(Debug)]
-struct HggData {
-    intersecting: Vec<usize>,
-    disjoint: Vec<usize>,
-}
-impl HggData {
-    fn new(ids: Vec<usize>, outputs: &[Vec<usize>]) -> Self {
-        // NOTE: should work with gates with double outputs
-        // NOTE: this allows a single arbitrary gate with intersecting outputs into the
-        // disjoint group, therefore pre-sort based on gate priority
-        let mut out_set: HashSet<usize> = HashSet::new();
-        let (intersecting, disjoint): (Vec<_>, Vec<_>) = ids.into_iter().partition(|&i| {
-            let is_intersecting = outputs[i]
-                .iter()
-                .any(|output| out_set.get(output).is_some());
-            out_set.extend(outputs[i].iter()); // <- ??? should be conditional based on whether it
-                                               // was added to set.
-            is_intersecting
-        });
-        HggData {
-            intersecting,
-            disjoint,
-        }
+        let gates = self.gates;
+        fgo::fgo_connections_grouping(gates);
     }
 }
 
@@ -1061,5 +759,344 @@ impl GateNetwork {
     #[must_use]
     pub(crate) fn compiled<T: crate::logic::LogicSim>(self, optimize: bool) -> T {
         T::create(self.network.initialized(optimize))
+    }
+}
+
+mod fgo {
+    use super::*;
+    use nohash_hasher::{IntMap, IntSet};
+    // output kind key/id, MUST match
+    type Oid = Vec<GateType>;
+
+    // fgo output key/id
+    // (fgo group, position in group)
+    type Fid = Vec<Option<usize>>;
+
+    type Fgo<const SIZE: usize> = [usize; SIZE];
+
+    pub(super) fn fgo_connections_grouping(gates: Vec<Gate>) {
+        // set of "active" & iter through groups
+
+        // viable FGO: unique outputs, same type, unique ids
+
+        // NOTE: 2x32 output groups viable because of how SIMD is done.
+        const SIZE: usize = 128;
+
+        let ids = (0..gates.len()).collect::<Vec<_>>();
+        let (kind, mut outputs, _inputs): (Vec<_>, Vec<_>, Vec<_>) = gates
+            .into_iter()
+            .map(|g| {
+                (
+                    g.kind,
+                    g.outputs
+                        .into_iter()
+                        .map(|i| i as usize)
+                        .collect::<Vec<_>>(),
+                    g.inputs.into_iter().map(|i| i as usize).collect::<Vec<_>>(),
+                )
+            })
+            .multiunzip();
+
+        // sort gate outputs by kind
+        for &i in ids.iter() {
+            outputs[i].sort_by_key(|&i| kind[i]);
+        }
+
+        let mut fgo_infos: Vec<Option<FgoInfo<SIZE>>> = ids.iter().map(|_| None).collect();
+        let mut fgos: Vec<Fgo<SIZE>> = Vec::new();
+        let mut fully_valid_fgos: Vec<Fgo<SIZE>> = Vec::new();
+
+        let static_candidate_groups = static_candidate_groups(&ids, &kind, &outputs);
+
+        // TODO: make array
+        let static_candidate_map: IntMap<usize, &StaticCandidateGroup> = static_candidate_groups
+            .iter()
+            .flat_map(|scg| scg.group.iter().copied().zip(repeat(scg)))
+            .collect();
+
+        'new_static: for scg in static_candidate_groups.iter() {
+            // ADD CONSTRAINT: kind
+            // ADD CONSTRAINT: oid
+            let mut group = scg.group.clone();
+            'same_static: while {
+                group.retain(|&i| {
+                    fgo_infos[i].is_none()
+                        && outputs[i]
+                            .iter()
+                            .filter_map(|&output| fgo_infos[output].map(|f| f.pos))
+                            .all_equal()
+                });
+                group.len() >= SIZE
+            } {
+                'fid: for (_fid, group) in group
+                    .iter()
+                    .map(|&id| {
+                        (
+                            calc_fgo_id_normalize(id, &mut outputs, &fgo_infos, &kind),
+                            id,
+                        )
+                    })
+                    .into_group_map()
+                    .into_iter()
+                    .filter(|(_, group)| group.len() >= SIZE)
+                {
+                    // ADD CONSTRAINT: fid
+                    let (remaining, pos_constraints) =
+                        get_pos_constraints(group, &outputs, &fgo_infos);
+                    // ADD CONSTRAINT: pos
+                    let this_fgo: [usize; SIZE] = unwrap_or_else!(
+                        try_make_fgo(pos_constraints, &outputs, remaining),
+                        continue 'fid
+                    );
+                    assert!(add_fgo(&mut fgos, this_fgo, &mut fgo_infos));
+                    let mut new_fgo_stack = Vec::new();
+                    new_fgo_stack.push(this_fgo);
+                    while let Some(this_fgo) = new_fgo_stack.pop() {
+                        fully_valid_fgos.push(this_fgo);
+                        assert_fgo(
+                            this_fgo,
+                            &static_candidate_map,
+                            &kind,
+                            &mut outputs,
+                            &fgo_infos,
+                        );
+
+                        let oid = &static_candidate_map[&this_fgo[0]].oid; // oid already checked
+                        let output_fgos: Vec<_> = (0..oid.len())
+                            .map(|i| this_fgo.map(|this_id| outputs[this_id][i]))
+                            .collect();
+                        // FGO is new
+                        // CURRENT CONSTRAINTS: input(oid) => kind, input(pos) => pos, fid
+                        // ADD CONSTRAINT: scg => oid
+                        for fgo in output_fgos.iter().copied() {
+                            if add_fgo(&mut fgos, fgo, &mut fgo_infos)
+                                && fgo.iter().map(|i| static_candidate_map[i]).all_equal()
+                                && fgo
+                                    .iter()
+                                    .map(|&id| {
+                                        calc_fgo_id_normalize(id, &mut outputs, &fgo_infos, &kind)
+                                    })
+                                    .all_equal()
+                            {
+                                // => kind, pos, fid, oid checked, this gate can be added.
+                                new_fgo_stack.push(fgo);
+                                assert_fgo(
+                                    fgo,
+                                    &static_candidate_map,
+                                    &kind,
+                                    &mut outputs,
+                                    &fgo_infos,
+                                )
+                            }
+                        }
+                    }
+                    continue 'same_static;
+                }
+                continue 'new_static;
+            }
+        }
+
+        {
+            let mut remaining = ids.iter().copied().collect::<HashSet<_>>();
+            for f in fgos.iter().flat_map(|f| f.iter()) {
+                remaining.remove(f);
+            }
+            println!(
+                "amount ungrouped: {}",
+                remaining.len() as f64 / ids.len() as f64
+            );
+        }
+        {
+            let mut remaining = ids.iter().copied().collect::<IntSet<_>>();
+            for f in fully_valid_fgos.iter().flat_map(|f| f.iter()) {
+                remaining.remove(f);
+            }
+            println!(
+                "amount non full: {}",
+                remaining.len() as f64 / ids.len() as f64
+            );
+        }
+    }
+
+    fn static_candidate_groups(
+        ids: &[usize],
+        kind: &[GateType],
+        outputs: &[Vec<usize>],
+    ) -> Vec<StaticCandidateGroup> {
+        // Disjoint sets of gates, with MINIMAL requirements
+        let hgg: HashMap<GateType, HashMap<Oid, Vec<usize>>> = ids
+            .iter()
+            .cloned()
+            .into_group_map_by(|&i| kind[i])
+            .into_iter()
+            .map(|(this_kind, ids)| {
+                (
+                    this_kind,
+                    ids.iter().cloned().into_group_map_by(|&i| {
+                        outputs[i].iter().map(|&i| kind[i]).collect::<Vec<_>>()
+                    }),
+                )
+            })
+            .collect();
+
+        let static_candidate_groups: Vec<_> = hgg
+            .into_iter()
+            .flat_map(|(g, h)| repeat(g).zip(h))
+            .map(|(kind, (oid, group))| StaticCandidateGroup { kind, oid, group })
+            .collect();
+        static_candidate_groups
+    }
+
+    /// FGO data associated with single gate
+    #[derive(Debug, Copy, Clone)]
+    struct FgoInfo<const SIZE: usize> {
+        id: usize, // what fgo group
+        //id_graph: usize, // what fgo network (for merging disconnected networks)
+        pos: usize, // what internal fgo position
+    }
+    impl<const SIZE: usize> FgoInfo<SIZE> {
+        fn new(id: usize, pos: usize) -> Self {
+            assert!(pos < SIZE, "{pos}");
+            Self { id, pos }
+        }
+    }
+    /// calc fid, sort outputs to normalize it.
+    fn calc_fgo_id_normalize<const SIZE: usize>(
+        id: usize,
+        outputs: &mut [Vec<usize>],
+        fgo_infos: &[Option<FgoInfo<SIZE>>],
+        kind: &[GateType],
+    ) -> Fid {
+        outputs[id].sort_by(|&a, &b| {
+            let by_kind = kind[a].cmp(&kind[b]);
+            let by_fid = fgo_infos[a].map(|f| f.id).cmp(&fgo_infos[b].map(|f| f.id));
+            by_kind.then(by_fid)
+        });
+        outputs[id]
+            .iter()
+            .map(|&id| fgo_infos[id].map(|f| f.id))
+            .collect()
+    }
+    #[derive(Hash, Eq, PartialEq)]
+    struct StaticCandidateGroup {
+        kind: GateType, // needed for hash
+        oid: Oid,
+        group: Vec<usize>,
+    }
+
+    fn get_pos_constraints<const SIZE: usize>(
+        group: Vec<usize>,
+        outputs: &[Vec<usize>],
+        fgo_infos: &[Option<FgoInfo<SIZE>>],
+    ) -> (Vec<usize>, HashMap<usize, Vec<usize>>) {
+        let mut remaining = Vec::new();
+        let pos_constraints = group
+            .iter()
+            .filter_map(|&i| {
+                Some((
+                    match outputs[i]
+                        .iter()
+                        .find_map(|&output| fgo_infos[output].map(|f| f.pos))
+                    {
+                        Some(pos) => pos,
+                        None => {
+                            remaining.push(i);
+                            return None;
+                        },
+                    },
+                    i,
+                ))
+            })
+            .into_group_map();
+        (remaining, pos_constraints)
+    }
+
+    fn try_make_fgo<const SIZE: usize>(
+        pos_constraints: HashMap<usize, Vec<usize>>,
+        outputs: &[Vec<usize>],
+        remaining: Vec<usize>,
+    ) -> Option<[usize; SIZE]> {
+        let mut pos_choices: [Option<usize>; SIZE] = std::array::from_fn(|_| None);
+        let mut out_set: HashSet<usize> = HashSet::new();
+        for (pos, ids) in pos_constraints {
+            // Using first disjoint
+            for id in ids {
+                let is_disjoint = outputs[id]
+                    .iter()
+                    .all(|output| out_set.get(output).is_none());
+                if is_disjoint {
+                    out_set.extend(outputs[id].iter());
+                    pos_choices[pos] = Some(id);
+                    break;
+                }
+            }
+        }
+        let mut remaining_iter = remaining.iter().filter_map(|&id| {
+            let is_disjoint = outputs[id]
+                .iter()
+                .all(|output| out_set.get(output).is_none());
+            out_set.extend(outputs[id].iter());
+            is_disjoint.then_some(id)
+        });
+        let this_fgo =
+            pos_choices.try_map(|pos_choice| pos_choice.or_else(|| remaining_iter.next()));
+        this_fgo
+    }
+
+    /// Add fgo, set fgo info
+    /// Returns `true` if fgo is new
+    fn add_fgo<const SIZE: usize>(
+        fgos: &mut Vec<[usize; SIZE]>,
+        new_fgo: [usize; SIZE],
+        fgo_infos: &mut [Option<FgoInfo<SIZE>>],
+    ) -> bool {
+        let is_empty = new_fgo.iter().all(|&f| fgo_infos[f].is_none());
+        assert_ne!(
+            new_fgo.iter().all(|&f| fgo_infos[f].is_some()),
+            is_empty,
+            "{:?}",
+            new_fgo.iter().map(|&f| fgo_infos[f]).collect::<Vec<_>>()
+        );
+        if is_empty {
+            let next_fgo_id = fgos.len();
+            fgos.push(new_fgo);
+
+            for (pos, &id) in new_fgo.iter().enumerate() {
+                assert!(pos < SIZE);
+                fgo_infos[id] = Some(FgoInfo::new(next_fgo_id, pos))
+            }
+        }
+        is_empty
+    }
+
+    fn assert_fgo<'a, const SIZE: usize, T>(
+        this_fgo: [usize; SIZE],
+        static_candidate_map: &T,
+        kind: &[GateType],
+        outputs: &mut [Vec<usize>],
+        fgo_infos: &[Option<FgoInfo<SIZE>>],
+    ) where
+        T: for<'b> Index<&'b usize, Output = &'a StaticCandidateGroup>,
+    {
+        let fgo = this_fgo;
+        // check kind
+        assert!(fgo.iter().map(|&f| kind[f]).all_equal());
+        // check oid
+        assert!(fgo.iter().map(|f| &static_candidate_map[f].oid).all_equal());
+        // check fid
+        assert!(fgo
+            .iter()
+            .map(|&id| { calc_fgo_id_normalize(id, outputs, &fgo_infos, &kind) })
+            .all_equal());
+        // check id equal
+        assert!(fgo.iter().map(|&f| fgo_infos[f].unwrap().id).all_equal());
+        // check pos
+        assert!(
+            fgo.iter()
+                .map(|&f| fgo_infos[f].unwrap().pos)
+                .eq(0..fgo.len()),
+            "{:?}",
+            fgo.iter().map(|&f| fgo_infos[f].unwrap().pos)
+        );
     }
 }

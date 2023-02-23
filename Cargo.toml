@@ -98,6 +98,7 @@ tempfile =  { version = "3.3.0",  default-features = false                      
 arrayvec =  { version = "0.7.2",  default-features = false                                  }
 json =      { version = "0.12.4", default-features = false                                  }
 rand = "0.8.5"
+nohash-hasher = "0.2.0"
 
 
 [dev-dependencies]
