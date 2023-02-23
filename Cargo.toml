@@ -44,6 +44,10 @@ opt-level = 3
 #rustflags = "-C target-cpu=native"
 debug = true
 
+[profile.release-dev]
+inherits = "release"
+overflow-checks = true
+
 [profile.release-lto]
 inherits = "release"
 lto = "fat"
@@ -86,18 +90,21 @@ rpath = false
 
 [dependencies]
 base64 =    { version = "0.13.0", default-features = false, features = ["std"]              }
-zstd =      { version = "0.11",   default-features = false                                  }
+#base64 =    { version = "0.21.0", default-features = false, features = ["std"]              }
+#zstd =      { version = "0.11",   default-features = false                                  }
+zstd =      { version = "0.12.3",   default-features = false                                  }
 itertools = { version = "0.10.5", default-features = false, features = ["use_std"]          }
 bytemuck =  { version = "1.12.1", default-features = false                                  }
 clap =      { version = "4.0.19",                           features = ["derive"]           }
-crossterm = { version = "0.25.0", default-features = false                                  }
+#crossterm = { version = "0.25.0", default-features = false                                  }
+crossterm = { version = "0.26.0", default-features = false                                  }
 anyhow =    { version = "1.0.66", default-features = false, features = ["std", "backtrace"] }
 image =     { version = "0.24.5", default-features = false, features = ["gif"]              }
 arboard =   { version = "3.2.0",  default-features = false, features = ["image-data"]       }
 tempfile =  { version = "3.3.0",  default-features = false                                  }
-arrayvec =  { version = "0.7.2",  default-features = false                                  }
+#arrayvec =  { version = "0.7.2",  default-features = false                                  }
 json =      { version = "0.12.4", default-features = false                                  }
-rand = "0.8.5"
+#rand = "0.8.5"
 nohash-hasher = "0.2.0"
 
 

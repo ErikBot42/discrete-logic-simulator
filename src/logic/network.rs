@@ -2,6 +2,7 @@
 use crate::logic::{gate_status, Gate, GateKey, GateType, IndexType, UpdateStrategy};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 use std::iter::repeat;
 use std::ops::Index;
 
@@ -684,7 +685,22 @@ impl InitializedNetwork {
 
     fn _fgo_connections_grouping(self) {
         let gates = self.gates;
-        fgo::fgo_connections_grouping(gates);
+        #[derive(Eq, PartialEq, Hash)]
+        enum FgoGateTarget {
+            AndNor,
+            OrNand,
+            XorXnor,
+            Latch,
+            Interface(Option<u8>),
+        }
+        let gate_kind_mapping = |g: GateType| match g {
+            GateType::And | GateType::Nor => FgoGateTarget::AndNor,
+            GateType::Or | GateType::Nand | GateType::Cluster => FgoGateTarget::OrNand,
+            GateType::Xor | GateType::Xnor => FgoGateTarget::XorXnor,
+            GateType::Latch => FgoGateTarget::Latch,
+            GateType::Interface(s) => FgoGateTarget::Interface(s),
+        };
+        fgo::fgo_connections_grouping(gates, gate_kind_mapping);
     }
 }
 
@@ -774,13 +790,17 @@ mod fgo {
 
     type Fgo<const SIZE: usize> = [usize; SIZE];
 
-    pub(super) fn fgo_connections_grouping(gates: Vec<Gate>) {
+    pub(super) fn fgo_connections_grouping<F, G>(gates: Vec<Gate>, gate_kind_mapping: F)
+    where
+        F: Fn(GateType) -> G,
+        G: Eq + PartialEq + Hash,
+    {
         // set of "active" & iter through groups
 
         // viable FGO: unique outputs, same type, unique ids
 
         // NOTE: 2x32 output groups viable because of how SIMD is done.
-        const SIZE: usize = 128;
+        const SIZE: usize = 64;
 
         let ids = (0..gates.len()).collect::<Vec<_>>();
         let (kind, mut outputs, _inputs): (Vec<_>, Vec<_>, Vec<_>) = gates
@@ -808,7 +828,6 @@ mod fgo {
 
         let static_candidate_groups = static_candidate_groups(&ids, &kind, &outputs);
 
-        // TODO: make array
         let static_candidate_map: IntMap<usize, &StaticCandidateGroup> = static_candidate_groups
             .iter()
             .flat_map(|scg| scg.group.iter().copied().zip(repeat(scg)))
@@ -823,7 +842,7 @@ mod fgo {
                     fgo_infos[i].is_none()
                         && outputs[i]
                             .iter()
-                            .filter_map(|&output| fgo_infos[output].map(|f| f.pos))
+                            .filter_map(|&output| fgo_infos[output].map(|f| f.pos()))
                             .all_equal()
                 });
                 group.len() >= SIZE
@@ -897,7 +916,7 @@ mod fgo {
         }
 
         {
-            let mut remaining = ids.iter().copied().collect::<HashSet<_>>();
+            let mut remaining = ids.iter().copied().collect::<IntSet<_>>();
             for f in fgos.iter().flat_map(|f| f.iter()) {
                 remaining.remove(f);
             }
@@ -959,6 +978,11 @@ mod fgo {
             assert!(pos < SIZE, "{pos}");
             Self { id, pos }
         }
+        fn pos(&self) -> usize {
+            let pos = self.pos;
+            assert!(pos < SIZE, "{pos}");
+            pos
+        }
     }
     /// calc fid, sort outputs to normalize it.
     fn calc_fgo_id_normalize<const SIZE: usize>(
@@ -996,7 +1020,7 @@ mod fgo {
                 Some((
                     match outputs[i]
                         .iter()
-                        .find_map(|&output| fgo_infos[output].map(|f| f.pos))
+                        .find_map(|&output| fgo_infos[output].map(|f| f.pos()))
                     {
                         Some(pos) => pos,
                         None => {
@@ -1093,10 +1117,10 @@ mod fgo {
         // check pos
         assert!(
             fgo.iter()
-                .map(|&f| fgo_infos[f].unwrap().pos)
+                .map(|&f| fgo_infos[f].unwrap().pos())
                 .eq(0..fgo.len()),
             "{:?}",
-            fgo.iter().map(|&f| fgo_infos[f].unwrap().pos)
+            fgo.iter().map(|&f| fgo_infos[f].unwrap().pos())
         );
     }
 }
