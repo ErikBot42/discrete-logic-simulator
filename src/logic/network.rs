@@ -685,7 +685,7 @@ impl InitializedNetwork {
 
     fn _fgo_connections_grouping(self) {
         let gates = self.gates;
-        #[derive(Eq, PartialEq, Hash)]
+        #[derive(Eq, PartialEq, Hash, Ord, PartialOrd, Copy, Clone)]
         enum FgoGateTarget {
             AndNor,
             OrNand,
@@ -782,7 +782,7 @@ mod fgo {
     use super::*;
     use nohash_hasher::{IntMap, IntSet};
     // output kind key/id, MUST match
-    type Oid = Vec<GateType>;
+    type Oid<G> = Vec<G>;
 
     // fgo output key/id
     // (fgo group, position in group)
@@ -793,7 +793,7 @@ mod fgo {
     pub(super) fn fgo_connections_grouping<F, G>(gates: Vec<Gate>, gate_kind_mapping: F)
     where
         F: Fn(GateType) -> G,
-        G: Eq + PartialEq + Hash,
+        G: Eq + PartialEq + Hash + Ord + Copy + Clone,
     {
         // set of "active" & iter through groups
 
@@ -807,7 +807,7 @@ mod fgo {
             .into_iter()
             .map(|g| {
                 (
-                    g.kind,
+                    gate_kind_mapping(g.kind),
                     g.outputs
                         .into_iter()
                         .map(|i| i as usize)
@@ -826,9 +826,9 @@ mod fgo {
         let mut fgos: Vec<Fgo<SIZE>> = Vec::new();
         let mut fully_valid_fgos: Vec<Fgo<SIZE>> = Vec::new();
 
-        let static_candidate_groups = static_candidate_groups(&ids, &kind, &outputs);
+        let static_candidate_groups = timed! {static_candidate_groups(&ids, &kind, &outputs), "made static cnadidates in {:?}"};
 
-        let static_candidate_map: IntMap<usize, &StaticCandidateGroup> = static_candidate_groups
+        let static_candidate_map: IntMap<usize, &StaticCandidateGroup<G>> = static_candidate_groups
             .iter()
             .flat_map(|scg| scg.group.iter().copied().zip(repeat(scg)))
             .collect();
@@ -856,7 +856,8 @@ mod fgo {
                         )
                     })
                     .into_group_map()
-                    .into_iter()
+                    .into_iter() // for determinism
+                    .sorted()
                     .filter(|(_, group)| group.len() >= SIZE)
                 {
                     // ADD CONSTRAINT: fid
@@ -870,6 +871,13 @@ mod fgo {
                     assert!(add_fgo(&mut fgos, this_fgo, &mut fgo_infos));
                     let mut new_fgo_stack = Vec::new();
                     new_fgo_stack.push(this_fgo);
+                    assert_fgo(
+                        this_fgo,
+                        &static_candidate_map,
+                        &kind,
+                        &mut outputs,
+                        &fgo_infos,
+                    );
                     while let Some(this_fgo) = new_fgo_stack.pop() {
                         fully_valid_fgos.push(this_fgo);
                         assert_fgo(
@@ -937,17 +945,21 @@ mod fgo {
         }
     }
 
-    fn static_candidate_groups(
+    fn static_candidate_groups<G>(
         ids: &[usize],
-        kind: &[GateType],
+        kind: &[G],
         outputs: &[Vec<usize>],
-    ) -> Vec<StaticCandidateGroup> {
+    ) -> Vec<StaticCandidateGroup<G>>
+    where
+        G: Eq + Ord + Hash + Clone + Copy,
+    {
         // Disjoint sets of gates, with MINIMAL requirements
-        let hgg: HashMap<GateType, HashMap<Oid, Vec<usize>>> = ids
+        let hgg: HashMap<G, _> = ids
             .iter()
             .cloned()
             .into_group_map_by(|&i| kind[i])
-            .into_iter()
+            .into_iter() // for determinism
+            .sorted()
             .map(|(this_kind, ids)| {
                 (
                     this_kind,
@@ -962,6 +974,7 @@ mod fgo {
             .into_iter()
             .flat_map(|(g, h)| repeat(g).zip(h))
             .map(|(kind, (oid, group))| StaticCandidateGroup { kind, oid, group })
+            .sorted() // for determinism
             .collect();
         static_candidate_groups
     }
@@ -985,11 +998,11 @@ mod fgo {
         }
     }
     /// calc fid, sort outputs to normalize it.
-    fn calc_fgo_id_normalize<const SIZE: usize>(
+    fn calc_fgo_id_normalize<const SIZE: usize, G: Ord>(
         id: usize,
         outputs: &mut [Vec<usize>],
         fgo_infos: &[Option<FgoInfo<SIZE>>],
-        kind: &[GateType],
+        kind: &[G],
     ) -> Fid {
         outputs[id].sort_by(|&a, &b| {
             let by_kind = kind[a].cmp(&kind[b]);
@@ -1001,10 +1014,10 @@ mod fgo {
             .map(|&id| fgo_infos[id].map(|f| f.id))
             .collect()
     }
-    #[derive(Hash, Eq, PartialEq)]
-    struct StaticCandidateGroup {
-        kind: GateType, // needed for hash
-        oid: Oid,
+    #[derive(Ord, PartialOrd, Hash, Eq, PartialEq)]
+    struct StaticCandidateGroup<G> {
+        kind: G, // needed for hash
+        oid: Oid<G>,
         group: Vec<usize>,
     }
 
@@ -1093,14 +1106,15 @@ mod fgo {
         is_empty
     }
 
-    fn assert_fgo<'a, const SIZE: usize, T>(
+    fn assert_fgo<'a, const SIZE: usize, T, G>(
         this_fgo: [usize; SIZE],
         static_candidate_map: &T,
-        kind: &[GateType],
+        kind: &[G],
         outputs: &mut [Vec<usize>],
         fgo_infos: &[Option<FgoInfo<SIZE>>],
     ) where
-        T: for<'b> Index<&'b usize, Output = &'a StaticCandidateGroup>,
+        T: for<'b> Index<&'b usize, Output = &'a StaticCandidateGroup<G>>,
+        G: Ord + 'a + Copy + Clone,
     {
         let fgo = this_fgo;
         // check kind
@@ -1108,10 +1122,14 @@ mod fgo {
         // check oid
         assert!(fgo.iter().map(|f| &static_candidate_map[f].oid).all_equal());
         // check fid
-        assert!(fgo
-            .iter()
-            .map(|&id| { calc_fgo_id_normalize(id, outputs, &fgo_infos, &kind) })
-            .all_equal());
+        assert!(
+            fgo.iter()
+                .map(|&id| { calc_fgo_id_normalize(id, outputs, &fgo_infos, &kind) })
+                .all_equal(),
+            "{:?}",
+            fgo.iter()
+                .map(|&id| { calc_fgo_id_normalize(id, outputs, &fgo_infos, &kind) })
+        );
         // check id equal
         assert!(fgo.iter().map(|&f| fgo_infos[f].unwrap().id).all_equal());
         // check pos
