@@ -692,10 +692,12 @@ impl InitializedNetwork {
             XorXnor,
             Latch,
             Interface(Option<u8>),
+            Cluster,
         }
         let gate_kind_mapping = |g: GateType| match g {
             GateType::And | GateType::Nor => FgoGateTarget::AndNor,
-            GateType::Or | GateType::Nand | GateType::Cluster => FgoGateTarget::OrNand,
+            GateType::Or | GateType::Nand => FgoGateTarget::OrNand,
+            GateType::Cluster => FgoGateTarget::Cluster,
             GateType::Xor | GateType::Xnor => FgoGateTarget::XorXnor,
             GateType::Latch => FgoGateTarget::Latch,
             GateType::Interface(s) => FgoGateTarget::Interface(s),
@@ -822,17 +824,15 @@ mod fgo {
             outputs[i].sort_by_key(|&i| kind[i]);
         }
 
-        let mut fgo_infos: Vec<Option<FgoInfo<SIZE>>> = ids.iter().map(|_| None).collect();
-        let mut fgos: Vec<Fgo<SIZE>> = Vec::new();
-        let mut fully_valid_fgos: Vec<Fgo<SIZE>> = Vec::new();
-
-        let static_candidate_groups = timed! {static_candidate_groups(&ids, &kind, &outputs), "made static cnadidates in {:?}"};
-
+        let static_candidate_groups = timed! {static_candidate_groups(&ids, &kind, &outputs), "made static candidates in {:?}"};
         let static_candidate_map: IntMap<usize, &StaticCandidateGroup<G>> = static_candidate_groups
             .iter()
             .flat_map(|scg| scg.group.iter().copied().zip(repeat(scg)))
             .collect();
 
+        let mut fgo_infos: Vec<Option<FgoInfo<SIZE>>> = ids.iter().map(|_| None).collect();
+        let mut fgos: Vec<Fgo<SIZE>> = Vec::new();
+        let mut fully_valid_fgos: Vec<Fgo<SIZE>> = Vec::new();
         'new_static: for scg in static_candidate_groups.iter() {
             // ADD CONSTRAINT: kind
             // ADD CONSTRAINT: oid
@@ -868,7 +868,44 @@ mod fgo {
                         try_make_fgo(pos_constraints, &outputs, remaining),
                         continue 'fid
                     );
-                    assert!(add_fgo(&mut fgos, this_fgo, &mut fgo_infos));
+
+                    assert!(
+                        this_fgo
+                            .iter()
+                            .map(|&id| {
+                                calc_fgo_id_normalize(id, &mut outputs, &fgo_infos, &kind)
+                            })
+                            .all_equal(),
+                        "{:?} {:?}",
+                        this_fgo.iter().map(|&id| {
+                            calc_fgo_id_normalize(id, &mut outputs, &fgo_infos, &kind)
+                        },),
+                        this_fgo.iter()
+                    );
+
+                    assert!(add_fgo(
+                        &mut fgos,
+                        this_fgo,
+                        &mut fgo_infos,
+                        &kind,
+                        &mut outputs,
+                        true
+                    ));
+
+                    assert!(
+                        this_fgo
+                            .iter()
+                            .map(|&id| {
+                                calc_fgo_id_normalize(id, &mut outputs, &fgo_infos, &kind)
+                            })
+                            .all_equal(),
+                        "{:?} {:?}",
+                        this_fgo
+                            .iter()
+                            .map(|&id| calc_fgo_id_normalize(id, &mut outputs, &fgo_infos, &kind))
+                            .collect::<Vec<_>>(),
+                        &this_fgo
+                    );
                     let mut new_fgo_stack = Vec::new();
                     new_fgo_stack.push(this_fgo);
                     assert_fgo(
@@ -896,7 +933,7 @@ mod fgo {
                         // CURRENT CONSTRAINTS: input(oid) => kind, input(pos) => pos, fid
                         // ADD CONSTRAINT: scg => oid
                         for fgo in output_fgos.iter().copied() {
-                            if add_fgo(&mut fgos, fgo, &mut fgo_infos)
+                            if add_fgo(&mut fgos, fgo, &mut fgo_infos, &kind, &mut outputs, false)
                                 && fgo.iter().map(|i| static_candidate_map[i]).all_equal()
                                 && fgo
                                     .iter()
@@ -906,14 +943,14 @@ mod fgo {
                                     .all_equal()
                             {
                                 // => kind, pos, fid, oid checked, this gate can be added.
-                                new_fgo_stack.push(fgo);
-                                assert_fgo(
-                                    fgo,
-                                    &static_candidate_map,
-                                    &kind,
-                                    &mut outputs,
-                                    &fgo_infos,
-                                )
+                                //new_fgo_stack.push(fgo);
+                                //assert_fgo(
+                                //    fgo,
+                                //    &static_candidate_map,
+                                //    &kind,
+                                //    &mut outputs,
+                                //    &fgo_infos,
+                                //)
                             }
                         }
                     }
@@ -1056,6 +1093,7 @@ mod fgo {
         let mut pos_choices: [Option<usize>; SIZE] = std::array::from_fn(|_| None);
         let mut out_set: HashSet<usize> = HashSet::new();
         for (pos, ids) in pos_constraints {
+            assert!(pos < SIZE, "{pos}");
             // Using first disjoint
             for id in ids {
                 let is_disjoint = outputs[id]
@@ -1082,11 +1120,38 @@ mod fgo {
 
     /// Add fgo, set fgo info
     /// Returns `true` if fgo is new
-    fn add_fgo<const SIZE: usize>(
+    fn add_fgo<const SIZE: usize, G: Ord>(
         fgos: &mut Vec<[usize; SIZE]>,
         new_fgo: [usize; SIZE],
         fgo_infos: &mut [Option<FgoInfo<SIZE>>],
+        kind: &[G],
+        outputs: &mut [Vec<usize>],
+        perform_asserts: bool,
     ) -> bool {
+        if perform_asserts {
+            assert!(
+                new_fgo.iter().map(|&id| outputs[id].len()).all_equal(),
+                "{:?}",
+                new_fgo
+                    .iter()
+                    .map(|&id| outputs[id].len())
+                    .collect::<Vec<_>>()
+            );
+
+            assert!(
+                new_fgo
+                    .iter()
+                    .map(|&id| { calc_fgo_id_normalize(id, outputs, &fgo_infos, &kind) })
+                    .all_equal(),
+                "{:?} {:?}",
+                new_fgo
+                    .iter()
+                    .map(|&id| calc_fgo_id_normalize(id, outputs, &fgo_infos, &kind))
+                    .collect::<Vec<_>>(),
+                &new_fgo
+            );
+        }
+
         let is_empty = new_fgo.iter().all(|&f| fgo_infos[f].is_none());
         assert_ne!(
             new_fgo.iter().all(|&f| fgo_infos[f].is_some()),
@@ -1100,9 +1165,37 @@ mod fgo {
 
             for (pos, &id) in new_fgo.iter().enumerate() {
                 assert!(pos < SIZE);
-                fgo_infos[id] = Some(FgoInfo::new(next_fgo_id, pos))
+                assert!(fgo_infos[id]
+                    .replace(FgoInfo::new(next_fgo_id, pos))
+                    .is_none());
             }
         }
+        let is_empty_after = new_fgo.iter().all(|&f| fgo_infos[f].is_none());
+        assert_ne!(
+            new_fgo.iter().all(|&f| fgo_infos[f].is_some()),
+            is_empty_after,
+            "{:?}",
+            new_fgo.iter().map(|&f| fgo_infos[f]).collect::<Vec<_>>()
+        );
+        if perform_asserts {
+            assert!(
+                new_fgo
+                    .iter()
+                    .map(|&id| { calc_fgo_id_normalize(id, outputs, &fgo_infos, &kind) })
+                    .all_equal(),
+                "fids: {:?}\n fgo: {:?}\n outputs: {:?}",
+                new_fgo
+                    .iter()
+                    .map(|&id| calc_fgo_id_normalize(id, outputs, &fgo_infos, &kind))
+                    .collect::<Vec<_>>(),
+                &new_fgo,
+                new_fgo
+                    .iter()
+                    .map(|&id| outputs[id].clone())
+                    .collect::<Vec<_>>(),
+            );
+        }
+
         is_empty
     }
 
@@ -1126,9 +1219,10 @@ mod fgo {
             fgo.iter()
                 .map(|&id| { calc_fgo_id_normalize(id, outputs, &fgo_infos, &kind) })
                 .all_equal(),
-            "{:?}",
+            "{:?} {:?}",
             fgo.iter()
-                .map(|&id| { calc_fgo_id_normalize(id, outputs, &fgo_infos, &kind) })
+                .map(|&id| { calc_fgo_id_normalize(id, outputs, &fgo_infos, &kind) },),
+            fgo.iter()
         );
         // check id equal
         assert!(fgo.iter().map(|&f| fgo_infos[f].unwrap().id).all_equal());
