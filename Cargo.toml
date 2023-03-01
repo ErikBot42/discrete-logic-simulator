@@ -92,7 +92,7 @@ rpath = false
 base64 =    { version = "0.13.0", default-features = false, features = ["std"]              }
 #base64 =    { version = "0.21.0", default-features = false, features = ["std"]              }
 #zstd =      { version = "0.11",   default-features = false                                  }
-zstd =      { version = "0.12.3",   default-features = false                                  }
+zstd =      { version = "0.12.3",   default-features = false                                }
 itertools = { version = "0.10.5", default-features = false, features = ["use_std"]          }
 bytemuck =  { version = "1.12.1", default-features = false                                  }
 clap =      { version = "4.0.19",                           features = ["derive"]           }

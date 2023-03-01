@@ -11,6 +11,8 @@
 #![feature(array_chunks)]
 #![feature(array_try_map)]
 #![feature(stdsimd)]
+
+#![feature(build_hasher_simple_hash_one)]
 macro_rules! timed {
     ($block:expr, $print_str:expr) => {{
         let now = std::time::Instant::now();

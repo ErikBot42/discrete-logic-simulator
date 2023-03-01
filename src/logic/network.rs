@@ -2,6 +2,7 @@
 use crate::logic::{gate_status, Gate, GateKey, GateType, IndexType, UpdateStrategy};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::iter::repeat;
 use std::ops::Index;
@@ -685,7 +686,18 @@ impl InitializedNetwork {
 
     fn _fgo_connections_grouping(self) {
         let gates = self.gates;
-        #[derive(Eq, PartialEq, Hash, Ord, PartialOrd, Copy, Clone)]
+
+        #[derive(Eq, PartialEq, Hash, Ord, PartialOrd, Debug, Copy, Clone)]
+        enum FgoGateTargetBad {
+            Other,
+            Cluster,
+        }
+        let gate_kind_mapping_bad = |g: GateType| match g {
+            GateType::Cluster => FgoGateTargetBad::Cluster,
+            _ => FgoGateTargetBad::Other,
+        };
+
+        #[derive(Eq, PartialEq, Hash, Ord, PartialOrd, Debug, Copy, Clone)]
         enum FgoGateTarget {
             AndNor,
             OrNand,
@@ -781,8 +793,26 @@ impl GateNetwork {
 }
 
 mod fgo {
+    // TODO: 
+    // first: make pass with optimistic oid_recursive for each group, save remaining things
+    // then: collect remaining and repeat until level is 2 (oid + kind)
+    //
+    // while: explore outputs and try add them, if unsucessfull add group exploration candidates to list for next iteration. Grouping outputs is done unconditionally.
+    //
+    // finally: put remaining trash into groups.
+    //
+    //
+    // (A,B) -> (C,C) will not work, C must be in 2 places at once.
+    // (A,B) -> (C,D) -> (E, E) will not work for (C,D) because E must be in 2 places at once
+    // (A,B) -> [(C,D), (E,F)] -> (G, H)  will work, but recursive id search will fail here.
+    //
+    // 
+    //
+
+
     use super::*;
     use nohash_hasher::{IntMap, IntSet};
+
     // output kind key/id, MUST match
     type Oid<G> = Vec<G>;
 
@@ -791,18 +821,74 @@ mod fgo {
     type Fid = Vec<Option<usize>>;
 
     type Fgo<const SIZE: usize> = [usize; SIZE];
+    type Fg<const SIZE: usize> = [usize; SIZE];
 
+    fn fg_validate<G: Index<usize, Output = G> + Copy + Ord + Eq, const SIZE: usize>(
+        maybe_fg: Fg<SIZE>,
+        kind: G,
+    ) {
+        assert_eq!(maybe_fg.into_iter().sorted().dedup().count(), SIZE);
+        assert!(maybe_fg.into_iter().map(|id| kind[id]).all_equal());
+    }
+    fn fgo_validate<G: Index<usize, Output = G> + Copy + Ord + Eq, const SIZE: usize>(
+        maybe_fg: Fgo<SIZE>,
+        kind: G,
+    ) {
+        fg_validate(maybe_fg, kind)
+    }
+
+    fn afgo_validate<G: Index<usize, Output = G> + Copy + Ord + Eq, const SIZE: usize>(
+        maybe_fg: Fgo<SIZE>,
+        outputs: &[Vec<usize>],
+        kind: G,
+    ) -> bool {
+        fg_validate(maybe_fg, kind);
+        let fg = maybe_fg;
+        let output_count = match fg.iter().map(|&i| outputs[i].len()).dedup().exactly_one() {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+
+        let maybe_fgos = (0..output_count)
+            .map(|i| fg.map(|id| outputs[id][i]))
+            .collect::<Vec<_>>();
+        for &maybe_fgo in &maybe_fgos {
+            fgo_validate(maybe_fgo, kind)
+        }
+
+        assert_eq!(
+            fg.iter()
+                .copied()
+                .chain(maybe_fgos.iter().copied().flatten())
+                .sorted()
+                .dedup()
+                .count(),
+            SIZE * (output_count + 1)
+        );
+        let fgos = maybe_fgos;
+
+        todo!()
+    }
+    /// # GG (Gate Group)
+    /// * Set of gate/cluster ids.
+    /// # FG (Fused Group)
+    /// * \|FG\| = `SIZE`
+    /// * \|Set(FG)\| = `SIZE`
+    /// * \|Set(Map(FG, kind))\| = 1
+    /// # FGO (Fused Group Output)
+    /// * \|FGO\| = `SIZE`
+    /// * \|Set(FGO)\| = `SIZE`
+    /// * \|Set(Map(FGO, kind))\| = 1
+    /// # AFGO (Array FGO)
+    /// * FG, where all outputs are FGO, everything disjoint.
+    /// * Disjoint check
     pub(super) fn fgo_connections_grouping<F, G>(gates: Vec<Gate>, gate_kind_mapping: F)
     where
         F: Fn(GateType) -> G,
-        G: Eq + PartialEq + Hash + Ord + Copy + Clone,
+        G: Eq + PartialEq + Hash + Ord + Copy + Clone + Debug,
     {
-        // set of "active" & iter through groups
-
-        // viable FGO: unique outputs, same type, unique ids
-
         // NOTE: 2x32 output groups viable because of how SIMD is done.
-        const SIZE: usize = 64;
+        const SIZE: usize = 2048;
 
         let ids = (0..gates.len()).collect::<Vec<_>>();
         let (kind, mut outputs, _inputs): (Vec<_>, Vec<_>, Vec<_>) = gates
@@ -824,25 +910,27 @@ mod fgo {
             outputs[i].sort_by_key(|&i| kind[i]);
         }
 
-        let static_candidate_groups = timed! {static_candidate_groups(&ids, &kind, &outputs), "made static candidates in {:?}"};
-        let static_candidate_map: IntMap<usize, &StaticCandidateGroup<G>> = static_candidate_groups
+        let static_candidate_ggs = timed! {static_candidate_groups(&ids, &kind, &outputs), "made static candidates in {:?}"};
+        let static_candidate_map: IntMap<usize, &StaticCandidateGroup<G>> = static_candidate_ggs
             .iter()
             .flat_map(|scg| scg.group.iter().copied().zip(repeat(scg)))
             .collect();
 
-        let mut fgo_infos: Vec<Option<FgoInfo<SIZE>>> = ids.iter().map(|_| None).collect();
-        let mut fgos: Vec<Fgo<SIZE>> = Vec::new();
-        let mut fully_valid_fgos: Vec<Fgo<SIZE>> = Vec::new();
-        'new_static: for scg in static_candidate_groups.iter() {
+        let mut fg_infos: Vec<Option<FgoInfo<SIZE>>> = ids.iter().map(|_| None).collect();
+        let mut fgs: Vec<Fgo<SIZE>> = Vec::new();
+        let mut afgs: Vec<Fgo<SIZE>> = Vec::new();
+        'new_static: for scg in static_candidate_ggs.iter() {
             // ADD CONSTRAINT: kind
             // ADD CONSTRAINT: oid
+            // ARBITRARY: scg exploration order.
             let mut group = scg.group.clone();
-            'same_static: while {
+            dbg!(scg.kind, scg.group.len());
+            'static_group: while {
                 group.retain(|&i| {
-                    fgo_infos[i].is_none()
+                    fg_infos[i].is_none()
                         && outputs[i]
                             .iter()
-                            .filter_map(|&output| fgo_infos[output].map(|f| f.pos()))
+                            .filter_map(|&output| fg_infos[output].map(|f| f.pos()))
                             .all_equal()
                 });
                 group.len() >= SIZE
@@ -851,80 +939,35 @@ mod fgo {
                     .iter()
                     .map(|&id| {
                         (
-                            calc_fgo_id_normalize(id, &mut outputs, &fgo_infos, &kind),
+                            calc_fgo_id_normalize(id, &mut outputs, &fg_infos, &kind),
                             id,
                         )
                     })
                     .into_group_map()
                     .into_iter() // for determinism
-                    .sorted()
                     .filter(|(_, group)| group.len() >= SIZE)
+                    .sorted_by_key(|(_,group)| group.len())
                 {
                     // ADD CONSTRAINT: fid
                     let (remaining, pos_constraints) =
-                        get_pos_constraints(group, &outputs, &fgo_infos);
+                        get_pos_constraints(group, &outputs, &fg_infos);
                     // ADD CONSTRAINT: pos
                     let this_fgo: [usize; SIZE] = unwrap_or_else!(
                         try_make_fgo(pos_constraints, &outputs, remaining),
                         continue 'fid
                     );
 
-                    assert!(
-                        this_fgo
-                            .iter()
-                            .map(|&id| {
-                                calc_fgo_id_normalize(id, &mut outputs, &fgo_infos, &kind)
-                            })
-                            .all_equal(),
-                        "{:?} {:?}",
-                        this_fgo.iter().map(|&id| {
-                            calc_fgo_id_normalize(id, &mut outputs, &fgo_infos, &kind)
-                        },),
-                        this_fgo.iter()
-                    );
-
                     assert!(add_fgo(
-                        &mut fgos,
+                        &mut fgs,
                         this_fgo,
-                        &mut fgo_infos,
+                        &mut fg_infos,
                         &kind,
                         &mut outputs,
                         true
                     ));
 
-                    assert!(
-                        this_fgo
-                            .iter()
-                            .map(|&id| {
-                                calc_fgo_id_normalize(id, &mut outputs, &fgo_infos, &kind)
-                            })
-                            .all_equal(),
-                        "{:?} {:?}",
-                        this_fgo
-                            .iter()
-                            .map(|&id| calc_fgo_id_normalize(id, &mut outputs, &fgo_infos, &kind))
-                            .collect::<Vec<_>>(),
-                        &this_fgo
-                    );
-                    let mut new_fgo_stack = Vec::new();
-                    new_fgo_stack.push(this_fgo);
-                    assert_fgo(
-                        this_fgo,
-                        &static_candidate_map,
-                        &kind,
-                        &mut outputs,
-                        &fgo_infos,
-                    );
-                    while let Some(this_fgo) = new_fgo_stack.pop() {
-                        fully_valid_fgos.push(this_fgo);
-                        assert_fgo(
-                            this_fgo,
-                            &static_candidate_map,
-                            &kind,
-                            &mut outputs,
-                            &fgo_infos,
-                        );
-
+                    afgs.push(this_fgo);
+                    {
                         let oid = &static_candidate_map[&this_fgo[0]].oid; // oid already checked
                         let output_fgos: Vec<_> = (0..oid.len())
                             .map(|i| this_fgo.map(|this_id| outputs[this_id][i]))
@@ -933,36 +976,18 @@ mod fgo {
                         // CURRENT CONSTRAINTS: input(oid) => kind, input(pos) => pos, fid
                         // ADD CONSTRAINT: scg => oid
                         for fgo in output_fgos.iter().copied() {
-                            if add_fgo(&mut fgos, fgo, &mut fgo_infos, &kind, &mut outputs, false)
-                                && fgo.iter().map(|i| static_candidate_map[i]).all_equal()
-                                && fgo
-                                    .iter()
-                                    .map(|&id| {
-                                        calc_fgo_id_normalize(id, &mut outputs, &fgo_infos, &kind)
-                                    })
-                                    .all_equal()
-                            {
-                                // => kind, pos, fid, oid checked, this gate can be added.
-                                //new_fgo_stack.push(fgo);
-                                //assert_fgo(
-                                //    fgo,
-                                //    &static_candidate_map,
-                                //    &kind,
-                                //    &mut outputs,
-                                //    &fgo_infos,
-                                //)
-                            }
+                            add_fgo(&mut fgs, fgo, &mut fg_infos, &kind, &mut outputs, false);
                         }
                     }
-                    continue 'same_static;
+                    continue 'static_group;
                 }
-                continue 'new_static;
+                break 'static_group;
             }
         }
 
         {
             let mut remaining = ids.iter().copied().collect::<IntSet<_>>();
-            for f in fgos.iter().flat_map(|f| f.iter()) {
+            for f in fgs.iter().flat_map(|f| f.iter()) {
                 remaining.remove(f);
             }
             println!(
@@ -972,7 +997,7 @@ mod fgo {
         }
         {
             let mut remaining = ids.iter().copied().collect::<IntSet<_>>();
-            for f in fully_valid_fgos.iter().flat_map(|f| f.iter()) {
+            for f in afgs.iter().flat_map(|f| f.iter()) {
                 remaining.remove(f);
             }
             println!(
@@ -990,28 +1015,31 @@ mod fgo {
     where
         G: Eq + Ord + Hash + Clone + Copy,
     {
-        // Disjoint sets of gates, with MINIMAL requirements
-        let hgg: HashMap<G, _> = ids
-            .iter()
-            .cloned()
-            .into_group_map_by(|&i| kind[i])
-            .into_iter() // for determinism
-            .sorted()
-            .map(|(this_kind, ids)| {
-                (
-                    this_kind,
-                    ids.iter().cloned().into_group_map_by(|&i| {
-                        outputs[i].iter().map(|&i| kind[i]).collect::<Vec<_>>()
-                    }),
-                )
-            })
-            .collect();
+        const LEN: usize = 20;
+        let a: OidMatrix<LEN> = oid_recursive(kind, outputs);
 
-        let static_candidate_groups: Vec<_> = hgg
+        // Disjoint sets of gates, with MINIMAL requirements
+        let hgg_better: HashMap<(G, Vec<G>, u64), Vec<usize>> =
+            ids.iter().cloned().into_group_map_by(|&i| {
+                (
+                    kind[i],
+                    outputs[i].iter().map(|&i| kind[i]).collect::<Vec<_>>(),
+                    a[LEN-1][i],
+                )
+            });
+        let hgg_int = ids.iter().cloned().into_group_map_by(|&i| a[0][i]);
+
+        let foo: IntMap<_, _> = hgg_int.iter().map(|f| (f.0.clone(), f.1.clone())).collect();
+
+        let static_candidate_groups: Vec<_> = hgg_better
             .into_iter()
-            .flat_map(|(g, h)| repeat(g).zip(h))
-            .map(|(kind, (oid, group))| StaticCandidateGroup { kind, oid, group })
-            .sorted() // for determinism
+            .map(|((kind, oid, extra), group)| StaticCandidateGroup {
+                kind,
+                oid,
+                group,
+                extra,
+            })
+            .sorted()
             .collect();
         static_candidate_groups
     }
@@ -1056,6 +1084,7 @@ mod fgo {
         kind: G, // needed for hash
         oid: Oid<G>,
         group: Vec<usize>,
+        extra: u64,
     }
 
     fn get_pos_constraints<const SIZE: usize>(
@@ -1093,7 +1122,6 @@ mod fgo {
         let mut pos_choices: [Option<usize>; SIZE] = std::array::from_fn(|_| None);
         let mut out_set: HashSet<usize> = HashSet::new();
         for (pos, ids) in pos_constraints {
-            assert!(pos < SIZE, "{pos}");
             // Using first disjoint
             for id in ids {
                 let is_disjoint = outputs[id]
@@ -1106,6 +1134,7 @@ mod fgo {
                 }
             }
         }
+        // ARBITRARY: remaining iteration order.
         let mut remaining_iter = remaining.iter().filter_map(|&id| {
             let is_disjoint = outputs[id]
                 .iter()
@@ -1128,6 +1157,11 @@ mod fgo {
         outputs: &mut [Vec<usize>],
         perform_asserts: bool,
     ) -> bool {
+        assert_eq!(
+            new_fgo.into_iter().sorted().dedup().count(),
+            SIZE,
+            "fgo elements not unique: {new_fgo:?}"
+        );
         if perform_asserts {
             assert!(
                 new_fgo.iter().map(|&id| outputs[id].len()).all_equal(),
@@ -1163,20 +1197,20 @@ mod fgo {
             let next_fgo_id = fgos.len();
             fgos.push(new_fgo);
 
+            let f_pre = new_fgo.map(|f| fgo_infos[f]);
             for (pos, &id) in new_fgo.iter().enumerate() {
                 assert!(pos < SIZE);
-                assert!(fgo_infos[id]
-                    .replace(FgoInfo::new(next_fgo_id, pos))
-                    .is_none());
+                assert!(
+                    fgo_infos[id]
+                        .replace(FgoInfo::new(next_fgo_id, pos))
+                        .is_none(),
+                    "\ninfos: {:?}\ninfos_pre {f_pre:?}\nfgo: {new_fgo:?}\npos: {pos}\nid:{id}",
+                    new_fgo.iter().map(|&f| fgo_infos[f]).collect::<Vec<_>>()
+                );
             }
         }
-        let is_empty_after = new_fgo.iter().all(|&f| fgo_infos[f].is_none());
-        assert_ne!(
-            new_fgo.iter().all(|&f| fgo_infos[f].is_some()),
-            is_empty_after,
-            "{:?}",
-            new_fgo.iter().map(|&f| fgo_infos[f]).collect::<Vec<_>>()
-        );
+        let is_full_after = new_fgo.iter().all(|&f| fgo_infos[f].is_some());
+        assert!(is_full_after);
         if perform_asserts {
             assert!(
                 new_fgo
@@ -1210,6 +1244,13 @@ mod fgo {
         G: Ord + 'a + Copy + Clone,
     {
         let fgo = this_fgo;
+        // check elements unique
+        assert_eq!(
+            fgo.into_iter().sorted().dedup().count(),
+            SIZE,
+            "fgo elements not unique: {fgo:?}"
+        );
+
         // check kind
         assert!(fgo.iter().map(|&f| kind[f]).all_equal());
         // check oid
@@ -1234,5 +1275,40 @@ mod fgo {
             "{:?}",
             fgo.iter().map(|&f| fgo_infos[f].unwrap().pos())
         );
+    }
+
+    type OidMatrix<const LEN: usize> = [Vec<u64>; LEN];
+    fn oid_recursive<G: Hash, const LEN: usize>(
+        kind: &[G],
+        outputs: &[Vec<usize>],
+    ) -> OidMatrix<LEN> {
+        fn rec_oid_hash<'a, G: Hash>(
+            kind: &'a [G],
+            outputs: &[Vec<usize>],
+            random_state: &RandomState,
+        ) -> Vec<u64> {
+            outputs
+                .iter()
+                .map(|outputs| {
+                    let mut hasher = RandomState::build_hasher(&random_state);
+                    outputs
+                        .iter()
+                        .for_each(|&output| kind[output].hash(&mut hasher));
+                    hasher.finish()
+                })
+                .collect()
+        }
+        use std::array;
+        use std::collections::hash_map::RandomState;
+        use std::hash::{BuildHasher, Hasher};
+        let random_state = RandomState::new();
+        let oid0 = kind
+            .iter()
+            .map(|k| random_state.hash_one(k))
+            .collect::<Vec<_>>();
+        let mut oid_iterator = itertools::iterate(oid0.clone(), |oid_prev| {
+            rec_oid_hash(oid_prev, outputs, &random_state)
+        });
+        array::from_fn(|_| oid_iterator.next().unwrap())
     }
 }
