@@ -793,21 +793,36 @@ impl GateNetwork {
 }
 
 mod fgo {
-    // TODO: 
-    // first: make pass with optimistic oid_recursive for each group, save remaining things
-    // then: collect remaining and repeat until level is 2 (oid + kind)
-    //
-    // while: explore outputs and try add them, if unsucessfull add group exploration candidates to list for next iteration. Grouping outputs is done unconditionally.
-    //
-    // finally: put remaining trash into groups.
-    //
-    //
-    // (A,B) -> (C,C) will not work, C must be in 2 places at once.
-    // (A,B) -> (C,D) -> (E, E) will not work for (C,D) because E must be in 2 places at once
-    // (A,B) -> [(C,D), (E,F)] -> (G, H)  will work, but recursive id search will fail here.
-    //
-    // 
-    //
+    //! TODO: 
+    //! first: make pass with optimistic oid_recursive for each group, save remaining things
+    //! then: collect remaining and repeat until level is 2 (oid + kind)
+    //!
+    //! while: explore outputs and try add them, if unsucessfull add group exploration candidates to list for next iteration. Grouping outputs is done unconditionally.
+    //!
+    //! finally: put remaining trash into groups.
+    //!
+    //!
+    //! (A,B) -> (C,C) will not work, C must be in 2 places at once.
+    //! (A,B) -> (C,D) -> (E, E) will not work for (C,D) because E must be in 2 places at once
+    //! (A,B) -> [(C,D), (E,F)] -> (G, H)  will work, but recursive id search will fail here.
+    //!
+    //! We know for sure that:
+    //! * immediate outputs within a group must have disjoint ids in order to become an afgo
+    //! * graph is bipartite
+    //! * cycles can and do exist. <- can we do analysis without cycles?
+    //!
+    //! What happens in non-synchronus circuits?
+    //!
+    //! A -> (B,C)
+    //! D -> (E,F)
+    //!
+    //! B -> C
+    //! E -> F
+    //!
+    //! => (A,D) -> [(B,E), (C,F)], (B,E) -> (C,F)
+    //!
+    //! => all graphs for each pos have to be entirely disjoint for this to work...
+    //!
 
 
     use super::*;
