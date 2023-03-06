@@ -98,7 +98,13 @@ where
         self.list.len()
     }
     /// SAFE
+    #[inline(always)]
     pub(crate) fn iter(&self) -> impl Iterator<Item = T> + '_ {
         self.get_slice().iter().cloned()
+    }
+    /// SAFE
+    #[inline(always)]
+    pub(crate) fn iter_rev(&self) -> impl Iterator<Item = T> + '_ {
+        self.get_slice().iter().rev().cloned()
     }
 }

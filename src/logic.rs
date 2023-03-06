@@ -1284,8 +1284,11 @@ impl BitPackSimInner /*<LATCH>*/ {
         } else {
             (&mut self.update_list, &mut self.cluster_update_list)
         };
-
-        for group_id in update_list.iter().map(|g| g as usize) {
+        
+        // Reversing iteration is better for cache
+        // the last thing pushed to the array is the 
+        // first thing that is accessed
+        for group_id in update_list.iter_rev().map(|g| g as usize) {
             let offset = group_id * Self::BITS;
             *unsafe { self.in_update_list.get_unchecked_mut(group_id) } = false;
             let state_mut = unsafe { self.state.get_unchecked_mut(group_id) };
