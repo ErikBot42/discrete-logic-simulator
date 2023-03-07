@@ -395,7 +395,7 @@ impl InitializedNetwork {
                 //is_cluster.then(input_ids).then(output_ids)
                 //is_cluster
                 //    .then(sibling_ids)
-                input_ids.then(output_ids)
+                is_cluster.then(input_ids.then(output_ids))
             });
 
             //dynamic.iter().for_each(|(id, _)| {
@@ -549,7 +549,7 @@ impl InitializedNetwork {
             {
                 self.print_info();
                 //let network = self.clone();
-                let network = self.optimize_remove_redundant(); //.optimize_reorder_cache();
+                let network = self.optimize_remove_redundant().optimize_reorder_cache();
                 //network.clone()._fgo_connections_grouping();
                 network.print_info();
                 network
@@ -566,6 +566,18 @@ impl InitializedNetwork {
                 v,
                 gate_status::PACKED_ELEMENTS,
                 Gate::is_cluster_a_xor_is_cluster_b,
+            )
+        })
+    }
+    pub(crate) fn prepare_for_bitpack_packing_no_type_overlap_equal_cardinality(
+        &self,
+        bits: usize,
+    ) -> NetworkWithGaps {
+        self.reordered_by_gaps(|v| {
+            Self::aligned_by_inner(
+                v,
+                bits,
+                Gate::is_cluster_a_xor_is_cluster_b_and_no_type_overlap_equal_cardinality,
             )
         })
     }
@@ -593,7 +605,7 @@ impl InitializedNetwork {
     /// This is just a heuristic, solving it without inserting None is sometimes impossible
     /// Solving it perfectly is probably NP-hard.
     /// `cmp` has no restrictions.
-    /// O(n)
+    /// O(n^2), ~O(n) in practice
     fn aligned_by_inner<F: Fn(&Gate, &Gate) -> bool>(
         mut gates: Vec<(usize, &Gate)>,
         elements: usize,
@@ -793,58 +805,6 @@ impl GateNetwork {
 }
 
 mod fgo {
-    // https://arxiv.org/abs/2104.03221
-    //
-    // Title: Reordering graph nodes for SIMD operations
-    //
-    // I have a directed graph where I want to propagate information from nodes if they changed
-    // their state. Iterating through the outputs is slow and accessing nodes at random locations
-    // is bad for cache, so I want to optimize it, somehow.
-    //
-    // An idea I had was to create groups with 32 nodes so that I can use SIMD operations most of the time, for example (when group size is 4):
-    // `[(A, B, C, D), (E, F, G, H), (I, J, K, L), ...]`
-    //
-    // If A, B, C, D only have 1 output and they are:
-    // A: E
-    // B: F
-    // C: G
-    // D: H
-    //
-    // Then a single SIMD operation could propagate data from ABCD to EFGH
-    //
-    // The problem with this is that in order to solve it perfectly, the graph would have to be
-    // divided into 4 parts with no connections between them and the structure of the parts would
-    // have to be identical. This is because a gate at the first slot of the group coulnd't output to the
-    // second output. 
-    //
-    // Therefore it's only possible to do this grouping for most but not all nodes.
-    //
-    // The graphs will be of gate networks in a logic sim, which makes the above issue not too bad, since such networks contain pa
-    //
-    // What have I tried so far:
-    // Essentially a greedy search, I put all nodes in a HashMap where the key contains things that
-    // must be the same within a group (for example number of outputs) and then I greedily try to
-    // create groups where all of their outputs can be other groups. This at least runs in
-    // O(polynomial). 
-    //
-    // In theory, the problem of diffrent slots not being connected could be somewhat solved by using
-    // misaligned SIMD, but that seems to make the optimization problem even harder (and I also
-    // don't know if misaligned SIMD is terrible for performance).
-    //
-    // Why am I not just using gather/scatter instructions? My shitty laptop does not have them, so
-    // far I have only used the avx2 "simd intrinsics" (and also gather/scatter are 32 bit instead of 8 bit which may cause overhead).
-    //
-    // Gates typically have 1 or 2 outputs.
-    //
-    // 
-    // Graph is bijective so I don't have to worry about buffering.
-    //
-    // context to avoid XY problem:
-    // I have made a logic simulator where each gate is a "node", 
-    //
-    // It is event based so that groups only recalculate/propag
-    //
-    // CSR
 
     //! TODO: 
     //! first: make pass with optimistic oid_recursive for each group, save remaining things

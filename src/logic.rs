@@ -10,9 +10,13 @@ pub mod reference_sim;
 pub(crate) use crate::logic::network::{GateNetwork, InitializedNetwork};
 use bytemuck::cast_slice_mut;
 use itertools::Itertools;
+use std::collections::HashSet;
 use std::mem::{align_of, size_of, transmute};
 use std::ops::Range;
 use std::simd::{Mask, Simd};
+//use strum::EnumIter;
+use strum::IntoEnumIterator; // 0.17.1
+use strum_macros::EnumIter; // 0.17.1
 
 //pub type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
 pub type ReferenceSim = reference_sim::ReferenceLogicSim;
@@ -77,7 +81,7 @@ impl GateType {
 /// the only cases that matter at the hot code sections
 /// for example And/Nor can be evalutated in the same way
 /// with an offset to the input count (acc)
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, EnumIter)]
 pub(crate) enum RunTimeGateType {
     OrNand,
     AndNor,
@@ -85,7 +89,7 @@ pub(crate) enum RunTimeGateType {
     Latch,
 }
 impl RunTimeGateType {
-    fn new(kind: GateType) -> Self {
+    const fn new(kind: GateType) -> Self {
         match kind {
             GateType::And | GateType::Nor => RunTimeGateType::AndNor,
             GateType::Or | GateType::Nand | GateType::Cluster => RunTimeGateType::OrNand,
@@ -103,6 +107,19 @@ impl RunTimeGateType {
             RunTimeGateType::XorXnor => (false, true),
             RunTimeGateType::Latch => (true, true),
         }
+    }
+
+    /// Required `acc` value to force the gate to never change state
+    /// Assumes `acc` never changes (`prev_acc` = `acc`)
+    const fn acc_to_never_activate(&self) -> u8 {
+        let state = false;
+        if state == Gate::evaluate(0, 0, state, *self) {
+            return 0;
+        }
+        if state == Gate::evaluate(1, 1, state, *self) {
+            return 1;
+        }
+        panic!();
     }
 }
 
@@ -202,6 +219,14 @@ impl Gate {
 
     fn kind_runtime(&self) -> RunTimeGateType {
         RunTimeGateType::new(self.kind)
+    }
+    fn is_cluster_a_xor_is_cluster_b_and_no_type_overlap_equal_cardinality(
+        &self,
+        other: &Gate,
+    ) -> bool {
+        self.is_cluster_a_xor_is_cluster_b(other)
+            || (self.kind_runtime() != other.kind_runtime())
+            || self.outputs.len() != other.outputs.len()
     }
 
     fn is_cluster_a_xor_is_cluster_b_and_no_type_overlap(&self, other: &Gate) -> bool {
@@ -1129,6 +1154,15 @@ fn bit_acc_pack(arr: [BitAcc; BIT_PACK_SIM_BITS]) -> BitAccPack {
     //BitAccPack::from_le_bytes(arr)
     BitAccPack(arr)
 }
+/// size = 8 (u64), align = 4 (u32) -> 8 (u64)
+#[derive(Debug, Copy, Clone)]
+#[repr(align(8))]
+struct Soap {
+    base_offset: u32, // 4
+    num_outputs: u16, // 2
+                      //run_type: RunTimeGateType, // 1
+}
+
 #[derive(Debug)]
 pub struct BitPackSimInner /*<const LATCH: bool>*/ {
     translation_table: Vec<IndexType>,
@@ -1141,6 +1175,10 @@ pub struct BitPackSimInner /*<const LATCH: bool>*/ {
     cluster_update_list: UpdateList,
     in_update_list: Vec<bool>,
     group_output_count: Vec<Option<u8>>, //TODO: better encoding
+    is_invalid: Vec<bool>,
+    group_csr_base_outputs: Vec<IndexType>,
+    group_num_outputs: Vec<u16>,
+    soap: Vec<Soap>,
 }
 use core::arch::x86_64::{
     __m256i, _mm256_cmpeq_epi8, _mm256_load_si256, _mm256_movemask_epi8, _mm256_setzero_si256,
@@ -1258,7 +1296,7 @@ impl BitPackSimInner /*<LATCH>*/ {
         acc_p: &BitAccPack,
         parity_prev: &mut BitInt,
         state: &BitInt,
-        kind: &RunTimeGateType,
+        kind: RunTimeGateType,
     ) -> BitInt {
         let (acc_zero, acc_parity) = Self::extract_acc_info_simd(acc_p);
         if CLUSTER {
@@ -1284,13 +1322,21 @@ impl BitPackSimInner /*<LATCH>*/ {
         } else {
             (&mut self.update_list, &mut self.cluster_update_list)
         };
-        
+
+        //let in_update_list = &mut self.in_update_list;
+        //let state = &mut self.state;
+        //let parity = &mut self.parity;
+        // ...TODO: rev
+
         // Reversing iteration is better for cache
-        // the last thing pushed to the array is the 
+        // the last thing pushed to the array is the
         // first thing that is accessed
+        // seems to work better for smaller datasets
         for group_id in update_list.iter_rev().map(|g| g as usize) {
             let offset = group_id * Self::BITS;
+
             *unsafe { self.in_update_list.get_unchecked_mut(group_id) } = false;
+
             let state_mut = unsafe { self.state.get_unchecked_mut(group_id) };
             let parity_mut = unsafe { self.parity.get_unchecked_mut(group_id) };
 
@@ -1298,12 +1344,13 @@ impl BitPackSimInner /*<LATCH>*/ {
                 unsafe { self.acc.get_unchecked(group_id) },
                 parity_mut,
                 state_mut,
-                unsafe { self.group_run_type.get_unchecked(group_id) },
+                *unsafe { self.group_run_type.get_unchecked(group_id) },
             );
             let changed = *state_mut ^ new_state;
 
             if changed != 0 {
                 *state_mut = new_state;
+                let soap = *unsafe { self.soap.get_unchecked(group_id) };
                 Self::propagate_acc(
                     changed,
                     offset,
@@ -1312,6 +1359,11 @@ impl BitPackSimInner /*<LATCH>*/ {
                     cast_slice_mut(&mut self.acc),
                     &mut self.in_update_list,
                     next_update_list,
+                    //&self.is_invalid,
+                    soap.base_offset,
+                    soap.num_outputs,
+                    //*unsafe { self.group_csr_base_outputs.get_unchecked(group_id) },
+                    //*unsafe { self.group_num_outputs.get_unchecked(group_id) },
                 );
             }
         }
@@ -1356,17 +1408,37 @@ impl BitPackSimInner /*<LATCH>*/ {
         acc: &mut [u8],
         in_update_list: &mut [bool],
         next_update_list: &mut UpdateList,
+        base_offset: IndexType,
+        num_outputs: u16,
+        //is_invalid: &[bool],
     ) {
+        let base_offset = base_offset as usize;
+        let num_outputs = num_outputs as usize;
+        //let base_offset = unsafe { *single_packed_outputs.get_unchecked(offset) as usize };
+        //let num_outputs =
+        //    *unsafe { single_packed_outputs.get_unchecked(offset + 1) } as usize - base_offset;
+        if num_outputs == 0 {
+            return;
+        }
         while changed != 0 {
             let i_u32 = changed.trailing_zeros();
             let i_usize = i_u32 as usize;
 
-            let gate_id = offset + i_usize;
-
+            /*let gate_id = offset + i_usize;
             let (outputs_start, outputs_end) = (
                 *unsafe { single_packed_outputs.get_unchecked(gate_id) } as usize,
                 *unsafe { single_packed_outputs.get_unchecked(gate_id + 1) } as usize,
-            );
+            );*/
+
+            let outputs_start = base_offset + i_usize * num_outputs;
+            let outputs_end = outputs_start + num_outputs;
+
+            //dbg!(outputs_start, outputs_end);
+            //assert_eq!(
+            //    (outputs_start, outputs_end),
+            //    (outputs_start2, outputs_end2),
+            //    "num_outputs: {num_outputs}, i_usize: {i_usize}, base_offset: {base_offset}, foo: {:?}", &single_packed_outputs[offset..(offset+Self::BITS)]
+            //);
 
             changed &= !(1 << i_u32); // ANY
 
@@ -1386,7 +1458,7 @@ impl BitPackSimInner /*<LATCH>*/ {
                 let output_group_id = BitPackSimInner::calc_group_id(output);
 
                 let acc_mut = unsafe { acc.get_unchecked_mut(output) };
-                *acc_mut = acc_mut.wrapping_add(delta);
+                *acc_mut = acc_mut.wrapping_add(delta); // <- address boundary error here
 
                 let in_update_list_mut =
                     unsafe { in_update_list.get_unchecked_mut(output_group_id) };
@@ -1404,12 +1476,29 @@ impl BitPackSimInner /*<LATCH>*/ {
 impl LogicSim for BitPackSimInner /*<LATCH>*/ {
     fn create(network: InitializedNetwork) -> Self {
         //let network = network.prepare_for_bitpack_packing(Self::BITS);
-        let network = network.prepare_for_bitpack_packing_no_type_overlap(Self::BITS);
+        let network =
+            network.prepare_for_bitpack_packing_no_type_overlap_equal_cardinality(Self::BITS);
 
         let number_of_gates_with_padding = network.gates.len();
         assert_eq!(number_of_gates_with_padding % Self::BITS, 0);
         let number_of_buckets = number_of_gates_with_padding / Self::BITS;
         let gates = network.gates;
+
+        let is_invalid: Vec<_> = gates.iter().map(|g| g.is_none()).collect();
+        let invalid_set: HashSet<_> = gates
+            .iter()
+            .enumerate()
+            .filter_map(|(i, g)| g.is_none().then_some(i))
+            .collect();
+        gates.iter().flatten().for_each(|g| {
+            g.inputs
+                .iter()
+                .for_each(|&i| assert!(!invalid_set.contains(&(i as usize))));
+            g.outputs
+                .iter()
+                .for_each(|&i| assert!(!invalid_set.contains(&(i as usize))));
+        });
+
         let translation_table = network.translation_table;
         let (packed_output_indexes, packed_outputs) = pack_sparse_matrix(
             gates
@@ -1427,15 +1516,26 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
             .map(pack_bits)
             .collect();
         assert_eq!(state.len(), number_of_buckets);
-        let acc: Vec<_> = gates
-            .iter()
-            .map(|g| g.as_ref().map_or(0, |g| g.acc() as BitAcc))
-            .array_chunks()
-            .map(bit_acc_pack)
-            .collect();
         let kind: Vec<_> = gates
             .iter()
             .map(|g| g.as_ref().map_or(GateType::Cluster, |g| g.kind))
+            .collect();
+        let group_run_type: Vec<RunTimeGateType> = kind
+            .iter()
+            .step_by(Self::BITS)
+            .map(|k| RunTimeGateType::new(*k))
+            .collect();
+        let acc: Vec<_> = gates
+            .iter()
+            .enumerate()
+            .map(|(i, g)| {
+                g.as_ref().map_or(
+                    group_run_type[Self::calc_group_id(i)].acc_to_never_activate(),
+                    |g| g.acc() as BitAcc,
+                )
+            })
+            .array_chunks()
+            .map(bit_acc_pack)
             .collect();
         //let (is_inverted, is_xor): (Vec<_>, Vec<_>) = kind
         //    .iter()
@@ -1492,10 +1592,23 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
         dbg!(group_output_count.iter().counts());
         let parity = (0..kind.len()).map(|_| 0).collect(); // TODO: calc parity instead
 
-        let group_run_type = kind
+        let (group_csr_base_outputs, group_num_outputs): (Vec<_>, Vec<_>) = (0..number_of_buckets)
+            .map(|i| i * Self::BITS)
+            .map(|i| {
+                (
+                    single_packed_outputs[i],
+                    u16::try_from(single_packed_outputs[i + 1] - single_packed_outputs[i]).unwrap(),
+                )
+            })
+            .unzip();
+
+        let soap = group_csr_base_outputs
             .iter()
-            .step_by(Self::BITS)
-            .map(|k| RunTimeGateType::new(*k))
+            .zip(group_num_outputs.iter())
+            .map(|(&base_offset, &num_outputs)| Soap {
+                base_offset,
+                num_outputs,
+            })
             .collect();
 
         let mut this = Self {
@@ -1509,6 +1622,10 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
             cluster_update_list,
             in_update_list,
             group_output_count,
+            is_invalid,
+            group_csr_base_outputs,
+            group_num_outputs,
+            soap,
         };
 
         for (id, (cluster, state)) in gates
@@ -1551,6 +1668,14 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inactive_acc_possible() {
+        for g in RunTimeGateType::iter() {
+            g.acc_to_never_activate();
+        }
+    }
+
     #[test]
     fn gate_evaluation_regression() {
         for (kind, cluster) in [

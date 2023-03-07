@@ -106,6 +106,8 @@ tempfile =  { version = "3.3.0",  default-features = false                      
 json =      { version = "0.12.4", default-features = false                                  }
 #rand = "0.8.5"
 nohash-hasher = "0.2.0"
+strum = { version = "0.24.1", features = ["derive", "strum_macros"] }
+strum_macros = "0.24.3"
 
 
 [dev-dependencies]
