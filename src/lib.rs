@@ -11,6 +11,7 @@
 #![feature(array_chunks)]
 #![feature(array_try_map)]
 #![feature(stdsimd)]
+#![feature(unchecked_math)]
 
 #![feature(build_hasher_simple_hash_one)]
 macro_rules! timed {

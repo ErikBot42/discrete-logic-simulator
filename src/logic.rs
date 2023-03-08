@@ -1174,10 +1174,10 @@ pub struct BitPackSimInner /*<const LATCH: bool>*/ {
     update_list: UpdateList,
     cluster_update_list: UpdateList,
     in_update_list: Vec<bool>,
-    group_output_count: Vec<Option<u8>>, //TODO: better encoding
-    is_invalid: Vec<bool>,
-    group_csr_base_outputs: Vec<IndexType>,
-    group_num_outputs: Vec<u16>,
+    //group_output_count: Vec<Option<u8>>, //TODO: better encoding
+    //is_invalid: Vec<bool>,
+    //group_csr_base_outputs: Vec<IndexType>,
+    //group_num_outputs: Vec<u16>,
     soap: Vec<Soap>,
 }
 use core::arch::x86_64::{
@@ -1399,6 +1399,8 @@ impl BitPackSimInner /*<LATCH>*/ {
         }
     }
 
+    /// # SAFETY
+    /// Assumes invalid gates never activate and that #outputs is constant within a group
     #[inline(always)]
     fn propagate_acc(
         mut changed: BitInt,
@@ -1412,8 +1414,9 @@ impl BitPackSimInner /*<LATCH>*/ {
         num_outputs: u16,
         //is_invalid: &[bool],
     ) {
-        let base_offset = base_offset as usize;
-        let num_outputs = num_outputs as usize;
+        let base_offset = base_offset as u32;
+        let num_outputs = num_outputs as u32;
+
         //let base_offset = unsafe { *single_packed_outputs.get_unchecked(offset) as usize };
         //let num_outputs =
         //    *unsafe { single_packed_outputs.get_unchecked(offset + 1) } as usize - base_offset;
@@ -1430,7 +1433,7 @@ impl BitPackSimInner /*<LATCH>*/ {
                 *unsafe { single_packed_outputs.get_unchecked(gate_id + 1) } as usize,
             );*/
 
-            let outputs_start = base_offset + i_usize * num_outputs;
+            let outputs_start = base_offset + (i_u32 * num_outputs);
             let outputs_end = outputs_start + num_outputs;
 
             //dbg!(outputs_start, outputs_end);
@@ -1449,24 +1452,32 @@ impl BitPackSimInner /*<LATCH>*/ {
                 (0 as AccType).wrapping_sub(1)
             };
 
-            for output in unsafe { single_packed_outputs.get_unchecked(outputs_start..outputs_end) }
-                .iter()
-                .map(
-                    |&i| i as usize, /* Truncating cast needed for performance */
-                )
-            {
+            for output in unsafe {
+                single_packed_outputs.get_unchecked(outputs_start as usize..outputs_end as usize)
+            }
+            .iter()
+            .map(
+                |&i| i as usize, /* Truncating cast needed for performance */
+            ) {
                 let output_group_id = BitPackSimInner::calc_group_id(output);
 
                 let acc_mut = unsafe { acc.get_unchecked_mut(output) };
-                *acc_mut = acc_mut.wrapping_add(delta); // <- address boundary error here
+                //*acc_mut = acc_mut.wrapping_add(delta);
+                unsafe {
+                    std::intrinsics::atomic_xadd_relaxed(acc_mut, delta);
+                }
 
                 let in_update_list_mut =
                     unsafe { in_update_list.get_unchecked_mut(output_group_id) };
-                if !*in_update_list_mut {
+                //if !*in_update_list_mut
+                if unsafe {
+                    std::intrinsics::atomic_xchg_relaxed(transmute(in_update_list_mut), 1_u8)
+                } == 0
+                {
                     unsafe {
                         next_update_list.push_unchecked(output_group_id as IndexType /* Truncating cast is needed for performance */ )
                     };
-                    *in_update_list_mut = true;
+                    //*in_update_list_mut = true;
                 }
             }
         }
@@ -1484,20 +1495,20 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
         let number_of_buckets = number_of_gates_with_padding / Self::BITS;
         let gates = network.gates;
 
-        let is_invalid: Vec<_> = gates.iter().map(|g| g.is_none()).collect();
-        let invalid_set: HashSet<_> = gates
-            .iter()
-            .enumerate()
-            .filter_map(|(i, g)| g.is_none().then_some(i))
-            .collect();
-        gates.iter().flatten().for_each(|g| {
-            g.inputs
-                .iter()
-                .for_each(|&i| assert!(!invalid_set.contains(&(i as usize))));
-            g.outputs
-                .iter()
-                .for_each(|&i| assert!(!invalid_set.contains(&(i as usize))));
-        });
+        //let is_invalid: Vec<_> = gates.iter().map(|g| g.is_none()).collect();
+        //let invalid_set: HashSet<_> = gates
+        //    .iter()
+        //    .enumerate()
+        //    .filter_map(|(i, g)| g.is_none().then_some(i))
+        //    .collect();
+        //gates.iter().flatten().for_each(|g| {
+        //    g.inputs
+        //        .iter()
+        //        .for_each(|&i| assert!(!invalid_set.contains(&(i as usize))));
+        //    g.outputs
+        //        .iter()
+        //        .for_each(|&i| assert!(!invalid_set.contains(&(i as usize))));
+        //});
 
         let translation_table = network.translation_table;
         let (packed_output_indexes, packed_outputs) = pack_sparse_matrix(
@@ -1571,7 +1582,7 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
             in_update_list[id] = true;
         }
 
-        let group_output_count: Vec<_> = {
+        let group_output_count: Vec<Option<u8>> = {
             let from = packed_output_indexes.array_chunks::<{ Self::BITS }>();
             let to = packed_output_indexes[1..].array_chunks::<{ Self::BITS }>();
             from.zip(to)
@@ -1621,10 +1632,10 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
             update_list,
             cluster_update_list,
             in_update_list,
-            group_output_count,
-            is_invalid,
-            group_csr_base_outputs,
-            group_num_outputs,
+            //group_output_count,
+            //is_invalid,
+            //group_csr_base_outputs,
+            //group_num_outputs,
             soap,
         };
 
