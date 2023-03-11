@@ -309,30 +309,19 @@ impl InitializedNetwork {
 
             dbg!(&active_set, &next_active_set);
 
-            //panic!("{}", active_set.len());
 
             let (mut constant, mut dynamic): (Vec<_>, Vec<_>) =
                 v.iter().partition(|(i, _)| constness_level[*i].is_some());
             let is_dynamic = |id: usize| constness_level[id].is_none();
 
-            //let mut dynamic = v;
-
             // PROP:
             // add gate, add their outputs
             // what order should outputs have?
 
-            //use rand::seq::SliceRandom;
-            //use rand::thread_rng;
-            //let mut rng = thread_rng();
-            //dynamic.shuffle(&mut rng);
-
-            //v.sort_by_key(|(_,g)| g.inputs.len());
-
             // TODO: make nearby have overlapping outputs
-
             // TODO: recursive sibling ids
 
-            let sibling_ids_not_const2 = |id: usize| {
+            /*let sibling_ids_not_const2 = |id: usize| {
                 assert_eq!(v[id].0, id);
                 let mut a: Vec<_> = v[id]
                     .1
@@ -356,7 +345,7 @@ impl InitializedNetwork {
                 a.sort();
                 a.dedup();
                 a
-            };
+            };*/
             let sibling_ids_not_const = |id: usize| {
                 assert_eq!(v[id].0, id);
                 let mut a: Vec<_> = v[id]
@@ -947,7 +936,7 @@ mod fgo {
         let mut fg_infos: Vec<Option<FgoInfo<SIZE>>> = ids.iter().map(|_| None).collect();
         let mut fgs: Vec<Fgo<SIZE>> = Vec::new();
         let mut afgs: Vec<Fgo<SIZE>> = Vec::new();
-        'new_static: for scg in static_candidate_ggs.iter() {
+        for scg in static_candidate_ggs.iter() {
             // ADD CONSTRAINT: kind
             // ADD CONSTRAINT: oid
             // ARBITRARY: scg exploration order.
@@ -1057,7 +1046,7 @@ mod fgo {
             });
         let hgg_int = ids.iter().cloned().into_group_map_by(|&i| a[0][i]);
 
-        let foo: IntMap<_, _> = hgg_int.iter().map(|f| (f.0.clone(), f.1.clone())).collect();
+        //let foo: IntMap<_, _> = hgg_int.iter().map(|f| (f.0.clone(), f.1.clone())).collect();
 
         let static_candidate_groups: Vec<_> = hgg_better
             .into_iter()

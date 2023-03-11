@@ -1,5 +1,3 @@
-//#![warn(clippy::cargo)]
-//#![warn(clippy::all)]
 #![feature(try_blocks)]
 #![feature(portable_simd)]
 #![feature(core_intrinsics)]
@@ -12,6 +10,7 @@
 #![feature(array_try_map)]
 #![feature(stdsimd)]
 #![feature(unchecked_math)]
+#![feature(allocator_api)]
 
 #![feature(build_hasher_simple_hash_one)]
 macro_rules! timed {
@@ -296,7 +295,6 @@ mod tests {
             .collect::<Vec<bool>>()
         );
         println!("OK0");
-        //TODO
         //if add_all {
         //    board.compiled_network.add_all_to_update_list()
         //};
@@ -330,10 +328,6 @@ mod tests {
             .collect::<Vec<bool>>()
         );
         println!("OK1");
-        //TODO
-        //if add_all {
-        //    board.compiled_network.add_all_to_update_list()
-        //};
         board.update();
         board.print_debug();
         assert_eq!(
@@ -364,10 +358,6 @@ mod tests {
             .collect::<Vec<bool>>()
         );
         println!("OK2");
-        //TODO
-        //if add_all {
-        //    board.compiled_network.add_all_to_update_list()
-        //};
         board.update();
         board.print_debug();
         assert_eq!(

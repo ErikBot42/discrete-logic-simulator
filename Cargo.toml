@@ -108,6 +108,8 @@ json =      { version = "0.12.4", default-features = false                      
 nohash-hasher = "0.2.0"
 strum = { version = "0.24.1", features = ["derive", "strum_macros"] }
 strum_macros = "0.24.3"
+bumpalo = { version = "3.12.0", features = ["allocator_api"]}
+spin = { version = "0.9.5", features = ["barrier"] }
 
 
 [dev-dependencies]
