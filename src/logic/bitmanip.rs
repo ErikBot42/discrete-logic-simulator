@@ -1,4 +1,4 @@
-//! bit manipulation hacks and simd
+//! bit manipulation and simd 
 
 #[inline(always)]
 fn inline_arr_from_fn<T, const N: usize, F>(mut cb: F) -> [T; N]

@@ -1,15 +1,15 @@
 //use super::*;
 
-
 use bytemuck::cast_slice_mut;
 
-use super::{
-    pack_sparse_matrix, repack_single_sparse_matrix, AccType, Csr, GateType, IndexType,
-    InitializedNetwork, LogicSim, RunTimeGateType, UpdateList, UpdateStrategy,
+use super::bitmanip::{
+    bit_acc_pack, bit_get, bit_set, extract_acc_info_simd, pack_bits, wrapping_bit_get, BitAcc,
+    BitAccPack, BitInt, BITS,
 };
-
-use super::bitmanip::*;
-
+use super::{
+    AccType, Csr, GateType, IndexType, InitializedNetwork, LogicSim, RunTimeGateType, UpdateList,
+    UpdateStrategy,
+};
 
 /// size = 8 (u64), align = 4 (u32) -> 8 (u64)
 #[derive(Debug, Copy, Clone)]
@@ -20,8 +20,6 @@ struct Soap {
                       //run_type: RunTimeGateType, // 1
 }
 
-
-
 //#[derive(Debug)]
 pub struct BitPackSimInner /*<const LATCH: bool>*/ {
     translation_table: Vec<IndexType>,
@@ -29,6 +27,8 @@ pub struct BitPackSimInner /*<const LATCH: bool>*/ {
     state: Vec<BitInt>,
     parity: Vec<BitInt>,
     csr_single: Vec<IndexType>,
+    csr_outputs: Vec<IndexType>,
+    csr_indexes: Vec<IndexType>,
     group_run_type: Vec<RunTimeGateType>,
     update_list: UpdateList,
     cluster_update_list: UpdateList,
@@ -129,14 +129,13 @@ impl BitPackSimInner {
                     changed,
                     //offset,
                     new_state,
-                    &self.csr_single,
+                    &self.csr_indexes,
+                    &self.csr_outputs,
                     cast_slice_mut(&mut self.acc),
                     &mut self.in_update_list,
                     next_update_list,
                     soap.base_offset,
                     soap.num_outputs,
-                    //*unsafe { self.group_csr_base_outputs.get_unchecked(group_id) },
-                    //*unsafe { self.group_num_outputs.get_unchecked(group_id) },
                 );
             }
         }
@@ -150,8 +149,8 @@ impl BitPackSimInner {
         let inner_id = Self::calc_inner_id(id);
         self.state[group_id] = bit_set(self.state[group_id], inner_id, true);
 
-        for id in self.csr_single
-            [(self.csr_single[id] as usize)..(self.csr_single[id + 1] as usize)]
+        for id in self.csr_outputs
+            [(self.csr_indexes[id] as usize)..(self.csr_indexes[id + 1] as usize)]
             .iter()
             .map(|id| *id as usize)
         {
@@ -178,7 +177,8 @@ impl BitPackSimInner {
         mut changed: BitInt,
         //offset: usize,
         new_state: BitInt,
-        single_packed_outputs: &[IndexType],
+        csr_indexes: &[IndexType],
+        csr_outputs: &[IndexType],
         acc: &mut [u8],
         in_update_list: &mut [bool],
         next_update_list: &mut UpdateList,
@@ -225,7 +225,7 @@ impl BitPackSimInner {
             };
 
             for output in unsafe {
-                single_packed_outputs.get_unchecked(outputs_start as usize..outputs_end as usize)
+                csr_outputs.get_unchecked(outputs_start as usize..outputs_end as usize)
             }
             .iter()
             .map(
@@ -254,43 +254,67 @@ impl BitPackSimInner {
             }
         }
     }
+    fn init_state(&mut self, gates: Vec<Option<super::Gate>>) {
+        for (id, (cluster, state)) in gates
+            .iter()
+            .map(|g| {
+                g.as_ref()
+                    .map_or((false, false), |g| (g.kind.is_cluster(), g.initial_state))
+            })
+            .enumerate()
+        {
+            if state {
+                if cluster {
+                    self.set_state::<true>(id);
+                } else {
+                    self.set_state::<false>(id);
+                }
+            }
+        }
+    }
 }
 
 impl LogicSim for BitPackSimInner /*<LATCH>*/ {
     fn create(network: InitializedNetwork) -> Self {
         //let network = network.prepare_for_bitpack_packing(Self::BITS);
         let network = network.prepare_for_bitpack_packing_no_type_overlap_equal_cardinality(BITS);
+        let translation_table = network.translation_table;
 
-        let number_of_gates_with_padding = network.gates.len();
-        assert_eq!(number_of_gates_with_padding % BITS, 0);
-        let number_of_buckets = number_of_gates_with_padding / BITS;
+        let num_gates = network.gates.len();
+        assert_eq!(num_gates % BITS, 0);
+        let num_groups = num_gates / BITS;
+
         let gates = network.gates;
 
-        let translation_table = network.translation_table;
-        let (csr_indexes, csr_outputs) = pack_sparse_matrix(
+        let csr = Csr::new(
             gates
                 .iter()
                 .map(|g| g.as_ref().map_or_else(Vec::new, |g| g.outputs.clone())),
         );
-        let csr_single = repack_single_sparse_matrix(&csr_indexes, &csr_outputs);
+        let csr_single = csr.single();
+        let csr_indexes = csr.indexes;
+        let csr_outputs = csr.outputs;
 
+        /*group pack*/
         let state: Vec<_> = gates
             .iter()
-            //.map(|g| g.as_ref().map_or(false, |g| g.initial_state))
             .map(|_| false)
             .array_chunks()
             .map(pack_bits)
             .collect();
-        assert_eq!(state.len(), number_of_buckets);
+        assert_eq!(state.len(), num_groups);
+        /*gate*/
         let kind: Vec<_> = gates
             .iter()
             .map(|g| g.as_ref().map_or(GateType::Cluster, |g| g.kind))
             .collect();
+        /*group*/
         let group_run_type: Vec<RunTimeGateType> = kind
             .iter()
             .step_by(BITS)
             .map(|k| RunTimeGateType::new(*k))
             .collect();
+        /*group pack*/
         let acc: Vec<_> = gates
             .iter()
             .enumerate()
@@ -303,13 +327,14 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
             .array_chunks()
             .map(bit_acc_pack)
             .collect();
+
         let update_list = UpdateList::collect_size(
             kind.iter()
                 .step_by(BITS)
                 .map(|k| !k.is_cluster())
                 .enumerate()
                 .filter_map(|(i, b)| b.then_some(i.try_into().unwrap())),
-            number_of_buckets,
+            num_groups,
         );
         let cluster_update_list = UpdateList::collect_size(
             kind.iter()
@@ -317,7 +342,7 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
                 .map(|k| k.is_cluster())
                 .enumerate()
                 .filter_map(|(i, b)| b.then_some(i.try_into().unwrap())),
-            number_of_buckets,
+            num_groups,
         );
 
         let mut in_update_list: Vec<_> = (0..gates.len()).map(|_| false).collect();
@@ -329,14 +354,14 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
             in_update_list[id] = true;
         }
 
-        let parity = (0..kind.len()).map(|_| 0).collect();
+        let parity = (0..num_groups).map(|_| 0).collect();
 
-        let (group_csr_base_outputs, group_num_outputs): (Vec<_>, Vec<_>) = (0..number_of_buckets)
+        let (group_csr_base_outputs, group_num_outputs): (Vec<_>, Vec<_>) = (0..num_groups)
             .map(|i| i * BITS)
             .map(|i| {
                 (
-                    csr_single[i],
-                    u16::try_from(csr_single[i + 1] - csr_single[i]).unwrap(),
+                    csr_indexes[i],
+                    u16::try_from(csr_indexes[i + 1] - csr_indexes[i]).unwrap(),
                 )
             })
             .unzip();
@@ -356,6 +381,8 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
             state,
             parity,
             csr_single,
+            csr_indexes,
+            csr_outputs,
             group_run_type,
             update_list,
             cluster_update_list,
@@ -363,22 +390,7 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
             soap,
         };
 
-        for (id, (cluster, state)) in gates
-            .iter()
-            .map(|g| {
-                g.as_ref()
-                    .map_or((false, false), |g| (g.kind.is_cluster(), g.initial_state))
-            })
-            .enumerate()
-        {
-            if state {
-                if cluster {
-                    this.set_state::<true>(id);
-                } else {
-                    this.set_state::<false>(id);
-                }
-            }
-        }
+        this.init_state(gates);
 
         this
     }
@@ -399,4 +411,3 @@ impl LogicSim for BitPackSimInner /*<LATCH>*/ {
     }
     const STRATEGY: UpdateStrategy = UpdateStrategy::BitPack;
 }
-

@@ -415,39 +415,6 @@ impl Csr {
     }
 }
 
-fn pack_sparse_matrix(
-    outputs_list: impl Iterator<Item = Vec<IndexType>>,
-) -> (Vec<IndexType>, Vec<IndexType>) {
-    // TODO: potentially optimized overlapping outputs/indexes
-    // (requires 2 pointers/gate)
-    // TODO: pack into single array
-    let mut packed_output_indexes: Vec<IndexType> = Vec::new();
-    let mut packed_outputs: Vec<IndexType> = Vec::new();
-    for mut outputs in outputs_list {
-        packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
-        packed_outputs.append(&mut outputs);
-    }
-    packed_output_indexes.push(packed_outputs.len().try_into().unwrap());
-    (packed_output_indexes, packed_outputs)
-}
-
-fn repack_single_sparse_matrix(
-    packed_output_indexes: &[IndexType],
-    packed_outputs: &[IndexType],
-) -> Vec<IndexType> {
-    let offset = packed_output_indexes.len();
-    let mut arr: Vec<IndexType> =
-        Vec::with_capacity(packed_output_indexes.len() + packed_outputs.len());
-    arr.extend(
-        packed_output_indexes
-            .into_iter()
-            .map(|x| *x + IndexType::try_from(offset).unwrap()),
-    );
-    arr.extend_from_slice(packed_outputs);
-    arr
-}
-
-
 /// Contains prepared datastructures to run the network.
 #[derive(Debug)]
 pub struct CompiledNetwork<const STRATEGY: u8> {
