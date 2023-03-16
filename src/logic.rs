@@ -398,7 +398,7 @@ impl Csr {
         indexes.push(outputs.len().try_into().unwrap());
         Self { indexes, outputs }
     }
-    /// pack `Csr` into single array
+    /// Pack `Csr` into single array
     fn single(&self) -> Vec<IndexType> {
         let indexes = &self.indexes;
         let outputs = &self.outputs;
@@ -407,7 +407,7 @@ impl Csr {
         let mut arr: Vec<IndexType> = Vec::with_capacity(indexes.len() + outputs.len());
         arr.extend(
             indexes
-                .into_iter()
+                .iter()
                 .map(|x| *x + IndexType::try_from(offset).unwrap()),
         );
         arr.extend_from_slice(outputs);

@@ -43,6 +43,7 @@ use core::arch::x86_64::{
     __m256i, _mm256_cmpeq_epi8, _mm256_load_si256, _mm256_movemask_epi8, _mm256_setzero_si256,
     _mm256_slli_epi64,
 };
+
 /// # SAFETY
 /// Pointer MUST be aligned
 #[inline(always)] // function used at single call site
@@ -77,6 +78,7 @@ unsafe fn acc_zero_m256i(acc_ptr: *const __m256i) -> u32 {
         transmute(!data)
     }
 }
+
 #[inline(always)] // function used at single call site
 fn acc_zero_simd(acc: &BitAccPack) -> BitInt {
     unsafe {
@@ -92,7 +94,6 @@ pub(crate) fn extract_acc_info_simd(acc: &BitAccPack) -> (BitInt, BitInt) {
     (acc_zero_simd(acc), acc_parity_simd(acc))
 }
 
-
 /// Mask out range of bits
 #[must_use]
 #[inline(always)]
@@ -107,7 +108,7 @@ pub(crate) fn bit_set(int: BitInt, index: usize, set: bool) -> BitInt {
 }
 #[must_use]
 #[inline(always)]
-pub(crate) fn bit_get(int: BitInt, index: usize) -> bool {
+pub(crate) fn bit_get(int: BitInt, index: u32) -> bool {
     int & (1 << index) != 0
 }
 #[must_use]
