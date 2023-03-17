@@ -47,7 +47,10 @@ impl<T: LogicSim> VcbBoard<T> {
         let element_ids_external: Vec<_> = (0..elements.len())
             .map(|id| element_id_to_external_id(&elements, &nodes, id))
             .collect();
-        let logic_sim: T = network.compiled(optimize);
+        let (translation_table, logic_sim): (_, T) = network.compiled(optimize);
+
+        //TODO: apply translation_table translation
+
         let element_ids: Vec<_> = element_ids_external
             .iter()
             .map(|id| id.map(|id| logic_sim.to_internal_id(id)))

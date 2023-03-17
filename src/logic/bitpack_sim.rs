@@ -7,8 +7,8 @@ use super::bitmanip::{
     BitAccPack, BitInt, BITS,
 };
 use super::{
-    Csr, GateType, IndexType, InitializedNetwork, LogicSim, RunTimeGateType, UpdateList,
-    UpdateStrategy, Gate,
+    Csr, Gate, GateType, IndexType, InitializedNetwork, LogicSim, RunTimeGateType, UpdateList,
+    UpdateStrategy,
 };
 
 /// size = 8 (u64), align = 4 (u32) -> 8 (u64)
@@ -217,8 +217,7 @@ impl BitPackSimInner {
 }
 
 impl LogicSim for BitPackSimInner {
-    fn create(network: InitializedNetwork) -> Self {
-
+    fn create(network: InitializedNetwork) -> (Vec<IndexType>, Self) {
         let network = network.prepare_for_bitpack_packing_no_type_overlap_equal_cardinality(BITS);
         let translation_table = network.translation_table;
 
@@ -266,7 +265,8 @@ impl LogicSim for BitPackSimInner {
             .map(bit_acc_pack)
             .collect();
 
-        let (update_list, cluster_update_list, in_update_list) = make_update_lists(&kind, num_groups, &gates);
+        let (update_list, cluster_update_list, in_update_list) =
+            make_update_lists(&kind, num_groups, &gates);
 
         let (group_csr_indexes, group_num_outputs): (Vec<_>, Vec<_>) = (0..num_groups)
             .map(|i| i * BITS)
@@ -288,7 +288,7 @@ impl LogicSim for BitPackSimInner {
             .collect();
 
         let mut this = Self {
-            translation_table,
+            translation_table: translation_table.clone(),
             acc,
             state,
             parity,
@@ -303,7 +303,7 @@ impl LogicSim for BitPackSimInner {
 
         this.init_state(&gates);
 
-        this
+        (translation_table, this)
     }
     fn get_state_internal(&self, gate_id: usize) -> bool {
         let index = Self::calc_group_id(gate_id);
@@ -327,11 +327,7 @@ fn make_update_lists(
     kind: &[GateType],
     num_groups: usize,
     gates: &Vec<Option<Gate>>,
-) -> (
-    UpdateList,
-    UpdateList,
-    Vec<bool>,
-) {
+) -> (UpdateList, UpdateList, Vec<bool>) {
     let update_list = UpdateList::collect_size(
         kind.iter()
             .step_by(BITS)

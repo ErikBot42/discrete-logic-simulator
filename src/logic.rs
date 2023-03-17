@@ -4,16 +4,14 @@
 #![allow(clippy::inline_always)]
 //#![allow(dead_code)]
 
+pub mod bitmanip;
 pub mod bitpack_sim;
 pub mod gate_status;
 pub mod network;
 pub mod reference_sim;
-pub mod bitmanip;
 
 pub(crate) use crate::logic::network::{GateNetwork, InitializedNetwork};
-
 use std::simd::{Mask, Simd};
-
 use strum_macros::EnumIter;
 
 //pub type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
@@ -145,21 +143,25 @@ pub trait LogicSim {
     // TODO: test: get acc optional
     // TODO: test: add all to update list
 
-    /// Create `LogicSim` struct from optimized network
-    fn create(network: InitializedNetwork) -> Self;
+    /// Create `LogicSim` struct from optimized network and a id translation table
+    fn create(network: InitializedNetwork) -> (Vec<IndexType>, Self);
     /// Get state from *internal* id
     fn get_state_internal(&self, gate_id: usize) -> bool;
     /// Number of *external* gates
+    #[deprecated]
     fn number_of_gates_external(&self) -> usize;
     /// Run 1 tick
     fn update(&mut self);
     /// translate *external* to *internal* id
+    #[deprecated]
     fn to_internal_id(&self, gate_id: usize) -> usize;
     /// Get state from *external* id.
+    #[deprecated]
     fn get_state(&self, gate_id: usize) -> bool {
         self.get_state_internal(self.to_internal_id(gate_id))
     }
     /// Return vector of state from *internal* perspective.
+    /// TODO: move to separate trait
     fn get_internal_state_vec(&self) -> Vec<bool> {
         (0..self.number_of_gates_external())
             .map(|i| self.get_state(i))
@@ -382,7 +384,6 @@ pub(crate) struct CompiledNetworkInner {
     kind: Vec<GateType>,
 }
 
-
 struct Csr {
     indexes: Vec<IndexType>,
     outputs: Vec<IndexType>,
@@ -443,7 +444,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
     }
 
-    fn create(network: InitializedNetwork) -> Self {
+    fn create(network: InitializedNetwork) -> (Vec<IndexType>, Self) {
         let mut network = network.with_gaps(Self::STRATEGY);
 
         let number_of_gates = network.gates.len();
@@ -534,26 +535,29 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
             in_update_list[i as usize] = true;
         });
 
-        Self {
-            i: CompiledNetworkInner {
-                acc_packed,
-                acc_packed_prev,
-                acc,
-                acc_prev,
-                packed_outputs,
-                packed_output_indexes,
-                //state,
-                //runtime_gate_kind,
-                status,
-                status_packed,
+        (
+            network.translation_table.clone(),
+            Self {
+                i: CompiledNetworkInner {
+                    acc_packed,
+                    acc_packed_prev,
+                    acc,
+                    acc_prev,
+                    packed_outputs,
+                    packed_output_indexes,
+                    //state,
+                    //runtime_gate_kind,
+                    status,
+                    status_packed,
 
-                iterations: 0,
-                translation_table: network.translation_table,
-                kind,
+                    iterations: 0,
+                    translation_table: network.translation_table,
+                    kind,
+                },
+                update_list,
+                cluster_update_list: UpdateList::new(number_of_gates),
             },
-            update_list,
-            cluster_update_list: UpdateList::new(number_of_gates),
-        }
+        )
     }
     fn pack_outputs(gates: &[Option<Gate>]) -> (Vec<IndexType>, Vec<IndexType>) {
         // TODO: potentially optimized overlapping outputs/indexes
@@ -1073,7 +1077,7 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
     }
 }
 impl<const STRATEGY2: u8> LogicSim for CompiledNetwork<STRATEGY2> {
-    fn create(network: InitializedNetwork) -> Self {
+    fn create(network: InitializedNetwork) -> (Vec<IndexType>, Self) {
         Self::create(network)
     }
     fn get_state_internal(&self, gate_id: usize) -> bool {
@@ -1091,7 +1095,6 @@ impl<const STRATEGY2: u8> LogicSim for CompiledNetwork<STRATEGY2> {
     }
     const STRATEGY: UpdateStrategy = UpdateStrategy::from(STRATEGY2);
 }
-
 
 #[cfg(test)]
 mod tests {

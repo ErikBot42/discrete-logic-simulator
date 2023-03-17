@@ -788,7 +788,7 @@ impl GateNetwork {
     /// # Panics
     /// Should not panic.
     #[must_use]
-    pub(crate) fn compiled<T: crate::logic::LogicSim>(self, optimize: bool) -> T {
+    pub(crate) fn compiled<T: crate::logic::LogicSim>(self, optimize: bool) -> (Vec<IndexType>, T) {
         T::create(self.network.initialized(optimize))
     }
 }

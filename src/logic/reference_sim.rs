@@ -15,7 +15,7 @@ pub struct ReferenceLogicSim {
 }
 
 impl LogicSim for ReferenceLogicSim {
-    fn create(network: super::network::InitializedNetwork) -> Self {
+    fn create(network: super::network::InitializedNetwork) -> (Vec<IndexType>, Self) {
         let gates = network.gates;
         let translation_table = network.translation_table;
         let (cluster_update_list, gate_update_list) =
@@ -40,7 +40,7 @@ impl LogicSim for ReferenceLogicSim {
             acc: acc.clone(),
             acc_prev: acc.clone(),
             outputs,
-            translation_table,
+            translation_table: translation_table.clone(),
         };
         for (state, outputs) in this.state.iter().zip(this.outputs.iter()) {
             if *state {
@@ -50,7 +50,7 @@ impl LogicSim for ReferenceLogicSim {
                 }
             }
         }
-        this
+        (translation_table, this)
     }
     fn get_state_internal(&self, gate_id: usize) -> bool {
         self.state[gate_id]
@@ -67,9 +67,6 @@ impl LogicSim for ReferenceLogicSim {
     }
     const STRATEGY: super::UpdateStrategy = super::UpdateStrategy::Reference;
 
-    fn get_state(&self, gate_id: usize) -> bool {
-        self.get_state_internal(self.to_internal_id(gate_id))
-    }
 }
 impl ReferenceLogicSim {
     fn update_inner(&mut self, cluster: bool) {
