@@ -95,11 +95,15 @@ impl<T: LogicSim> VcbBoard<T> {
     fn translate_to_internal(&self, i: usize) -> usize {
         usize::try_from(self.translation_table[i]).unwrap()
     }
+    #[cfg(test)]
+    fn number_of_gates_external(&self) -> usize {
+        self.translation_table.len()
+    }
 
     #[must_use]
     #[cfg(test)]
     pub(crate) fn make_inner_state_vec(&self) -> Vec<bool> {
-        (0..(self.logic_sim).number_of_gates_external())
+        (0..self.number_of_gates_external())
             .map(|i| self.get_state_external(i))
             .collect()
     }

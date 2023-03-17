@@ -55,9 +55,6 @@ impl LogicSim for ReferenceLogicSim {
     fn get_state_internal(&self, gate_id: usize) -> bool {
         self.state[gate_id]
     }
-    fn number_of_gates_external(&self) -> usize {
-        self.translation_table.len()
-    }
     fn update(&mut self) {
         self.update_inner(false);
         self.update_inner(true);

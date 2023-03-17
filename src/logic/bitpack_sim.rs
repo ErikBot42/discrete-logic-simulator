@@ -310,9 +310,6 @@ impl LogicSim for BitPackSimInner {
         let index = Self::calc_group_id(gate_id);
         wrapping_bit_get(self.state[index], gate_id)
     }
-    fn number_of_gates_external(&self) -> usize {
-        self.translation_table.len()
-    }
     #[inline(always)] // function used at single call site
     fn update(&mut self) {
         self.update_inner::<false>();
