@@ -62,9 +62,6 @@ impl LogicSim for ReferenceLogicSim {
         self.update_inner(false);
         self.update_inner(true);
     }
-    fn to_internal_id(&self, gate_id: usize) -> usize {
-        self.translation_table[gate_id] as usize
-    }
     const STRATEGY: super::UpdateStrategy = super::UpdateStrategy::Reference;
 
 }

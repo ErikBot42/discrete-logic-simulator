@@ -143,36 +143,50 @@ pub trait LogicSim {
     // TODO: test: get acc optional
     // TODO: test: add all to update list
 
+    // ### The vital ones ###
+
     /// Create `LogicSim` struct from optimized network and a id translation table
     fn create(network: InitializedNetwork) -> (Vec<IndexType>, Self);
     /// Get state from *internal* id
     fn get_state_internal(&self, gate_id: usize) -> bool;
-    /// Number of *external* gates
-    #[deprecated]
-    fn number_of_gates_external(&self) -> usize;
-    /// Run 1 tick
-    fn update(&mut self);
-    /// translate *external* to *internal* id
-    #[deprecated]
-    fn to_internal_id(&self, gate_id: usize) -> usize;
-    /// Get state from *external* id.
-    #[deprecated]
-    fn get_state(&self, gate_id: usize) -> bool {
-        self.get_state_internal(self.to_internal_id(gate_id))
-    }
-    /// Return vector of state from *internal* perspective.
-    /// TODO: move to separate trait
-    fn get_internal_state_vec(&self) -> Vec<bool> {
-        (0..self.number_of_gates_external())
-            .map(|i| self.get_state(i))
-            .collect()
-    }
     /// Update network `iterations` times.
+    /// Sim may override this to perform optimizations
     fn update_i(&mut self, iterations: usize) {
         for _ in 0..iterations {
             self.update();
         }
     }
+    /// Run 1 tick, use [`LogicSim::update_i`] for optimized iteration.
+    fn update(&mut self);
+
+    // ### Reconsider ###
+
+    /// Number of *external* gates
+    #[deprecated]
+    fn number_of_gates_external(&self) -> usize;
+    /// translate *external* to *internal* id
+    //#[deprecated]
+    //fn to_internal_id(&self, gate_id: usize) -> usize;
+
+
+    /// Get state from *external* id.
+    //#[deprecated = "Use get_state_internal instead"]
+    //fn get_state(&self, gate_id: usize) -> bool {
+    //    self.get_state_internal(self.to_internal_id(gate_id))
+    //}
+    /// Return vector of state from *external* perspective.
+    /// TODO: move to separate trait
+    //#[deprecated = "Use get_state_internal repeatedly instead"]
+    //fn get_state_vec(&self) -> Vec<bool> {
+    //    (0..self.number_of_gates_external())
+    //        .map(|i| self.get_state(i))
+    //        .collect()
+    //}
+    //fn get_state_internal_bitvec(&self) -> Vec<bool> {
+    //    (0..self.number_of_gates_external())
+    //        .map(|i| self.get_state_internal(i))
+    //        .collect()
+    //}
     const STRATEGY: UpdateStrategy;
 }
 
@@ -1089,9 +1103,6 @@ impl<const STRATEGY2: u8> LogicSim for CompiledNetwork<STRATEGY2> {
     #[inline(always)]
     fn update(&mut self) {
         self.update();
-    }
-    fn to_internal_id(&self, gate_id: usize) -> usize {
-        self.i.translation_table[gate_id] as usize
     }
     const STRATEGY: UpdateStrategy = UpdateStrategy::from(STRATEGY2);
 }

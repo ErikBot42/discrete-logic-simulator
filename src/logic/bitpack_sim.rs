@@ -187,6 +187,7 @@ impl BitPackSimInner {
 
                 let in_update_list_mut =
                     unsafe { in_update_list.get_unchecked_mut(output_group_id) };
+
                 if !*in_update_list_mut {
                     unsafe {
                         next_update_list.push_unchecked(output_group_id as IndexType /* Truncating cast is needed for performance */ )
@@ -316,9 +317,6 @@ impl LogicSim for BitPackSimInner {
     fn update(&mut self) {
         self.update_inner::<false>();
         self.update_inner::<true>();
-    }
-    fn to_internal_id(&self, gate_id: usize) -> usize {
-        self.translation_table[gate_id].try_into().unwrap()
     }
     const STRATEGY: UpdateStrategy = UpdateStrategy::BitPack;
 }

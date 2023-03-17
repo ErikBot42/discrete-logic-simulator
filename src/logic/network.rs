@@ -791,6 +791,10 @@ impl GateNetwork {
     pub(crate) fn compiled<T: crate::logic::LogicSim>(self, optimize: bool) -> (Vec<IndexType>, T) {
         T::create(self.network.initialized(optimize))
     }
+
+    pub(crate) fn initialized(self, optimize:bool) -> InitializedNetwork {
+        self.network.initialized(optimize)
+    }
 }
 
 mod fgo {

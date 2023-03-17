@@ -26,6 +26,7 @@ pub struct VcbBoard<T: LogicSim> {
     traces: Vec<Trace>,
     element_ids_internal: Vec<Option<usize>>,
     element_ids_external: Vec<Option<usize>>, // to debug
+    translation_table: Vec<u32>,
     pub(crate) logic_sim: T,
     pub(crate) width: usize,
     pub(crate) height: usize,
@@ -53,13 +54,14 @@ impl<T: LogicSim> VcbBoard<T> {
 
         let element_ids: Vec<_> = element_ids_external
             .iter()
-            .map(|id| id.map(|id| logic_sim.to_internal_id(id)))
+            .map(|id| id.map(|id| usize::try_from(translation_table[id]).unwrap()))
             .collect();
 
         VcbBoard {
             element_ids_internal: element_ids,
             element_ids_external,
             traces: plain.traces,
+            translation_table,
             logic_sim,
             width,
             height,
@@ -83,10 +85,23 @@ impl<T: LogicSim> VcbBoard<T> {
             .map(|i| self.get_state_element(i))
             .collect()
     }
+    #[cfg(test)]
+    fn get_state_external(&self, i: usize) -> bool {
+        self.logic_sim
+            .get_state_internal(self.translate_to_internal(i))
+    }
+
+    #[cfg(test)]
+    fn translate_to_internal(&self, i: usize) -> usize {
+        usize::try_from(self.translation_table[i]).unwrap()
+    }
+
     #[must_use]
     #[cfg(test)]
     pub(crate) fn make_inner_state_vec(&self) -> Vec<bool> {
-        self.logic_sim.get_internal_state_vec()
+        (0..(self.logic_sim).number_of_gates_external())
+            .map(|i| self.get_state_external(i))
+            .collect()
     }
 }
 
