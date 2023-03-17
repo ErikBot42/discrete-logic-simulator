@@ -142,9 +142,10 @@ type UpdateList = crate::raw_list::RawList<IndexType>;
 type GateKey = (GateType, Vec<IndexType>, bool);
 
 pub trait LogicSim {
-    // test: get acc optional
-    // test: add all to update list
-    /// Create `LogicSim` struct from non-optimized network
+    // TODO: test: get acc optional
+    // TODO: test: add all to update list
+
+    /// Create `LogicSim` struct from optimized network
     fn create(network: InitializedNetwork) -> Self;
     /// Get state from *internal* id
     fn get_state_internal(&self, gate_id: usize) -> bool;
@@ -158,8 +159,8 @@ pub trait LogicSim {
     fn get_state(&self, gate_id: usize) -> bool {
         self.get_state_internal(self.to_internal_id(gate_id))
     }
-    /// Return vector of state from *external* perspective.
-    fn get_state_vec(&self) -> Vec<bool> {
+    /// Return vector of state from *internal* perspective.
+    fn get_internal_state_vec(&self) -> Vec<bool> {
         (0..self.number_of_gates_external())
             .map(|i| self.get_state(i))
             .collect()

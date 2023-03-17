@@ -36,11 +36,11 @@ pub struct BitPackSimInner {
 
 impl BitPackSimInner {
     #[inline(always)]
-    fn calc_group_id(id: usize) -> usize {
+    const fn calc_group_id(id: usize) -> usize {
         id / BITS
     }
     #[inline(always)]
-    fn calc_inner_id(id: usize) -> usize {
+    const fn calc_inner_id(id: usize) -> usize {
         id % BITS
     }
     // pass by reference intentional to use intrinsics.
@@ -127,10 +127,10 @@ impl BitPackSimInner {
             let acc: &mut [u8] = cast_slice_mut(&mut self.acc);
             acc[id] = acc[id].wrapping_add(1);
 
-            let update_list = if !CLUSTER {
-                &mut self.cluster_update_list
-            } else {
+            let update_list = if CLUSTER {
                 &mut self.update_list
+            } else {
+                &mut self.cluster_update_list
             };
             let id = Self::calc_group_id(id);
             if !self.in_update_list[id] {
@@ -180,7 +180,7 @@ impl BitPackSimInner {
                         |&i| i as usize, /* Truncating cast needed for performance */
                     )
             {
-                let output_group_id = BitPackSimInner::calc_group_id(output);
+                let output_group_id = Self::calc_group_id(output);
 
                 let acc_mut = unsafe { acc.get_unchecked_mut(output) };
                 *acc_mut = acc_mut.wrapping_add(delta);
@@ -196,7 +196,7 @@ impl BitPackSimInner {
             }
         }
     }
-    fn init_state(&mut self, gates: Vec<Option<Gate>>) {
+    fn init_state(&mut self, gates: &[Option<Gate>]) {
         for (id, (cluster, state)) in gates
             .iter()
             .map(|g| {
@@ -301,7 +301,7 @@ impl LogicSim for BitPackSimInner {
             soap,
         };
 
-        this.init_state(gates);
+        this.init_state(&gates);
 
         this
     }

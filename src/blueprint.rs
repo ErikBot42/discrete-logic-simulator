@@ -83,7 +83,7 @@ impl<T: LogicSim> VcbBoard<T> {
     #[must_use]
     #[cfg(test)]
     pub(crate) fn make_inner_state_vec(&self) -> Vec<bool> {
-        self.logic_sim.get_state_vec()
+        self.logic_sim.get_internal_state_vec()
     }
 }
 
