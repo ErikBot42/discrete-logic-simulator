@@ -140,15 +140,29 @@ type UpdateList = crate::raw_list::RawList<IndexType>;
 type GateKey = (GateType, Vec<IndexType>, bool);
 
 pub trait LogicSim {
-    // TODO: test: get acc optional
-    // TODO: test: add all to update list
 
-    // ### The vital ones ###
+    // ===============================================
+    //
+    //              Required functions 
+    //
+    // ==============================================
 
-    /// Create `LogicSim` struct from optimized network and a id translation table
+    /// Create `LogicSim` struct from optimized network and a id translation table to convert from
+    /// external gate ids to internal gate ids.
     fn create(network: InitializedNetwork) -> (Vec<IndexType>, Self);
+
     /// Get state from *internal* id
     fn get_state_internal(&self, gate_id: usize) -> bool;
+
+    /// Run 1 tick, use [`LogicSim::update_i`] for optimized repeated iteration.
+    fn update(&mut self);
+
+    // ===============================================
+    //
+    //              Provided functions 
+    //
+    // ==============================================
+    
     /// Update network `iterations` times.
     /// Sim may override this to perform optimizations
     fn update_i(&mut self, iterations: usize) {
@@ -156,8 +170,7 @@ pub trait LogicSim {
             self.update();
         }
     }
-    /// Run 1 tick, use [`LogicSim::update_i`] for optimized iteration.
-    fn update(&mut self);
+
 
     const STRATEGY: UpdateStrategy;
 }

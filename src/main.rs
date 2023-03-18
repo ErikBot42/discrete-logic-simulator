@@ -84,7 +84,7 @@ pub struct Args {
     #[arg(value_enum, requires = "blueprint", default_value_t = UpdateStrategy::default())]
     pub implementation: UpdateStrategy,
 
-    /// Iterations to run in bench
+    /// Iterations to run in bench, or iterations per frame in run mode
     #[arg(short = 'i', long)]
     pub iterations: Option<usize>,
 }
@@ -149,21 +149,44 @@ fn handle_board<T: LogicSim>(args: &Args, parser_input: VcbInput) {
             board.print().unwrap();
         },
         RunMode::Run => {
+            use crossterm::style::Print;
+            use crossterm::QueueableCommand;
+
             execute!(stdout(), EnterAlternateScreen, Hide, DisableLineWrap).unwrap();
 
+            let time_start = Instant::now();
+            let mut time_prev = time_start;
+            let mut updates_per_frame = args.iterations.unwrap_or(1);
+
+            let mut total_ticks = 0;
             loop {
                 //use std::time::Instant;
                 execute!(stdout(), MoveTo(0, 0),).unwrap();
                 board.print().unwrap();
+                stdout()
+                    .queue(Print(format!(
+                        "{} {}",
+                        (total_ticks as f64 / time_start.elapsed().as_secs_f64()) as u64,
+                        updates_per_frame
+                    )))
+                    .unwrap();
                 enable_raw_mode().unwrap();
-                //let prev = Instant::now();
-                //while prev.elapsed().as_millis() < 16 {
-                board.update();
-                //}
-                //std::thread::sleep(Duration::from_millis(16));
-                std::thread::sleep(Duration::from_millis(1000));
+                board.update_i(updates_per_frame);
+                total_ticks += updates_per_frame;
 
-                if crossterm::event::poll(Duration::from_secs(0)).unwrap() {
+                let target_delay = Duration::from_millis(16);
+                let elapsed = time_prev.elapsed();
+
+                updates_per_frame = (updates_per_frame as f64 * (target_delay.as_nanos() as f64)
+                    / (elapsed.as_nanos() as f64)) as usize;
+
+                updates_per_frame = updates_per_frame.min(10000).max(1);
+
+                let delay = target_delay.saturating_sub(elapsed);
+
+                time_prev = Instant::now();
+
+                if crossterm::event::poll(delay).unwrap() {
                     let term_event = crossterm::event::read().unwrap();
                     disable_raw_mode().unwrap();
                     match term_event {
