@@ -37,9 +37,13 @@ impl<T: LogicSim> VcbBoard<T> {
         use strum::IntoEnumIterator;
         pollster::block_on(render::run(RenderInput {
             trace_info: Trace::iter()
-                .map(|t| TraceInfo {
-                    color: t.to_color_raw(),
-                    id: t as u8,
+                .enumerate()
+                .map(|(i, t)| {
+                    assert_eq!(t as u8, i as u8);
+                    TraceInfo {
+                        color: t.to_color_raw(),
+                        //id: t as u8,
+                    }
                 })
                 .collect(),
             traces: self.traces.iter().map(|&t| t as u8).collect(),

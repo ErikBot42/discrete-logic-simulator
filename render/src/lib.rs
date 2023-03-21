@@ -39,7 +39,7 @@ pub struct TraceInfo {
     pub color: [u8; 4],
     // color_on: [u8; 4]
     // color_off: [u8; 4]
-    pub id: u8,
+    // pub id: u8,
 }
 
 pub struct RenderInput {
@@ -99,6 +99,10 @@ struct State {
     y: Vec<u32>,
     y_buffer: wgpu::Buffer,
 
+    trace_buffer: wgpu::Buffer,   // 32-bit starting out ( -> 8 bit )
+    gate_id_buffer: wgpu::Buffer, // 32-bit starting out ( -> 24 bit )
+    trace_color_buffer: wgpu::Buffer,
+
     sim_params: SimParams,
     sim_param_buffer: wgpu::Buffer,
 
@@ -116,6 +120,14 @@ impl State {
     // Creating some of the wgpu types requires async code
     async fn new(window: Window, render_input: RenderInput) -> Self {
         render_input.validate_ranges();
+        let sim_params = SimParams {
+            max_x: render_input.width as f32,
+            max_y: render_input.height as f32,
+            offset_x: 0.0,
+            offset_y: 0.0,
+            zoom_x: 1.0,
+            zoom_y: render_input.height as f32,
+        };
 
         let window_size = window.inner_size();
         // The instance is a handle to our GPU
@@ -129,7 +141,35 @@ impl State {
         let shader: wgpu::ShaderModule =
             device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
-        //let y: Vec<u32> = vec![50; 1000];
+        let trace_colors: Vec<_> = render_input
+            .trace_info
+            .iter()
+            .map(|t| u32::from_le_bytes(t.color))
+            .collect();
+        let trace_color_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&trace_colors),
+            usage: wgpu::BufferUsages::STORAGE // TODO: reduce this
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+        });
+
+        let traces: Vec<u32> = render_input.traces.iter().map(|&i| i.into()).collect();
+        let trace_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&traces),
+            usage: wgpu::BufferUsages::STORAGE // TODO: reduce this
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+        });
+        let gate_ids = render_input.gate_ids;
+        let gate_id_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&gate_ids),
+            usage: wgpu::BufferUsages::STORAGE // TODO: reduce this
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+        });
         let y: Vec<u32> = (0..(1024 * 256)).into_iter().map(|x| x).collect();
         let y_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
@@ -138,14 +178,6 @@ impl State {
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::COPY_SRC,
         });
-        let sim_params = SimParams {
-            max_x: 123.0,
-            max_y: 64.0,
-            offset_x: 0.0,
-            offset_y: 0.0,
-            zoom_x: 7.0,
-            zoom_y: 7.0,
-        };
 
         let sim_param_data = sim_params.as_arr().to_vec();
         let sim_param_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -180,23 +212,65 @@ impl State {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(std::num::NonZeroU64::new(4).unwrap()), // TODO: what
+                    },
+                    count: None, // TODO: what
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(std::num::NonZeroU64::new(4).unwrap()), // TODO: what
+                    },
+                    count: None, // TODO: what
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(std::num::NonZeroU64::new(4).unwrap()), // TODO: what
+                    },
+                    count: None, // TODO: what
+                },
             ],
         });
-
+        /*wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+            buffer: &y_buffer,
+            offset: 0,
+            size: None, // use rest of buffer
+                        // Some(std::num::NonZeroU64::new(64).unwrap()), // TODO: what
+        })*/
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: y_buffer.as_entire_binding(), /*wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                                                                buffer: &y_buffer,
-                                                                offset: 0,
-                                                                size: None, // use rest of buffer
-                                                                            // Some(std::num::NonZeroU64::new(64).unwrap()), // TODO: what
-                                                            })*/
+                    resource: y_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: sim_param_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: trace_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: gate_id_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: trace_color_buffer.as_entire_binding(),
                 },
             ],
             label: Some("bind group"),
@@ -228,6 +302,9 @@ impl State {
             sim_param_buffer,
             keystates: KeyStates::default(),
             last_update: Instant::now(),
+            trace_buffer,
+            gate_id_buffer,
+            trace_color_buffer,
         }
     }
 
