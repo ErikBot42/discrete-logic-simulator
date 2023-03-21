@@ -28,6 +28,8 @@ pub enum RunMode {
     PrintDebug,
     /// Run and display state of board
     Run,
+    /// Run and render state of board
+    RunGpu,
     /// Run a number of iterations and print time
     Bench,
     /// Copy image of board to clipboard.
@@ -135,6 +137,9 @@ fn handle_board<T: LogicSim>(args: &Args, parser_input: VcbInput) {
     let mut board = { VcbParser::parse_compile::<T>(parser_input, true).unwrap() };
     println!("parsed entire board in {:?}", now.elapsed());
     match args.mode {
+        RunMode::RunGpu => {
+            board.run_gpu();
+        }
         RunMode::Parse => (),
         RunMode::Gif => board.print_to_gif(args.iterations.unwrap_or(100)),
         RunMode::Clip => board.print_to_clipboard(),
@@ -208,6 +213,7 @@ fn handle_board<T: LogicSim>(args: &Args, parser_input: VcbInput) {
         },
         RunMode::Bench => run_bench(args, board),
     }
+    println!("Exiting...");
 }
 
 fn run_bench<T: LogicSim>(args: &Args, mut board: logic_simulator::blueprint::VcbBoard<T>) {

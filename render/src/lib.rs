@@ -1,11 +1,9 @@
 use std::time::Instant;
 use wgpu::util::DeviceExt;
 
-use winit::{
-    event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
-    window::{Window, WindowBuilder},
-};
+use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
+use winit::event_loop::{ControlFlow, EventLoop};
+use winit::window::{Window, WindowBuilder};
 
 // traces = 2000*2000
 // index data = 32 * traces
@@ -36,6 +34,27 @@ use winit::{
 //
 // SIM:
 // bitvec of state.
+
+pub struct TraceInfo {
+    pub color: [u8; 4],
+    // color_on: [u8; 4]
+    // color_off: [u8; 4]
+    pub id: u8,
+}
+
+pub struct RenderInput {
+    pub trace_info: Vec<TraceInfo>,
+    pub traces: Vec<u8>,
+    pub gate_ids: Vec<u32>,
+    pub width: usize,
+    pub height: usize,
+}
+impl RenderInput {
+    fn validate_ranges(&self) {
+        assert_eq!(self.width * self.height, self.traces.len());
+        assert_eq!(self.width * self.height, self.gate_ids.len());
+    }
+}
 
 struct SimParams {
     max_x: f32,
@@ -95,7 +114,9 @@ impl State {
         self.sim_params.zoom_y += delta;
     }
     // Creating some of the wgpu types requires async code
-    async fn new(window: Window) -> Self {
+    async fn new(window: Window, render_input: RenderInput) -> Self {
+        render_input.validate_ranges();
+
         let window_size = window.inner_size();
         // The instance is a handle to our GPU
         let instance = wgpu::Instance::default();
@@ -452,12 +473,12 @@ fn create_render_pipeline(
     render_pipeline
 }
 
-pub async fn run() {
+pub async fn run(render_input: RenderInput) {
     env_logger::init();
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
-    let mut state = State::new(window).await;
+    let mut state = State::new(window, render_input).await;
     let mut last_frame_inst = Instant::now();
     let (mut frame_count, mut accum_time) = (0, 0.0);
 
@@ -477,7 +498,7 @@ pub async fn run() {
                 }
 
                 match state.render() {
-                    Ok(_) => {}
+                    Ok(_) => {},
                     // Reconfigure the surface if lost
                     Err(wgpu::SurfaceError::Lost) => state.resize(state.window_size),
                     // The system is out of memory, we should probably quit
@@ -485,12 +506,12 @@ pub async fn run() {
                     // All other errors (Outdated, Timeout) should be resolved by the next frame
                     Err(e) => eprintln!("{:?}", e),
                 }
-            }
+            },
             Event::MainEventsCleared => {
                 // RedrawRequested will only trigger once, unless we manually
                 // request it.
                 state.window().request_redraw();
-            }
+            },
             Event::WindowEvent {
                 ref event,
                 window_id,
@@ -510,15 +531,15 @@ pub async fn run() {
                         } => *control_flow = ControlFlow::Exit,
                         WindowEvent::Resized(physical_size) => {
                             state.resize(*physical_size);
-                        }
+                        },
                         WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                             state.resize(**new_inner_size);
-                        }
-                        _ => {}
+                        },
+                        _ => {},
                     }
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
     });
 }

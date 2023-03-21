@@ -1,3 +1,5 @@
+use strum_macros::EnumIter;
+
 /// All color constants used by vcb
 #[rustfmt::skip]
 mod vcb_colors {
@@ -40,7 +42,7 @@ mod vcb_colors {
 }
 use super::*;
 #[non_exhaustive]
-#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
+#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash, EnumIter)]
 pub(crate) enum Trace {
     Gray,
     White,

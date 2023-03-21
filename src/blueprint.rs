@@ -32,6 +32,28 @@ pub struct VcbBoard<T: LogicSim> {
     pub(crate) height: usize,
 }
 impl<T: LogicSim> VcbBoard<T> {
+    pub fn run_gpu(&self) {
+        use render::{RenderInput, TraceInfo};
+        use strum::IntoEnumIterator;
+        pollster::block_on(render::run(RenderInput {
+            trace_info: Trace::iter()
+                .map(|t| TraceInfo {
+                    color: t.to_color_raw(),
+                    id: t as u8,
+                })
+                .collect(),
+            traces: self.traces.iter().map(|&t| t as u8).collect(),
+            gate_ids: self
+                .element_ids_internal
+                .iter()
+                .map(|&i| u32::try_from(i.unwrap_or(0)).unwrap())
+                .collect(),
+            width: self.width,
+            height: self.height,
+        }));
+    }
+}
+impl<T: LogicSim> VcbBoard<T> {
     fn num_elements(&self) -> usize {
         self.width * self.height
     }
