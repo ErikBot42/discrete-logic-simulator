@@ -37,8 +37,8 @@ use winit::window::{Window, WindowBuilder};
 
 pub struct TraceInfo {
     pub color: [u8; 4],
-    // color_on: [u8; 4]
-    // color_off: [u8; 4]
+    pub color_on: [u8; 4],
+    pub color_off: [u8; 4],
     // pub id: u8,
 }
 
@@ -64,6 +64,7 @@ struct SimParams {
     zoom_x: f32,
     zoom_y: f32,
 }
+
 impl SimParams {
     fn as_arr(&self) -> [f32; 6] {
         [
@@ -99,10 +100,9 @@ struct State {
     y: Vec<u32>,
     y_buffer: wgpu::Buffer,
 
-    trace_buffer: wgpu::Buffer,   // 32-bit starting out ( -> 8 bit )
-    gate_id_buffer: wgpu::Buffer, // 32-bit starting out ( -> 24 bit )
-    trace_color_buffer: wgpu::Buffer,
-
+    //trace_buffer: wgpu::Buffer,   // 32-bit starting out ( -> 8 bit )
+    //gate_id_buffer: wgpu::Buffer, // 32-bit starting out ( -> 24 bit )
+    //trace_color_buffer: wgpu::Buffer,
     sim_params: SimParams,
     sim_param_buffer: wgpu::Buffer,
 
@@ -144,39 +144,36 @@ impl State {
         let trace_colors: Vec<_> = render_input
             .trace_info
             .iter()
-            .map(|t| u32::from_le_bytes(t.color))
+            .flat_map(|t| {
+                [
+                    u32::from_le_bytes(t.color_off),
+                    u32::from_le_bytes(t.color_on),
+                ]
+            })
             .collect();
         let trace_color_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
             contents: bytemuck::cast_slice(&trace_colors),
-            usage: wgpu::BufferUsages::STORAGE // TODO: reduce this
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE,
         });
 
         let traces: Vec<u32> = render_input.traces.iter().map(|&i| i.into()).collect();
         let trace_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
             contents: bytemuck::cast_slice(&traces),
-            usage: wgpu::BufferUsages::STORAGE // TODO: reduce this
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE,
         });
         let gate_ids = render_input.gate_ids;
         let gate_id_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
             contents: bytemuck::cast_slice(&gate_ids),
-            usage: wgpu::BufferUsages::STORAGE // TODO: reduce this
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE,
         });
-        let y: Vec<u32> = (0..(1024 * 256)).into_iter().map(|x| x).collect();
-        let y_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let bit_state: Vec<u32> = (0..(1024 * 256)).into_iter().map(|x| x).collect();
+        let bit_state_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(&y),
-            usage: wgpu::BufferUsages::STORAGE // TODO: reduce this
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
+            contents: bytemuck::cast_slice(&bit_state),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
 
         let sim_param_data = sim_params.as_arr().to_vec();
@@ -254,7 +251,7 @@ impl State {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: y_buffer.as_entire_binding(),
+                    resource: bit_state_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -295,16 +292,16 @@ impl State {
             window_size,
             window,
             render_pipeline,
-            y,
-            y_buffer,
+            y: bit_state,
+            y_buffer: bit_state_buffer,
             bind_group,
             sim_params,
             sim_param_buffer,
             keystates: KeyStates::default(),
             last_update: Instant::now(),
-            trace_buffer,
-            gate_id_buffer,
-            trace_color_buffer,
+            //trace_buffer,
+            //gate_id_buffer,
+            //trace_color_buffer,
         }
     }
 
@@ -426,16 +423,7 @@ impl State {
             render_pass.set_pipeline(&self.render_pipeline); // 2.
             render_pass.draw(0..3, 0..1); // 3.
         }
-        // retive from shader
-        //encoder.copy_buffer_to_buffer(
-        //    &self.y_buffer,
-        //    0,
-        //    &self.staging_buffer,
-        //    0,
-        //    slice_size(&self.y) as wgpu::BufferAddress,
-        //);
 
-        // submit will accept anything that implements IntoIter
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
@@ -450,15 +438,16 @@ fn prep_surface(
     device: &wgpu::Device,
 ) -> (wgpu::SurfaceCapabilities, wgpu::SurfaceConfiguration) {
     let surface_capabilites = surface.get_capabilities(&adapter);
-    // Shader code here assumes an sRGB surface texture. Using a different
-    // one will result all the colors coming out darker. If you want to support non
-    // sRGB surfaces, you'll need to account for that when drawing to the frame.
+
+    // Try to get a linear color space
     let surface_format = surface_capabilites
         .formats
         .iter()
         .copied()
-        .find(|f| f.describe().srgb)
-        .unwrap_or(surface_capabilites.formats[0]);
+        .find(|f| !f.describe().srgb)
+        .unwrap_or(dbg!(surface_capabilites.formats[0]));
+    dbg!(surface_format);
+    dbg!(surface_capabilites.formats[0]);
 
     let surface_config: wgpu::SurfaceConfiguration = wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,

@@ -32,7 +32,7 @@ struct SimParams {
 
 // @group(0) @binding(0) var<uniform> params : SimParams;
 
-@group(0) @binding(0) var<storage, read> xs: array<u32>;
+@group(0) @binding(0) var<storage, read> state: array<u32>;
 @group(0) @binding(1) var<uniform> params : SimParams;
 @group(0) @binding(2) var<storage, read> trace: array<u32>;
 @group(0) @binding(3) var<storage, read> gate_id: array<u32>;
@@ -77,35 +77,30 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+
     let ipos = vec2<i32>(in.trace_pos);
     let ilimit = vec2<i32>(i32(params.max_x), i32(params.max_y));
     if ipos.x <= 0 || ipos.y <= 0 || ilimit.x < ipos.x || ilimit.y < ipos.y {
         return vec4<f32>(0.1,0.1,0.1,1.0);
     } else {
-        let index = ipos.x + ilimit.x * ipos.y;
+        let index = u32(ipos.x + ilimit.x * ipos.y);
         let t = trace[index];
         let ft = f32(t);
 
-        var rgba = trace_color_rgba[t];
+        let gate = gate_id[index];
+
+        let is_on_1 = (state[gate / u32(32)] >> (gate % u32(32))) & u32(1);
+
+        var rgba = trace_color_rgba[is_on_1 + t * u32(2)];
         let ri = rgba & u32(0xFF); rgba >>= u32(8);
         let gi = rgba & u32(0xFF); rgba >>= u32(8);
         let bi = rgba & u32(0xFF); rgba >>= u32(8);
         let ai = rgba & u32(0xFF); rgba >>= u32(8);
 
-        let r = pow(f32(ri)/f32(255.0), f32(2.2));
-        let g = pow(f32(gi)/f32(255.0), f32(2.2));
-        let b = pow(f32(bi)/f32(255.0), f32(2.2));
+        let r = f32(ri) / f32(255.0);
+        let g = f32(gi) / f32(255.0);
+        let b = f32(bi) / f32(255.0);
 
-        //let r = (ft % f32(10.0))/10.0;
-        //let g = (ft % f32(5.0))/5.0;
-        //let b = (ft % f32(3.0))/3.0;
-        //let r = f32(ipos.x)/params.max_x;
-        //let g = f32(ipos.y)/params.max_y;
-
-        //let data: u32 = xs[index];//xs[pos.x % u32(1000)] % u32(100);
-        //let b = f32(index % 2); //f32(data)/100.0;
-        //let b = f32(trace[index])/f32(32.0);
-        //return vec4<f32>(r, g, 0.1, 1.0);
         return vec4<f32>(r, g, b, 1.0);
     }
 

@@ -42,6 +42,8 @@ impl<T: LogicSim> VcbBoard<T> {
                     assert_eq!(t as u8, i as u8);
                     TraceInfo {
                         color: t.to_color_raw(),
+                        color_on: t.to_color_on(),
+                        color_off: t.to_color_off(),
                         //id: t as u8,
                     }
                 })
