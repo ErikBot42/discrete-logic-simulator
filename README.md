@@ -83,11 +83,6 @@ Running tests and criterion benchmarks
 cargo test
 cargo bench
 ```
-### Issues
-The latch is not implemented yet, it acts as a constant.
-It will be implemented once I feel done with the optimizations on the engine.
-
-**If you see any other wrong behaviour, please create an issue**.
 
 ### Files
 | file | description |
