@@ -391,6 +391,26 @@ impl State {
                     },
                     count: None,
                 },
+                //wgpu::BindGroupLayoutEntry {
+                //    binding: 2,
+                //    visibility: wgpu::ShaderStages::FRAGMENT,
+                //    ty: wgpu::BindingType::Buffer {
+                //        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                //        has_dynamic_offset: false,
+                //        min_binding_size: Some(std::num::NonZeroU64::new(4).unwrap()), // TODO: what
+                //    },
+                //    count: None, // TODO: what
+                //},
+                //wgpu::BindGroupLayoutEntry {
+                //    binding: 3,
+                //    visibility: wgpu::ShaderStages::FRAGMENT,
+                //    ty: wgpu::BindingType::Buffer {
+                //        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                //        has_dynamic_offset: false,
+                //        min_binding_size: Some(std::num::NonZeroU64::new(4).unwrap()), // TODO: what
+                //    },
+                //    count: None, // TODO: what
+                //},
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -403,26 +423,6 @@ impl State {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(std::num::NonZeroU64::new(4).unwrap()), // TODO: what
-                    },
-                    count: None, // TODO: what
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(std::num::NonZeroU64::new(4).unwrap()), // TODO: what
-                    },
-                    count: None, // TODO: what
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 5,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -449,20 +449,20 @@ impl State {
                     binding: 1,
                     resource: sim_param_buffer.as_entire_binding(),
                 },
+                //wgpu::BindGroupEntry {
+                //    binding: 2,
+                //    resource: trace_buffer.as_entire_binding(),
+                //},
+                //wgpu::BindGroupEntry {
+                //    binding: 3,
+                //    resource: gate_id_buffer.as_entire_binding(),
+                //},
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: trace_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: gate_id_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
                     resource: trace_color_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 5,
+                    binding: 3,
                     resource: packed_buffer.as_entire_binding(),
                 },
             ],
