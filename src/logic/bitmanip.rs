@@ -124,6 +124,13 @@ pub(crate) fn pack_bits(arr: [bool; BITS]) -> BitInt {
     }
     tmp_int
 }
+pub(crate) fn pack_bits_remainder(arr: impl Iterator<Item = bool>) -> BitInt {
+    let mut tmp_int: BitInt = 0;
+    for (i, b) in arr.enumerate() {
+        tmp_int = bit_set(tmp_int, i, b);
+    }
+    tmp_int
+}
 
 #[cfg(test)]
 mod test {

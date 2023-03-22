@@ -19,7 +19,7 @@ struct Soap {
     num_outputs: u16, // 2
                       //run_type: RunTimeGateType, // 1
 }
-
+#[derive(Clone)]
 pub struct BitPackSimInner {
     translation_table: Vec<IndexType>,
     acc: Vec<BitAccPack>,
@@ -217,6 +217,18 @@ impl BitPackSimInner {
     }
 }
 
+impl crate::logic::RenderSim for BitPackSimInner {
+    // WAY faster state copy
+    fn get_state_in(&mut self, v: &mut Vec<u64>) {
+        v.clear();
+        v.extend(self.state.iter().cloned());
+    }
+}
+//    // Simulate 1 tick.
+//    //fn rupdate(&mut self);
+//    // Clear and write state bitvec
+//    //fn get_state_in(&mut self, v: &mut Vec<u64>);
+
 impl LogicSim for BitPackSimInner {
     fn create(network: InitializedNetwork) -> (Vec<IndexType>, Self) {
         let network = network.prepare_for_bitpack_packing_no_type_overlap_equal_cardinality(BITS);
@@ -316,6 +328,10 @@ impl LogicSim for BitPackSimInner {
         self.update_inner::<true>();
     }
     const STRATEGY: UpdateStrategy = UpdateStrategy::BitPack;
+
+    fn num_gates_internal(&self) -> usize {
+        self.state.len() * BitInt::BITS as usize
+    }
 }
 
 fn make_update_lists(

@@ -140,10 +140,9 @@ type UpdateList = crate::raw_list::RawList<IndexType>;
 type GateKey = (GateType, Vec<IndexType>, bool);
 
 pub trait LogicSim {
-
     // ===============================================
     //
-    //              Required functions 
+    //              Required functions
     //
     // ==============================================
 
@@ -154,15 +153,19 @@ pub trait LogicSim {
     /// Get state from *internal* id
     fn get_state_internal(&self, gate_id: usize) -> bool;
 
+    /// 0..num_gates_internal should be a valid range to query for gate state
+    /// TODO: put in wrapper
+    fn num_gates_internal(&self) -> usize;
+
     /// Run 1 tick, use [`LogicSim::update_i`] for optimized repeated iteration.
     fn update(&mut self);
 
     // ===============================================
     //
-    //              Provided functions 
+    //              Provided functions
     //
     // ==============================================
-    
+
     /// Update network `iterations` times.
     /// Sim may override this to perform optimizations
     fn update_i(&mut self, iterations: usize) {
@@ -171,8 +174,28 @@ pub trait LogicSim {
         }
     }
 
-
     const STRATEGY: UpdateStrategy;
+}
+pub trait RenderSim: LogicSim {
+    /// Simulate 1 tick.
+    #[inline(always)]
+    fn rupdate(&mut self) {
+        self.update();
+    }
+    /// Clear and write state bitvec
+    fn get_state_in(&mut self, v: &mut Vec<u64>) {
+        use bitmanip::{pack_bits, pack_bits_remainder};
+        let mut chunks = (0..(self.num_gates_internal()))
+            .map(|i| self.get_state_internal(i))
+            .array_chunks::<64>();
+        v.clear();
+        while let Some(chunk) = chunks.next() {
+            v.push(pack_bits(chunk));
+        }
+        if let Some(remainder) = chunks.into_remainder() {
+            v.push(pack_bits_remainder(remainder));
+        }
+    }
 }
 
 /// data needed after processing network
@@ -417,7 +440,7 @@ impl Csr {
 }
 
 /// Contains prepared datastructures to run the network.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CompiledNetwork<const STRATEGY: u8> {
     pub(crate) i: CompiledNetworkInner,
 
@@ -1075,7 +1098,12 @@ impl<const STRATEGY_I: u8> CompiledNetwork<STRATEGY_I> {
         }
     }
 }
+
+impl<const STRATEGY2: u8> crate::logic::RenderSim for CompiledNetwork<STRATEGY2> {}
 impl<const STRATEGY2: u8> LogicSim for CompiledNetwork<STRATEGY2> {
+    fn num_gates_internal(&self) -> usize {
+        todo!()
+    }
     fn create(network: InitializedNetwork) -> (Vec<IndexType>, Self) {
         Self::create(network)
     }

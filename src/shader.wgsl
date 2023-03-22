@@ -21,6 +21,7 @@
 //  rule2Scale : f32,
 //  rule3Scale : f32,
 //};
+
 struct SimParams {
   max_x: f32,
   max_y: f32,
@@ -77,21 +78,17 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-
     let ipos = vec2<i32>(in.trace_pos);
     let ilimit = vec2<i32>(i32(params.max_x), i32(params.max_y));
     if ipos.x <= 0 || ipos.y <= 0 || ilimit.x < ipos.x || ilimit.y < ipos.y {
         return vec4<f32>(0.1,0.1,0.1,1.0);
     } else {
         let index = u32(ipos.x + ilimit.x * ipos.y);
+        let gate: u32 = gate_id[index];
+        let is_on: u32 = (state[gate / u32(32)] >> (gate % u32(32))) & u32(1);
         let t = trace[index];
-        let ft = f32(t);
 
-        let gate = gate_id[index];
-
-        let is_on_1 = (state[gate / u32(32)] >> (gate % u32(32))) & u32(1);
-
-        var rgba = trace_color_rgba[is_on_1 + t * u32(2)];
+        var rgba = trace_color_rgba[is_on + t * u32(2)];
         let ri = rgba & u32(0xFF); rgba >>= u32(8);
         let gi = rgba & u32(0xFF); rgba >>= u32(8);
         let bi = rgba & u32(0xFF); rgba >>= u32(8);
@@ -103,7 +100,4 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
         return vec4<f32>(r, g, b, 1.0);
     }
-
-
-
 }

@@ -2,6 +2,7 @@
 //! As simple as possible, and therefore slow.
 use super::{AccType, Gate, IndexType, LogicSim, RunTimeGateType};
 use itertools::Itertools;
+#[derive(Clone)]
 pub struct ReferenceLogicSim {
     update_list: Vec<usize>,
     cluster_update_list: Vec<usize>,
@@ -13,7 +14,7 @@ pub struct ReferenceLogicSim {
     outputs: Vec<Vec<IndexType>>,
     translation_table: Vec<IndexType>,
 }
-
+impl crate::logic::RenderSim for ReferenceLogicSim {}
 impl LogicSim for ReferenceLogicSim {
     fn create(network: super::network::InitializedNetwork) -> (Vec<IndexType>, Self) {
         let gates = network.gates;
@@ -60,7 +61,9 @@ impl LogicSim for ReferenceLogicSim {
         self.update_inner(true);
     }
     const STRATEGY: super::UpdateStrategy = super::UpdateStrategy::Reference;
-
+    fn num_gates_internal(&self) -> usize {
+        self.state.len()
+    }
 }
 impl ReferenceLogicSim {
     fn update_inner(&mut self, cluster: bool) {

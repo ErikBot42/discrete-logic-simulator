@@ -7,8 +7,9 @@ use crossterm::terminal::{
 };
 use logic_simulator::blueprint::{VcbInput, VcbParser};
 use logic_simulator::logic::{
-    BitPackSim, LogicSim, ReferenceSim, ScalarSim, SimdSim, UpdateStrategy,
+    BitPackSim, LogicSim, ReferenceSim, RenderSim, ScalarSim, SimdSim, UpdateStrategy,
 };
+use logic_simulator::render;
 use std::fs::read_to_string;
 use std::io::stdout;
 use std::path::PathBuf;
@@ -132,14 +133,17 @@ fn main() {
     }
 }
 
-fn handle_board<T: LogicSim>(args: &Args, parser_input: VcbInput) {
+fn handle_board<T: LogicSim + RenderSim + Clone + Send + 'static>(
+    args: &Args,
+    parser_input: VcbInput,
+) {
     let now = Instant::now();
     let mut board = { VcbParser::parse_compile::<T>(parser_input, true).unwrap() };
     println!("parsed entire board in {:?}", now.elapsed());
     match args.mode {
         RunMode::RunGpu => {
             board.run_gpu();
-        }
+        },
         RunMode::Parse => (),
         RunMode::Gif => board.print_to_gif(args.iterations.unwrap_or(100)),
         RunMode::Clip => board.print_to_clipboard(),

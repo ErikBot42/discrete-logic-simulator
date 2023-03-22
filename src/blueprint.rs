@@ -5,7 +5,7 @@ pub mod explore;
 pub mod parse;
 pub mod trace;
 
-use crate::logic::{GateNetwork, GateType, LogicSim};
+use crate::logic::{GateNetwork, GateType, LogicSim, RenderSim};
 use explore::{compile_network, BoardNode};
 use parse::VcbPlainBoard;
 pub use parse::{VcbInput, VcbParser};
@@ -22,6 +22,8 @@ use std::mem::size_of;
 use std::thread::sleep;
 use std::time::Duration;
 
+use crate::render;
+
 pub struct VcbBoard<T: LogicSim> {
     traces: Vec<Trace>,
     element_ids_internal: Vec<Option<usize>>,
@@ -31,7 +33,7 @@ pub struct VcbBoard<T: LogicSim> {
     pub(crate) width: usize,
     pub(crate) height: usize,
 }
-impl<T: LogicSim> VcbBoard<T> {
+impl<T: LogicSim + RenderSim + Clone + Send + 'static> VcbBoard<T> {
     pub fn run_gpu(&self) {
         use render::{RenderInput, TraceInfo};
         use strum::IntoEnumIterator;
@@ -56,6 +58,7 @@ impl<T: LogicSim> VcbBoard<T> {
                 .collect(),
             width: self.width,
             height: self.height,
+            sim: self.logic_sim.clone(),
         }));
     }
 }

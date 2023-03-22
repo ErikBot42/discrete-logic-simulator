@@ -57,7 +57,9 @@ macro_rules! assert_eq_len {
 pub mod blueprint;
 pub mod logic;
 pub mod raw_list;
+pub mod render;
 
+//pub use logic::RenderSim;
 #[cfg(test)]
 mod tests {
     use crate::blueprint::{VcbBoard, VcbInput, VcbParser};

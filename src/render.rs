@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use wgpu::util::DeviceExt;
 
 use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
@@ -34,6 +34,160 @@ use winit::window::{Window, WindowBuilder};
 //
 // SIM:
 // bitvec of state.
+use crate::logic::RenderSim;
+
+// let sim run,
+// interrupt,
+// swap buffers,
+// resume sim
+
+// fn foo() {
+//     fn run() {}
+//     let handle = run();
+//
+//     handle.pause();
+//
+//     handle.get_state();
+//
+//     handle.step();
+//
+//     handle.resume();
+//
+//     // later:
+//     let state = handle.get_state();
+// }
+
+use std::marker::Send;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Barrier, Mutex};
+
+#[derive(Debug)]
+enum RenderSimTask {
+    Exit,
+    CopyData,
+    Run,
+    Step,
+    Pause,
+}
+
+struct RenderSimController {
+    barrier: Arc<Barrier>,
+    interrupt: Arc<AtomicBool>,
+    shared_data: Arc<Mutex<(RenderSimTask, Vec<u64>, usize)>>,
+    tick_counter: usize,
+    last_counter_reset: Instant,
+}
+impl RenderSimController {
+    /// start paused
+    fn new<S: RenderSim + Send + 'static>(sim: S) -> Self {
+        let barrier = Arc::new(Barrier::new(2));
+        let interrupt = Arc::new(AtomicBool::new(true));
+        let shared_data = Arc::new(Mutex::new((RenderSimTask::Pause, Vec::<u64>::new(), 0)));
+
+        let interrupt_clone = interrupt.clone();
+        let shared_data_clone = shared_data.clone();
+        let barrier_clone = barrier.clone();
+        std::thread::spawn(move || {
+            let mut sim = sim;
+            let interrupt = interrupt_clone;
+            let shared_data = shared_data_clone;
+            let barrier = barrier_clone;
+            let mut ticks_since_copy = 0;
+            loop {
+                while interrupt.load(Ordering::Acquire) {
+                    sim.rupdate();
+                    ticks_since_copy += 1;
+                }
+                //println!("SIM: interrupted");
+                interrupt.store(true, Ordering::Release);
+                let mut data = shared_data.lock().unwrap();
+                data.2 += std::mem::replace(&mut ticks_since_copy, 0);
+                sim.get_state_in(&mut data.1);
+                barrier.wait();
+
+                //println!("SIM: get lock");
+                //let mut data = shared_data.lock().unwrap();
+                ////println!("SIM task: {:?}", data.0);
+                //match data.0 {
+                //    RenderSimTask::Exit => break,
+                //    RenderSimTask::CopyData => {
+                //        sim.get_state_in(&mut data.1);
+                //        // singnal data copy done.
+                //        data.0 = RenderSimTask::Pause;
+                //        data.2 += ticks_since_copy;
+                //        ticks_since_copy = 0;
+                //        drop(data);
+                //        barrier.wait();
+                //    },
+                //    RenderSimTask::Run => {
+                //        drop(data);
+                //        //println!("SIM: start sim");
+                //        sim.rupdate();
+                //        ticks_since_copy += 1;
+                //        while interrupt.load(Ordering::Acquire) {}
+                //        //println!("SIM: interrupted");
+                //        interrupt.store(true, Ordering::Release);
+                //        // set next task beforehand
+                //    },
+                //    RenderSimTask::Pause => {
+                //        drop(data);
+                //        // wait to resume, set next before resume
+                //        //println!("SIM: paused, waiting");
+                //        barrier.wait();
+                //    },
+                //    RenderSimTask::Step => {
+                //        data.0 = RenderSimTask::Pause;
+                //        sim.rupdate();
+                //        drop(data);
+                //    },
+                //}
+            }
+        });
+        Self {
+            barrier,
+            interrupt,
+            shared_data,
+            tick_counter: 0,
+            last_counter_reset: Instant::now(),
+        }
+    }
+    /// pause, get copy of state, resume
+    fn get_state_in(&mut self, state: &mut Vec<u64>) {
+        self.interrupt.store(false, Ordering::Release);
+        self.barrier.wait();
+        let mut lock = self.shared_data.lock().unwrap();
+        self.tick_counter += lock.2;
+        lock.2 = 0;
+        std::mem::swap(state, &mut lock.1);
+
+        //self.shared_data.lock().unwrap().0 = RenderSimTask::CopyData;
+        //self.interrupt.store(false, Ordering::Release);
+        //self.barrier.wait();
+        //let mut lock = self.shared_data.lock().unwrap();
+        //std::mem::swap(state, &mut lock.1);
+        //lock.0 = RenderSimTask::Run;
+        //self.tick_counter += lock.2;
+        //lock.2 = 0;
+    }
+    fn get_counter(&mut self) -> (usize, Duration) {
+        (
+            std::mem::replace(&mut self.tick_counter, 0),
+            std::mem::replace(&mut self.last_counter_reset, Instant::now()).elapsed(),
+        )
+    }
+
+    // resume sim, unset condvar
+    //fn resume(&mut self) {
+    //    todo!()
+    //}
+
+    ///// pause sim, set condvar
+    //fn pause(&mut self) {
+    //    todo!()
+    //}
+    // run 1 tick = pause, send thing, resume
+    // fn step(&mut self) {}
+}
 
 pub struct TraceInfo {
     pub color: [u8; 4],
@@ -42,14 +196,15 @@ pub struct TraceInfo {
     // pub id: u8,
 }
 
-pub struct RenderInput {
+pub struct RenderInput<S: RenderSim> {
     pub trace_info: Vec<TraceInfo>,
     pub traces: Vec<u8>,
     pub gate_ids: Vec<u32>,
     pub width: usize,
     pub height: usize,
+    pub sim: S,
 }
-impl RenderInput {
+impl<S: RenderSim> RenderInput<S> {
     fn validate_ranges(&self) {
         assert_eq!(self.width * self.height, self.traces.len());
         assert_eq!(self.width * self.height, self.gate_ids.len());
@@ -97,8 +252,8 @@ struct State {
 
     render_pipeline: wgpu::RenderPipeline,
 
-    y: Vec<u32>,
-    y_buffer: wgpu::Buffer,
+    bit_state: Vec<u64>,
+    bit_state_buffer: wgpu::Buffer,
 
     //trace_buffer: wgpu::Buffer,   // 32-bit starting out ( -> 8 bit )
     //gate_id_buffer: wgpu::Buffer, // 32-bit starting out ( -> 24 bit )
@@ -111,6 +266,8 @@ struct State {
     keystates: KeyStates,
 
     last_update: Instant,
+
+    sim_controller: RenderSimController,
 }
 
 impl State {
@@ -118,7 +275,10 @@ impl State {
         self.sim_params.zoom_y += delta;
     }
     // Creating some of the wgpu types requires async code
-    async fn new(window: Window, render_input: RenderInput) -> Self {
+    async fn new<S: RenderSim + Send + 'static>(
+        window: Window,
+        render_input: RenderInput<S>,
+    ) -> Self {
         render_input.validate_ranges();
         let sim_params = SimParams {
             max_x: render_input.width as f32,
@@ -128,6 +288,7 @@ impl State {
             zoom_x: 1.0,
             zoom_y: render_input.height as f32,
         };
+        let sim_controller = RenderSimController::new(render_input.sim);
 
         let window_size = window.inner_size();
         // The instance is a handle to our GPU
@@ -169,7 +330,7 @@ impl State {
             contents: bytemuck::cast_slice(&gate_ids),
             usage: wgpu::BufferUsages::STORAGE,
         });
-        let bit_state: Vec<u32> = (0..(1024 * 256)).into_iter().map(|x| x).collect();
+        let bit_state: Vec<u64> = (0..(1024 * 256)).into_iter().map(|x| x).collect();
         let bit_state_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
             contents: bytemuck::cast_slice(&bit_state),
@@ -292,13 +453,14 @@ impl State {
             window_size,
             window,
             render_pipeline,
-            y: bit_state,
-            y_buffer: bit_state_buffer,
+            bit_state,
+            bit_state_buffer,
             bind_group,
             sim_params,
             sim_param_buffer,
             keystates: KeyStates::default(),
             last_update: Instant::now(),
+            sim_controller,
             //trace_buffer,
             //gate_id_buffer,
             //trace_color_buffer,
@@ -351,9 +513,10 @@ impl State {
     }
 
     fn update(&mut self) {
-        for y in self.y.iter_mut() {
-            *y += 1;
-        }
+        //for y in self.bit_state.iter_mut() {
+        //    *y += 1;
+        //}
+        self.sim_controller.get_state_in(&mut self.bit_state);
 
         let wsize = self.window.inner_size();
         let ratio = wsize.width as f32 / wsize.height as f32;
@@ -380,9 +543,10 @@ impl State {
             .create_view(&wgpu::TextureViewDescriptor::default());
 
         self.queue.write_buffer(
-            &self.y_buffer,
+            &self.bit_state_buffer,
             0, /* offset */
-            bytemuck::cast_slice(&self.y),
+            bytemuck::cast_slice(&self.bit_state),
+            //bytemuck::cast_slice(&[1_u64, 234, 23423]),
         );
         let sim_params_arr = self.sim_params.as_arr();
         self.queue.write_buffer(
@@ -539,7 +703,7 @@ fn create_render_pipeline(
     render_pipeline
 }
 
-pub async fn run(render_input: RenderInput) {
+pub async fn run<S: RenderSim + Send + 'static>(render_input: RenderInput<S>) {
     env_logger::init();
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
@@ -558,7 +722,9 @@ pub async fn run(render_input: RenderInput) {
                 frame_count += 1;
                 if frame_count == 200 {
                     let avg_frame_time = accum_time * 1000.0 / frame_count as f32;
-                    println!("Avg frame time {}ms", avg_frame_time);
+                    let (ticks_elapsed, time_elapsed) = state.sim_controller.get_counter();
+                    let tps = ticks_elapsed as f32 / time_elapsed.as_secs_f32();
+                    println!("Avg frame time {avg_frame_time}ms, TPS: {tps}");
                     accum_time = 0.0;
                     frame_count = 0;
                 }

@@ -994,17 +994,20 @@ dependencies = [
  "clap 4.1.11",
  "criterion",
  "crossterm",
+ "env_logger",
  "image",
  "itertools",
  "json",
+ "log",
  "nohash-hasher",
  "pollster",
- "render",
  "rendezvous_swap",
  "spin",
  "strum",
  "strum_macros",
  "tempfile",
+ "wgpu",
+ "winit",
  "zstd",
 ]
 
@@ -1493,18 +1496,6 @@ name = "regex-syntax"
 version = "0.6.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f162c6dd7b008981e4d40210aca20b4bd0f9b60ca9271061b07f78537722f2e1"
-
-[[package]]
-name = "render"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "env_logger",
- "log",
- "pollster",
- "wgpu",
- "winit",
-]
 
 [[package]]
 name = "renderdoc-sys"
