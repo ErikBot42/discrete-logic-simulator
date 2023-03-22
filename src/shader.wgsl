@@ -38,6 +38,7 @@ struct SimParams {
 @group(0) @binding(2) var<storage, read> trace: array<u32>;
 @group(0) @binding(3) var<storage, read> gate_id: array<u32>;
 @group(0) @binding(4) var<storage, read> trace_color_rgba: array<u32>;
+@group(0) @binding(5) var<storage, read> packed: array<u32>;
 
 
 struct VertexOutput {
@@ -84,9 +85,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         return vec4<f32>(0.1,0.1,0.1,1.0);
     } else {
         let index = u32(ipos.x + ilimit.x * ipos.y);
-        let gate: u32 = gate_id[index];
+        //let gate: u32 = gate_id[index];
+        //let t = trace[index];
+        
+        let mask = u32(0xFFFFFF);
+        let packed_data: u32 = packed[index];
+        let gate: u32 = packed_data & mask;
+        let t = packed_data >> u32(24);
+
         let is_on: u32 = (state[gate / u32(32)] >> (gate % u32(32))) & u32(1);
-        let t = trace[index];
 
         var rgba = trace_color_rgba[is_on + t * u32(2)];
         let ri = rgba & u32(0xFF); rgba >>= u32(8);

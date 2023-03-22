@@ -5,6 +5,8 @@ use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEve
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
 
+// split buffers: 520.1964
+
 // traces = 2000*2000
 // index data = 32 * traces
 // trace data = traces
@@ -211,6 +213,16 @@ impl<S: RenderSim> RenderInput<S> {
     }
 }
 
+/// 32-bit id -> 24-bit id + 8-bit trace
+fn pack_single(gate_id: u32, trace: u8) -> u32 {
+    let id_mask = u32::MAX >> 8;
+
+    let masked_id = id_mask & gate_id;
+    assert_eq!(masked_id, gate_id);
+
+    gate_id | (u32::from(trace) << 24)
+}
+
 struct SimParams {
     max_x: f32,
     max_y: f32,
@@ -271,9 +283,6 @@ struct State {
 }
 
 impl State {
-    fn update_zoom(&mut self, delta: f32) {
-        self.sim_params.zoom_y += delta;
-    }
     // Creating some of the wgpu types requires async code
     async fn new<S: RenderSim + Send + 'static>(
         window: Window,
@@ -324,12 +333,14 @@ impl State {
             contents: bytemuck::cast_slice(&traces),
             usage: wgpu::BufferUsages::STORAGE,
         });
-        let gate_ids = render_input.gate_ids;
+        let gate_ids = render_input.gate_ids.clone();
         let gate_id_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
             contents: bytemuck::cast_slice(&gate_ids),
             usage: wgpu::BufferUsages::STORAGE,
         });
+
+        //TODO: PERF: reduce this buffer size to actual input size
         let bit_state: Vec<u64> = (0..(1024 * 256)).into_iter().map(|x| x).collect();
         let bit_state_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
@@ -342,6 +353,16 @@ impl State {
             label: Some("sim param buffer"),
             contents: bytemuck::cast_slice(&sim_param_data),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let packed_data: Vec<u32> = render_input
+            .traces
+            .into_iter()
+            .zip(render_input.gate_ids)
+            .map(|(trace, id)| pack_single(id, trace)).collect();
+        let packed_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Packed data buffer"),
+            contents: bytemuck::cast_slice(&packed_data),
+            usage: wgpu::BufferUsages::STORAGE,
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -400,6 +421,16 @@ impl State {
                     },
                     count: None, // TODO: what
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(std::num::NonZeroU64::new(4).unwrap()), // TODO: what
+                    },
+                    count: None, // TODO: what
+                },
             ],
         });
         /*wgpu::BindingResource::Buffer(wgpu::BufferBinding {
@@ -429,6 +460,10 @@ impl State {
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: trace_color_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: packed_buffer.as_entire_binding(),
                 },
             ],
             label: Some("bind group"),
