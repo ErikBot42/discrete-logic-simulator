@@ -224,6 +224,7 @@ impl crate::logic::RenderSim for BitPackSimInner {
     fn get_state_in(&mut self, v: &mut Vec<u64>) {
         v.clear();
         v.extend(self.state.iter().cloned());
+        v.shrink_to_fit();
     }
 }
 //    // Simulate 1 tick.

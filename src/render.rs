@@ -1,3 +1,4 @@
+use std::mem;
 use std::time::{Duration, Instant};
 use wgpu::util::DeviceExt;
 
@@ -18,12 +19,36 @@ use winit::window::{Window, WindowBuilder};
 //
 // Max gates: 300 000 = 37500 B = 37 KB of dynamic data per frame
 
-//#[repr(C)]
-//#[derive(Copy, Clone, Debug)]
-//struct Vertex {
-//    position: [f32; 3],
-//    color: [f32; 3],
-//}
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+struct Vertex {
+    position: [f32; 2],   // TODO: omit third coordinate
+    tex_coords: [f32; 2], // 0..1
+}
+unsafe impl bytemuck::Pod for Vertex {}
+unsafe impl bytemuck::Zeroable for Vertex {}
+impl Vertex {
+    const ATTRIBUTES: [wgpu::VertexAttribute; 2] =
+        wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2];
+    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBUTES,
+        }
+    }
+    fn get_vertices(max_width: usize, max_height: usize) -> [Vertex; 6] {
+        let f: f32 = 1.0;
+        let positions = [[f, f], [-f, -f], [f, -f], [-f, f], [-f, -f], [f, f]];
+        positions.map(|position| Vertex {
+            position,
+            tex_coords: [
+                (position[0] + f) / (2.0 * f) * (max_width as f32),
+                (position[1] + f) / (2.0 * f) * (max_height as f32),
+            ],
+        })
+    }
+}
 
 //struct SimParams {
 //    delta: f32,
@@ -149,7 +174,7 @@ impl RenderSimController {
         //let (count, mut new_state) =
         match self.recv.try_recv() {
             Ok((count, mut new_state)) => {
-                std::mem::swap(state, &mut new_state);
+                mem::swap(state, &mut new_state);
                 self.tick_counter += count;
             },
             Err(mpsc::TryRecvError::Empty) => {
@@ -160,8 +185,8 @@ impl RenderSimController {
     }
     fn get_counter(&mut self) -> (usize, Duration) {
         (
-            std::mem::replace(&mut self.tick_counter, 0),
-            std::mem::replace(&mut self.last_counter_reset, Instant::now()).elapsed(),
+            mem::replace(&mut self.tick_counter, 0),
+            mem::replace(&mut self.last_counter_reset, Instant::now()).elapsed(),
         )
     }
     // stop sim from calling update
@@ -327,7 +352,7 @@ fn pack_single(gate_id: u32, trace: u8) -> u32 {
 
     gate_id | (u32::from(trace) << 24)
 }
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 struct SimParams {
     max_x: f32,
     max_y: f32,
@@ -349,6 +374,46 @@ impl SimParams {
         ]
     }
 }
+#[derive(Debug)]
+struct ViewState {
+    // trace is center of screen.
+    // zoom, trace in trace scale.
+    // zoom = "height" in trace scale
+    max_x: f32,
+    max_y: f32,
+
+    trace_x: f32,
+    trace_y: f32,
+    zoom: f32,
+}
+impl ViewState {
+    fn new(width: usize, height: usize) -> Self {
+        let width = width as f32;
+        let height = height as f32;
+        Self {
+            max_x: width,
+            max_y: height,
+            trace_x: width / 2.0,
+            trace_y: height / 2.0,
+            zoom: height,
+        }
+    }
+    fn as_sim_params(&self, ratio: f32) -> SimParams {
+        // vert = position * zoom + offset
+        // (vert - offset) = position * zoom
+        // (vert - offset) / zoom = position * zoom
+        // vert / zoom - (offset / zoom) = position
+        // vert * (1 / zoom) - (offset / zoom) = position
+        SimParams {
+            max_x: self.max_x,
+            max_y: self.max_y,
+            offset_x: -self.trace_x / self.max_x * 2.0 + 1.0,
+            offset_y: -self.trace_y / self.max_y * 2.0 + 1.0,
+            zoom_x: self.max_y / (self.zoom * ratio),
+            zoom_y: self.max_y / self.zoom,
+        }
+    }
+}
 #[derive(Default)]
 struct KeyStates {
     /// up (+), down (-)
@@ -357,6 +422,8 @@ struct KeyStates {
     right: f32,
     /// out (+), in (-)
     zoom: f32,
+    /// reverse (time)
+    reverse: bool,
 }
 
 struct State {
@@ -385,6 +452,12 @@ struct State {
     last_print: Instant,
 
     state_history: Vec<Vec<u64>>,
+
+    vertex_buffer: wgpu::Buffer,
+
+    num_vertices: u32,
+
+    view: ViewState,
 }
 
 impl State {
@@ -394,13 +467,21 @@ impl State {
         render_input: RenderInput<S>,
     ) -> Self {
         render_input.validate_ranges();
+        let view = ViewState::new(render_input.width, render_input.height);
+        //ViewState {
+        //    trace_x: render_input.width as f32 / 2.0,
+        //    trace_y: render_input.height as f32 / 2.0,
+        //    zoom: render_input.height as f32,
+        //    max_x: render_input.width as f32,
+        //    max_y: render_input.height as f32,
+        //};
         let sim_params = SimParams {
             max_x: render_input.width as f32,
             max_y: render_input.height as f32,
             offset_x: 0.0,
             offset_y: 0.0,
-            zoom_x: render_input.width as f32,
-            zoom_y: render_input.height as f32,
+            zoom_x: 1.0 as f32,
+            zoom_y: 1.0 as f32,
         };
         let sim_controller = RenderSimController::new(render_input.sim);
 
@@ -413,8 +494,24 @@ impl State {
         let (_surface_capabilites, surface_config) =
             prep_surface(&surface, adapter, window_size, &device);
 
-        let shader: wgpu::ShaderModule =
-            device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
+        let shader: wgpu::ShaderModule = device.create_shader_module(
+            //wgpu::include_wgsl!("shader.wgsl")
+            wgpu::ShaderModuleDescriptor {
+                label: None,
+                //source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+                source: wgpu::ShaderSource::Wgsl(
+                    std::fs::read_to_string("src/shader.wgsl").unwrap().into(),
+                ),
+            },
+        );
+
+        let vertices = Vertex::get_vertices(render_input.width, render_input.height);
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let num_vertices = vertices.len() as u32;
 
         let trace_colors: Vec<_> = render_input
             .trace_info
@@ -432,18 +529,18 @@ impl State {
             usage: wgpu::BufferUsages::STORAGE,
         });
 
-        let traces: Vec<u32> = render_input.traces.iter().map(|&i| i.into()).collect();
-        let trace_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&traces),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
-        let gate_ids = render_input.gate_ids.clone();
-        let gate_id_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&gate_ids),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        //let traces: Vec<u32> = render_input.traces.iter().map(|&i| i.into()).collect();
+        //let trace_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        //    label: None,
+        //    contents: bytemuck::cast_slice(&traces),
+        //    usage: wgpu::BufferUsages::STORAGE,
+        //});
+        //let gate_ids = render_input.gate_ids.clone();
+        //let gate_id_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        //    label: None,
+        //    contents: bytemuck::cast_slice(&gate_ids),
+        //    usage: wgpu::BufferUsages::STORAGE,
+        //});
 
         //TODO: PERF: reduce this buffer size to actual input size
         let bit_state: Vec<u64> = (0..(1024 * 256)).into_iter().map(|x| x).collect();
@@ -497,7 +594,7 @@ impl State {
             wgpu::ImageDataLayout {
                 offset: 0,
                 bytes_per_row: std::num::NonZeroU32::new(
-                    (std::mem::size_of::<u32>() * render_input.width)
+                    (mem::size_of::<u32>() * render_input.width)
                         .try_into()
                         .unwrap(),
                 ),
@@ -541,8 +638,7 @@ impl State {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
                         min_binding_size: std::num::NonZeroU64::new(
-                            u64::try_from(sim_param_data.len() * std::mem::size_of::<f32>())
-                                .unwrap(),
+                            u64::try_from(sim_param_data.len() * mem::size_of::<f32>()).unwrap(),
                         ),
                     },
                     count: None,
@@ -658,6 +754,9 @@ impl State {
             sim_controller,
             last_print: Instant::now(),
             state_history: Vec::new(),
+            vertex_buffer,
+            num_vertices,
+            view,
             //trace_buffer,
             //gate_id_buffer,
             //trace_color_buffer,
@@ -703,6 +802,7 @@ impl State {
                 D | T => k.right = p,
                 J => k.zoom = n,
                 K => k.zoom = p,
+                P if *state == ElementState::Pressed => k.reverse = !k.reverse,
                 _ => (),
             }
         };
@@ -713,34 +813,58 @@ impl State {
         //for y in self.bit_state.iter_mut() {
         //    *y += 1;
         //}
-        self.state_history.push(std::mem::take(&mut self.bit_state));
-        self.sim_controller.get_state_in(&mut self.bit_state);
-        
+        if self.keystates.reverse {
+            if let Some(state) = self.state_history.pop() {
+                self.bit_state = state;
+            } else {
+                self.keystates.reverse = false;
+            }
+        } else {
+            self.state_history.push(mem::take(&mut self.bit_state));
+            self.sim_controller.get_state_in(&mut self.bit_state);
+        }
 
         let wsize = self.window.inner_size();
         let ratio = wsize.width as f32 / wsize.height as f32;
 
+        self.sim_params.zoom_y = 1.0 / self.sim_params.zoom_y;
+        self.sim_params.zoom_x = 1.0 / self.sim_params.zoom_x;
+
         let scale = self.sim_params.zoom_y;
-        let dt = self.last_update.elapsed().as_secs_f32();
+        let dt = mem::replace(&mut self.last_update, Instant::now())
+            .elapsed()
+            .as_secs_f32();
         let ds = scale * dt;
+        //let dt = self.last_update.elapsed().as_secs_f32();
 
-        self.last_update = Instant::now();
-        self.sim_params.offset_x -= self.keystates.right * ds;
-        self.sim_params.offset_y -= self.keystates.up * ds;
+        //self.last_update = Instant::now();
+        self.sim_params.offset_x -= 4.0 * self.keystates.right * ds;
+        self.sim_params.offset_y -= 4.0 * self.keystates.up * ds;
 
-        let max_dim = self.sim_params.max_y.max(self.sim_params.max_x);
-        let min_zoom = 4.0;
+        //let max_dim = self.sim_params.max_y.max(self.sim_params.max_x);
+        //let min_zoom = 4.0;
 
-        let dz = (self.sim_params.zoom_y * self.keystates.zoom * dt).clamp(
-            min_zoom - self.sim_params.zoom_y,
-            max_dim - self.sim_params.zoom_y,
-        );
+        let dz = self.sim_params.zoom_y * self.keystates.zoom * dt; //
+                                                                    //.clamp(
+                                                                    //    min_zoom - self.sim_params.zoom_y,
+                                                                    //    max_dim - self.sim_params.zoom_y,
+                                                                    //);
 
         self.sim_params.zoom_y += dz;
-        self.sim_params.offset_x += ratio * dz / 2.0;
-        self.sim_params.offset_y += dz / 2.0;
+        //self.sim_params.offset_x += ratio * dz / 2.0;
+        //self.sim_params.offset_y += dz / 2.0;
 
         self.sim_params.zoom_x = self.sim_params.zoom_y * ratio;
+
+        self.sim_params.zoom_y = 1.0 / self.sim_params.zoom_y;
+        self.sim_params.zoom_x = 1.0 / self.sim_params.zoom_x;
+
+        let scale = dbg!(self.view.zoom);
+        self.view.trace_x += dt * self.view.zoom * self.keystates.right;
+        self.view.trace_y += dt * self.view.zoom * self.keystates.up;
+        self.view.zoom += dt * self.view.zoom * self.keystates.zoom;
+
+        self.sim_params = dbg!(&self.view).as_sim_params(ratio);
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -755,7 +879,7 @@ impl State {
             bytemuck::cast_slice(&self.bit_state),
             //bytemuck::cast_slice(&[1_u64, 234, 23423]),
         );
-        let sim_params_arr = self.sim_params.as_arr();
+        let sim_params_arr = dbg!(self.sim_params).as_arr();
         //dbg!(&self.sim_params);
         self.queue.write_buffer(
             &self.sim_param_buffer,
@@ -791,9 +915,9 @@ impl State {
             });
 
             render_pass.set_bind_group(0, &self.bind_group, &[]);
-            // set_vertex_buffer
-            render_pass.set_pipeline(&self.render_pipeline); // 2.
-            render_pass.draw(0..3, 0..1); // 3.
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.draw(0..self.num_vertices, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -877,7 +1001,7 @@ fn create_render_pipeline(
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[],
+                buffers: &[Vertex::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -935,7 +1059,7 @@ pub async fn run<S: RenderSim + Send + 'static>(render_input: RenderInput<S>) {
                     let tps = ticks_elapsed as f32 / time_elapsed.as_secs_f32();
 
                     let fps = frame_print_freq as f32
-                        / std::mem::replace(&mut state.last_print, Instant::now())
+                        / mem::replace(&mut state.last_print, Instant::now())
                             .elapsed()
                             .as_secs_f32();
                     println!("Avg frame time {avg_frame_time}ms, TPS: {tps}, FPS: {fps}");
@@ -991,5 +1115,5 @@ pub async fn run<S: RenderSim + Send + 'static>(render_input: RenderInput<S>) {
 }
 
 fn slice_size<T>(slice: &[T]) -> usize {
-    std::mem::size_of::<T>() * slice.len()
+    mem::size_of::<T>() * slice.len()
 }
