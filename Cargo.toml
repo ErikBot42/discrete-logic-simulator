@@ -117,9 +117,6 @@ json =      { version = "0.12.4", default-features = false                      
 nohash-hasher = "0.2.0"
 strum = { version = "0.24.1", features = ["derive", "strum_macros"] }
 strum_macros = "0.24.3"
-bumpalo = { version = "3.12.0", features = ["allocator_api"]}
-spin = { version = "0.9.5", features = ["barrier"] }
-rendezvous_swap = "*"
 #render = { path = "render"}
 pollster = "0.3.0"
 
@@ -129,7 +126,11 @@ log = "0.4.17"
 #pollster = "0.3.0"
 wgpu = "0.15.1"
 winit = "0.28.3"
+#libc = "0.2.140"
 
+#bumpalo = { version = "3.12.0", features = ["allocator_api"]}
+#spin = { version = "0.9.5", features = ["barrier"] }
+#rendezvous_swap = "*"
 
 [dev-dependencies]
 criterion = {version = "0.4", default-features = false}

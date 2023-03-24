@@ -1,5 +1,7 @@
 //use super::*;
 
+// TODO: optimizations based on ignoring parts of network.
+
 use bytemuck::cast_slice_mut;
 
 use super::bitmanip::{

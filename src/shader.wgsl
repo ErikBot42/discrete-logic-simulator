@@ -39,13 +39,18 @@ struct SimParams {
 //@group(0) @binding(3) var<storage, read> gate_id: array<u32>;
 @group(0) @binding(2) var<storage, read> trace_color_rgba: array<u32>;
 @group(0) @binding(3) var<storage, read> packed: array<u32>;
+@group(0) @binding(4) var packed_texture: texture_2d<u32>;
+@group(0) @binding(5) var packed_sampler: sampler;
 
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) trace_pos: vec2<f32>,
+    //@location(0) @interpolate(linear) tex_coords: vec2<u32>,
+    @location(1) trace_pos: vec2<f32>,
 };
 
+
+// TODO: use rectangle that masks out fragments outside board.
 @vertex
 fn vs_main(
     @builtin(vertex_index) in_vertex_index: u32,
@@ -70,41 +75,45 @@ fn vs_main(
     out.clip_position = vec4<f32>(x, y, 0.0, 1.0);
 
     let normalized_pos = (vec2<f32>(x, y) + vec2<f32>(1.0, 1.0))/vec2<f32>(2.0, 2.0);
+    //out.tex_coords = normalized_pos;
     out.trace_pos = normalized_pos;
     out.trace_pos.x *= params.zoom_x;
     out.trace_pos.y *= params.zoom_y;
     out.trace_pos -= vec2<f32>(params.offset_x, params.offset_y);
+    //out.tex_coords = vec2<u32>(u32(out.trace_pos.x), u32(out.trace_pos.y));
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+
+    //let packed_data_sample = textureSample(packed_texture, packed_sampler, in.tex_coords);
+    
+
+    //let packed_data_sample = textureLoad(packed_texture, in.tex_coords, 0).r;
+    //let packed_data_sample = textureLoad(packed_texture, vec2<u32>(u32(in.trace_pos.x), u32(in.trace_pos.y)), 0).r;
+
     let ipos = vec2<i32>(in.trace_pos);
-    let ilimit = vec2<i32>(i32(params.max_x), i32(params.max_y));
-    if ipos.x <= 0 || ipos.y <= 0 || ilimit.x < ipos.x || ilimit.y < ipos.y {
-        return vec4<f32>(0.1,0.1,0.1,1.0);
-    } else {
-        let index = u32(ipos.x + ilimit.x * ipos.y);
-        //let gate: u32 = gate_id[index];
-        //let t = trace[index];
-        
-        let mask = u32(0xFFFFFF);
-        let packed_data: u32 = packed[index];
-        let gate: u32 = packed_data & mask;
-        let t = packed_data >> u32(24);
+    let index = u32(ipos.x + i32(params.max_x) * ipos.y);
 
-        let is_on: u32 = (state[gate / u32(32)] >> (gate % u32(32))) & u32(1);
+    let mask = u32(0xFFFFFF);
+    let packed_data: u32 = packed[index];
 
-        var rgba = trace_color_rgba[is_on + t * u32(2)];
-        let ri = rgba & u32(0xFF); rgba >>= u32(8);
-        let gi = rgba & u32(0xFF); rgba >>= u32(8);
-        let bi = rgba & u32(0xFF); rgba >>= u32(8);
-        let ai = rgba & u32(0xFF); rgba >>= u32(8);
+    let gate: u32 = packed_data & mask;
+    let t = packed_data >> u32(24);
 
-        let r = f32(ri) / f32(255.0);
-        let g = f32(gi) / f32(255.0);
-        let b = f32(bi) / f32(255.0);
+    let is_on: u32 = (state[gate / u32(32)] >> (gate % u32(32))) & u32(1);
 
-        return vec4<f32>(r, g, b, 1.0);
-    }
+    var rgba = trace_color_rgba[is_on + t * u32(2)];
+    let ri = rgba & u32(0xFF); rgba >>= u32(8);
+    let gi = rgba & u32(0xFF); rgba >>= u32(8);
+    let bi = rgba & u32(0xFF); rgba >>= u32(8);
+    //let ai = rgba & u32(0xFF); rgba >>= u32(8);
+
+    let r = f32(ri) / f32(255.0);
+    let g = f32(gi) / f32(255.0);
+    let b = f32(bi) / f32(255.0);
+
+    return vec4<f32>(r, g, b, 1.0);
+    //return vec4<f32>(dpdx(r), dpdx(g), dpdx(b), 1.0);
 }

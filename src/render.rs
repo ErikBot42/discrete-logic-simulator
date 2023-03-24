@@ -60,7 +60,7 @@ use crate::logic::RenderSim;
 // }
 
 use std::marker::Send;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier, Mutex};
 
 #[derive(Debug)]
@@ -72,7 +72,112 @@ enum RenderSimTask {
     Pause,
 }
 
+// things left to evaluate:
+// # async mpsc variants.
+// Will this allways allocate?
+// How will load balancing work?
+// Guaranteed to only send valid state.
+// reciv: try_recv.unwrap() <- detect when stuff is wrong.
+//
+// # buffer pair:
+// shared atomic.
+// if incremented, sim thread writes to a buffer and swaps what buffer it will write to next
+// this means that there is 1 valid buffer avaliable to read from.
+// sim thread activates condvar when write ends.
+// next iteration, render thread waits for the condvar to know when to start reading.
+//
+// when reading, render thread swaps vec objects and then issues a sync operation.
+//
+// UNRESOLVED: sim optimizations based on all vecs having the same length.
+use std::sync::mpsc;
 struct RenderSimController {
+    interrupt: Arc<AtomicUsize>,
+    recv: mpsc::Receiver<(usize, Vec<u64>)>,
+    tick_counter: usize,
+    last_counter_reset: Instant,
+    generation: usize,
+}
+impl RenderSimController {
+    fn start_sim_thread<S: RenderSim + Send + 'static>(
+        sim: S,
+        interrupt: Arc<AtomicUsize>,
+        send: mpsc::Sender<(usize, Vec<u64>)>,
+    ) {
+        std::thread::spawn(move || {
+            let mut sim = sim;
+            let interrupt = interrupt;
+            let mut generation = 0;
+            loop {
+                let mut tick_counter = 0;
+                let max_ticks = 1;
+                while interrupt.load(Ordering::Acquire) == generation {
+                    if tick_counter < max_ticks {
+                        sim.rupdate();
+                        tick_counter += 1;
+                    } else {
+                        std::hint::spin_loop();
+                    }
+                }
+                generation = generation.wrapping_add(1);
+                let mut v = Vec::new(); // allocation :(
+                sim.get_state_in(&mut v);
+                send.send((tick_counter, v)).unwrap();
+            }
+        });
+    }
+    fn new<S: RenderSim + Send + 'static>(sim: S) -> Self {
+        let (send, recv) = mpsc::channel();
+
+        let generation = 5; // make sure there is some buffering.
+
+        let interrupt = Arc::new(AtomicUsize::new(generation));
+
+        Self::start_sim_thread(sim, interrupt.clone(), send);
+        Self {
+            interrupt,
+            recv,
+            tick_counter: 0,
+            last_counter_reset: Instant::now(),
+            generation,
+        }
+    }
+    fn get_state_in(&mut self, state: &mut Vec<u64>) {
+        self.generation += 1;
+        self.interrupt.store(self.generation, Ordering::Release);
+
+        // will just panic instead of block.
+        //let (count, mut new_state) =
+        match self.recv.try_recv() {
+            Ok((count, mut new_state)) => {
+                std::mem::swap(state, &mut new_state);
+                self.tick_counter += count;
+            },
+            Err(mpsc::TryRecvError::Empty) => {
+                // this will implicitly increase the size of the queue because generation increases
+            },
+            Err(mpsc::TryRecvError::Disconnected) => panic!("disconnected"),
+        }
+    }
+    fn get_counter(&mut self) -> (usize, Duration) {
+        (
+            std::mem::replace(&mut self.tick_counter, 0),
+            std::mem::replace(&mut self.last_counter_reset, Instant::now()).elapsed(),
+        )
+    }
+    // stop sim from calling update
+    fn pause(&mut self) {
+        todo!()
+    }
+    // resume to max speed
+    fn resume(&mut self) {
+        todo!()
+    }
+    // only on paused sim
+    fn step(&mut self, steps: usize) {
+        todo!()
+    }
+}
+/*struct RenderSimController {
     barrier: Arc<Barrier>,
     interrupt: Arc<AtomicBool>,
     shared_data: Arc<Mutex<(RenderSimTask, Vec<u64>, usize)>>,
@@ -189,7 +294,7 @@ impl RenderSimController {
     //}
     // run 1 tick = pause, send thing, resume
     // fn step(&mut self) {}
-}
+}*/
 
 pub struct TraceInfo {
     pub color: [u8; 4],
@@ -222,7 +327,7 @@ fn pack_single(gate_id: u32, trace: u8) -> u32 {
 
     gate_id | (u32::from(trace) << 24)
 }
-
+#[derive(Debug)]
 struct SimParams {
     max_x: f32,
     max_y: f32,
@@ -247,11 +352,11 @@ impl SimParams {
 #[derive(Default)]
 struct KeyStates {
     /// up (+), down (-)
-    u: f32,
+    up: f32,
     /// right (+), left (-)
-    r: f32,
+    right: f32,
     /// out (+), in (-)
-    z: f32,
+    zoom: f32,
 }
 
 struct State {
@@ -272,14 +377,14 @@ struct State {
     //trace_color_buffer: wgpu::Buffer,
     sim_params: SimParams,
     sim_param_buffer: wgpu::Buffer,
-
     bind_group: wgpu::BindGroup,
-
     keystates: KeyStates,
-
     last_update: Instant,
-
     sim_controller: RenderSimController,
+
+    last_print: Instant,
+
+    state_history: Vec<Vec<u64>>,
 }
 
 impl State {
@@ -294,7 +399,7 @@ impl State {
             max_y: render_input.height as f32,
             offset_x: 0.0,
             offset_y: 0.0,
-            zoom_x: 1.0,
+            zoom_x: render_input.width as f32,
             zoom_y: render_input.height as f32,
         };
         let sim_controller = RenderSimController::new(render_input.sim);
@@ -358,11 +463,62 @@ impl State {
             .traces
             .into_iter()
             .zip(render_input.gate_ids)
-            .map(|(trace, id)| pack_single(id, trace)).collect();
+            .map(|(trace, id)| pack_single(id, trace))
+            .collect();
         let packed_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Packed data buffer"),
             contents: bytemuck::cast_slice(&packed_data),
             usage: wgpu::BufferUsages::STORAGE,
+        });
+
+        let texture_size = wgpu::Extent3d {
+            width: render_input.width.try_into().unwrap(),
+            height: render_input.height.try_into().unwrap(),
+            depth_or_array_layers: 1,
+        };
+        let data_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("data texture"),
+            size: texture_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R32Uint,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &data_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All, // ??
+            },
+            bytemuck::cast_slice(&packed_data),
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: std::num::NonZeroU32::new(
+                    (std::mem::size_of::<u32>() * render_input.width)
+                        .try_into()
+                        .unwrap(),
+                ),
+                rows_per_image: std::num::NonZeroU32::new(render_input.height.try_into().unwrap()),
+            },
+            texture_size,
+        );
+        let data_texture_view = data_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let data_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            label: None,
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 0.0,
+            compare: None,
+            anisotropy_clamp: None,
+            border_color: None,
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -391,26 +547,6 @@ impl State {
                     },
                     count: None,
                 },
-                //wgpu::BindGroupLayoutEntry {
-                //    binding: 2,
-                //    visibility: wgpu::ShaderStages::FRAGMENT,
-                //    ty: wgpu::BindingType::Buffer {
-                //        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                //        has_dynamic_offset: false,
-                //        min_binding_size: Some(std::num::NonZeroU64::new(4).unwrap()), // TODO: what
-                //    },
-                //    count: None, // TODO: what
-                //},
-                //wgpu::BindGroupLayoutEntry {
-                //    binding: 3,
-                //    visibility: wgpu::ShaderStages::FRAGMENT,
-                //    ty: wgpu::BindingType::Buffer {
-                //        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                //        has_dynamic_offset: false,
-                //        min_binding_size: Some(std::num::NonZeroU64::new(4).unwrap()), // TODO: what
-                //    },
-                //    count: None, // TODO: what
-                //},
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -430,6 +566,22 @@ impl State {
                         min_binding_size: Some(std::num::NonZeroU64::new(4).unwrap()), // TODO: what
                     },
                     count: None, // TODO: what
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Uint,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                    count: None,
                 },
             ],
         });
@@ -465,6 +617,14 @@ impl State {
                     binding: 3,
                     resource: packed_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&data_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::Sampler(&data_sampler),
+                },
             ],
             label: Some("bind group"),
             layout: &bind_group_layout,
@@ -496,6 +656,8 @@ impl State {
             keystates: KeyStates::default(),
             last_update: Instant::now(),
             sim_controller,
+            last_print: Instant::now(),
+            state_history: Vec::new(),
             //trace_buffer,
             //gate_id_buffer,
             //trace_color_buffer,
@@ -535,12 +697,12 @@ impl State {
             };
             use VirtualKeyCode::*;
             match keycode {
-                W | F => k.u = p,
-                A | R => k.r = n,
-                S => k.u = n,
-                D | T => k.r = p,
-                J => k.z = n,
-                K => k.z = p,
+                W | F => k.up = p,
+                A | R => k.right = n,
+                S => k.up = n,
+                D | T => k.right = p,
+                J => k.zoom = n,
+                K => k.zoom = p,
                 _ => (),
             }
         };
@@ -551,24 +713,34 @@ impl State {
         //for y in self.bit_state.iter_mut() {
         //    *y += 1;
         //}
+        self.state_history.push(std::mem::take(&mut self.bit_state));
         self.sim_controller.get_state_in(&mut self.bit_state);
+        
 
         let wsize = self.window.inner_size();
         let ratio = wsize.width as f32 / wsize.height as f32;
-        self.sim_params.zoom_x = self.sim_params.zoom_y * ratio;
 
         let scale = self.sim_params.zoom_y;
         let dt = self.last_update.elapsed().as_secs_f32();
         let ds = scale * dt;
 
         self.last_update = Instant::now();
-        self.sim_params.offset_x -= self.keystates.r * ds;
-        self.sim_params.offset_y -= self.keystates.u * ds;
+        self.sim_params.offset_x -= self.keystates.right * ds;
+        self.sim_params.offset_y -= self.keystates.up * ds;
 
-        let dz = self.sim_params.zoom_y * self.keystates.z * dt;
+        let max_dim = self.sim_params.max_y.max(self.sim_params.max_x);
+        let min_zoom = 4.0;
+
+        let dz = (self.sim_params.zoom_y * self.keystates.zoom * dt).clamp(
+            min_zoom - self.sim_params.zoom_y,
+            max_dim - self.sim_params.zoom_y,
+        );
+
         self.sim_params.zoom_y += dz;
         self.sim_params.offset_x += ratio * dz / 2.0;
         self.sim_params.offset_y += dz / 2.0;
+
+        self.sim_params.zoom_x = self.sim_params.zoom_y * ratio;
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -584,6 +756,7 @@ impl State {
             //bytemuck::cast_slice(&[1_u64, 234, 23423]),
         );
         let sim_params_arr = self.sim_params.as_arr();
+        //dbg!(&self.sim_params);
         self.queue.write_buffer(
             &self.sim_param_buffer,
             0, /* offset */
@@ -618,7 +791,7 @@ impl State {
             });
 
             render_pass.set_bind_group(0, &self.bind_group, &[]);
-
+            // set_vertex_buffer
             render_pass.set_pipeline(&self.render_pipeline); // 2.
             render_pass.draw(0..3, 0..1); // 3.
         }
@@ -645,15 +818,15 @@ fn prep_surface(
         .copied()
         .find(|f| !f.describe().srgb)
         .unwrap_or(dbg!(surface_capabilites.formats[0]));
-    dbg!(surface_format);
-    dbg!(surface_capabilites.formats[0]);
+    dbg!(&surface_format);
+    dbg!(&surface_capabilites);
 
     let surface_config: wgpu::SurfaceConfiguration = wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         format: surface_format,
         width: size.width,
         height: size.height,
-        present_mode: surface_capabilites.present_modes[0],
+        present_mode: wgpu::PresentMode::AutoVsync, // surface_capabilites.present_modes[0]
         alpha_mode: surface_capabilites.alpha_modes[0],
         view_formats: vec![],
     };
@@ -667,7 +840,7 @@ async fn prep_device(
 ) -> (wgpu::Adapter, wgpu::Device, wgpu::Queue) {
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::default(),
+            power_preference: wgpu::PowerPreference::HighPerformance, //default(),
             compatible_surface: Some(surface),
             force_fallback_adapter: false,
         })
@@ -755,11 +928,17 @@ pub async fn run<S: RenderSim + Send + 'static>(render_input: RenderInput<S>) {
                 accum_time += last_frame_inst.elapsed().as_secs_f32();
                 last_frame_inst = Instant::now();
                 frame_count += 1;
-                if frame_count == 200 {
+                let frame_print_freq = 60;
+                if frame_count == frame_print_freq {
                     let avg_frame_time = accum_time * 1000.0 / frame_count as f32;
                     let (ticks_elapsed, time_elapsed) = state.sim_controller.get_counter();
                     let tps = ticks_elapsed as f32 / time_elapsed.as_secs_f32();
-                    println!("Avg frame time {avg_frame_time}ms, TPS: {tps}");
+
+                    let fps = frame_print_freq as f32
+                        / std::mem::replace(&mut state.last_print, Instant::now())
+                            .elapsed()
+                            .as_secs_f32();
+                    println!("Avg frame time {avg_frame_time}ms, TPS: {tps}, FPS: {fps}");
                     accum_time = 0.0;
                     frame_count = 0;
                 }
