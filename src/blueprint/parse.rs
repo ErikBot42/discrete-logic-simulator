@@ -478,8 +478,8 @@ impl VcbPlainBoard {
                     .array_chunks::<4>()
                     .copied()
                     .map(Trace::from_raw_color)
-                    .collect::<Option<Vec<_>>>()
-                    .context("invalid color found")?;
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|c| anyhow::anyhow!("invalid color: {c:?}"))?;
                 if traces.len() == width * height {
                     VcbPlainBoard {
                         traces,

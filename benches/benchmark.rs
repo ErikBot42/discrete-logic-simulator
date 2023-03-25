@@ -1,4 +1,4 @@
-#![feature(bench_black_box)]
+//#![feature(bench_black_box)]
 use criterion::{criterion_group, criterion_main, Criterion};
 
 use logic_simulator::blueprint::*;
@@ -7,10 +7,10 @@ use std::hint::black_box;
 
 fn input_data() -> Vec<(&'static str, VcbInput)> {
     vec![
-        (
-            "serial mult",
-            VcbInput::World(include_str!("../test_files/serial_multipliers.vcb").to_string()),
-        ),
+        //(
+        //    "serial mult",
+        //    VcbInput::World(include_str!("../test_files/serial_multipliers.vcb").to_string()),
+        //),
         (
             "big_decoder",
             VcbInput::BlueprintLegacy(
@@ -81,15 +81,15 @@ fn bench_parsing<T: LogicSim>(
 
 fn criterion_benchmark_parsing(c: &mut Criterion) {
     let input = input_data();
-    bench_parsing::<ReferenceSim>("parse_reference", c, &input);
-    bench_parsing::<SimdSim>("parse_simd", c, &input);
-    bench_parsing::<ScalarSim>("parse_scalar", c, &input);
+    //bench_parsing::<ReferenceSim>("parse_reference", c, &input);
+    //bench_parsing::<SimdSim>("parse_simd", c, &input);
+    //bench_parsing::<ScalarSim>("parse_scalar", c, &input);
     bench_parsing::<BitPackSim>("parse_bit", c, &input);
 }
 
 criterion_group!(
     benches,
-    criterion_benchmark_runtime,
-    //criterion_benchmark_parsing
+    //criterion_benchmark_runtime,
+    criterion_benchmark_parsing
 );
 criterion_main!(benches);

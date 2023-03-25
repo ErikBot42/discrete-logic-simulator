@@ -7,63 +7,95 @@ use std::hash::Hash;
 use std::iter::repeat;
 use std::ops::Index;
 
+fn reorder_by_indices<T>(data: &mut [T], indices: Vec<usize>) {
+    reorder_by_indices_with(|a, b| data.swap(a, b), indices)
+}
+fn reorder_by_indices_with<F: FnMut(usize, usize)>(mut swap_indices: F, mut indices: Vec<usize>) {
+    for i in 0..indices.len() {
+        if indices[i] != i {
+            let mut current = i;
+            loop {
+                let target = indices[current];
+                indices[current] = current;
+                if indices[target] == target {
+                    break;
+                }
+                swap_indices(current, target);
+                current = target;
+            }
+        }
+    }
+}
+fn foo() {
+    let mut v = vec![1, 2, 3, 4];
+    let mut order = vec![3, 1, 0, 2];
+    for i in 0..order.len() {
+        // We iterate through the arrows in the cycle. Keep track of the
+        // element before and after the arrow. (left is before, right after)
+        let mut left = i;
+        let mut right = order[i];
+
+        // Until we are back to the beginning, we swap.
+        while right != i {
+            // Swap the two elements.
+            v.swap(left, right);
+            // Mark the previous element as a length-one loop.
+            order[left] = left;
+            // Go to the next arrow.
+            left = right;
+            right = order[right];
+        }
+        // Mark the last element as a length-one loop as well.
+        order[left] = left;
+    }
+}
+#[derive(Clone)]
 pub(crate) struct Csr<T> {
     pub(crate) indexes: Vec<T>,
     pub(crate) outputs: Vec<T>,
 }
-impl<T: std::convert::TryFrom<usize>> Csr<T>
+impl<T> Csr<T>
 where
     <T as TryFrom<usize>>::Error: std::fmt::Debug,
+    T: std::convert::TryFrom<usize>,
 {
     pub(crate) fn new(outputs_iter: impl Iterator<Item = Vec<T>>) -> Self {
-        let mut indexes: Vec<T> = Vec::new();
-        let mut outputs: Vec<T> = Vec::new();
-        for mut gate_outputs in outputs_iter {
-            //TODO: use Csr2::push()
-            indexes.push(outputs.len().try_into().unwrap());
-            outputs.append(&mut gate_outputs);
+        let mut this = Self::default();
+        for gate_outputs in outputs_iter {
+            this.push(gate_outputs.into_iter());
         }
-        indexes.push(outputs.len().try_into().unwrap());
-        Self { indexes, outputs }
+        this
     }
     fn push(&mut self, new_outputs: impl Iterator<Item = T>) {
         self.outputs.extend(new_outputs);
         self.indexes.push(self.outputs.len().try_into().unwrap());
     }
 }
-
-//pub(crate) struct Csr {
-//    pub(crate) indexes: Vec<IndexType>,
-//    pub(crate) outputs: Vec<IndexType>,
-//}
-//impl Csr {
-//    /// Make `Csr` from outputs list
-//    pub(crate) fn new(outputs_iter: impl Iterator<Item = Vec<IndexType>>) -> Self {
-//        let mut indexes: Vec<IndexType> = Vec::new();
-//        let mut outputs: Vec<IndexType> = Vec::new();
-//        for mut gate_outputs in outputs_iter {
-//            indexes.push(outputs.len().try_into().unwrap());
-//            outputs.append(&mut gate_outputs);
-//        }
-//        indexes.push(outputs.len().try_into().unwrap());
-//        Self { indexes, outputs }
-//    }
-//    // Pack `Csr` into single array
-//    //pub(crate) fn single(&self) -> Vec<IndexType> {
-//    //    let indexes = &self.indexes;
-//    //    let outputs = &self.outputs;
-//
-//    //    let offset = indexes.len();
-//    //    let mut arr: Vec<IndexType> = Vec::with_capacity(indexes.len() + outputs.len());
-//    //    arr.extend(
-//    //        indexes
-//    //            .iter()
-//    //            .map(|x| *x + IndexType::try_from(offset).unwrap()),
-//    //    );
-//    //    arr.extend_from_slice(outputs);
-//    //    arr
-//    //}
-//}
+impl<T> std::ops::Index<usize> for Csr<T>
+where
+    <T as TryFrom<usize>>::Error: std::fmt::Debug,
+    T: std::convert::TryFrom<usize> + Copy,
+    usize: From<T>,
+{
+    type Output = [T]; // = <std::ops::Range<T> as std::slice::SliceIndex<[T]>>::Output;
+    fn index(&self, i: usize) -> &Self::Output {
+        let from: usize = self.indexes[i].try_into().unwrap();
+        let to: usize = self.indexes[i + 1].try_into().unwrap();
+        &self.outputs[from..to]
+    }
+}
+impl<T> Default for Csr<T>
+where
+    T: std::convert::TryFrom<usize>,
+    <T as TryFrom<usize>>::Error: std::fmt::Debug,
+{
+    fn default() -> Self {
+        Self {
+            indexes: vec![0_usize.try_into().unwrap()],
+            outputs: Vec::new(),
+        }
+    }
+}
 
 /// Iterate through all gates, skipping any
 /// placeholder gates.
@@ -228,7 +260,6 @@ impl InitializedNetwork {
             let key = old_gate.calc_key();
             let new_id = new_gates.len();
             if let Some(existing_new_id) = gate_key_to_new_id.get(&key) {
-                //dbg!(format!("{old_gate_id} -> {existing_new_id} {:?}", &key));
                 // this gate is same as other, so use other's id.
                 assert!(old_to_new_id.len() == old_gate_id);
                 old_to_new_id.push((*existing_new_id).try_into().unwrap());

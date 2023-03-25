@@ -4,40 +4,56 @@ use strum_macros::EnumIter;
 #[rustfmt::skip]
 mod vcb_colors {
     //                                               r,   g,   b,   w
-    pub(crate) const COLOR_GRAY:       [u8; 4] = [  42,  53,  65, 255 ];
-    pub(crate) const COLOR_WHITE:      [u8; 4] = [ 159, 168, 174, 255 ];
-    pub(crate) const COLOR_RED:        [u8; 4] = [ 161,  85,  94, 255 ];
-    pub(crate) const COLOR_ORANGE1:    [u8; 4] = [ 161, 108,  86, 255 ];
-    pub(crate) const COLOR_ORANGE2:    [u8; 4] = [ 161, 133,  86, 255 ];
-    pub(crate) const COLOR_ORANGE3:    [u8; 4] = [ 161, 152,  86, 255 ];
-    pub(crate) const COLOR_YELLOW:     [u8; 4] = [ 153, 161,  86, 255 ];
-    pub(crate) const COLOR_GREEN1:     [u8; 4] = [ 136, 161,  86, 255 ];
-    pub(crate) const COLOR_GREEN2:     [u8; 4] = [ 108, 161,  86, 255 ];
-    pub(crate) const COLOR_CYAN1:      [u8; 4] = [  86, 161, 141, 255 ];
-    pub(crate) const COLOR_CYAN2:      [u8; 4] = [  86, 147, 161, 255 ];
-    pub(crate) const COLOR_BLUE1:      [u8; 4] = [  86, 123, 161, 255 ];
-    pub(crate) const COLOR_BLUE2:      [u8; 4] = [  86,  98, 161, 255 ];
-    pub(crate) const COLOR_PURPLE:     [u8; 4] = [ 102,  86, 161, 255 ];
-    pub(crate) const COLOR_MAGENTA:    [u8; 4] = [ 135,  86, 161, 255 ];
-    pub(crate) const COLOR_PINK:       [u8; 4] = [ 161,  85, 151, 255 ];
-    pub(crate) const COLOR_WRITE:      [u8; 4] = [  77,  56,  62, 255 ];
-    pub(crate) const COLOR_EMPTY:      [u8; 4] = [   0,   0,   0,   0 ];
-    pub(crate) const COLOR_CROSS:      [u8; 4] = [ 102, 120, 142, 255 ];
-    pub(crate) const COLOR_READ:       [u8; 4] = [  46,  71,  93, 255 ];
-    pub(crate) const COLOR_BUFFER:     [u8; 4] = [ 146, 255,  99, 255 ];
-    pub(crate) const COLOR_AND:        [u8; 4] = [ 255, 198,  99, 255 ];
-    pub(crate) const COLOR_OR:         [u8; 4] = [  99, 242, 255, 255 ];
-    pub(crate) const COLOR_XOR:        [u8; 4] = [ 174, 116, 255, 255 ];
-    pub(crate) const COLOR_NOT:        [u8; 4] = [ 255,  98, 138, 255 ];
-    pub(crate) const COLOR_NAND:       [u8; 4] = [ 255, 162,   0, 255 ];
-    pub(crate) const COLOR_NOR:        [u8; 4] = [  48, 217, 255, 255 ];
-    pub(crate) const COLOR_XNOR:       [u8; 4] = [ 166,   0, 255, 255 ];
-    pub(crate) const COLOR_LATCHON:    [u8; 4] = [  99, 255, 159, 255 ];
-    pub(crate) const COLOR_LATCHOFF:   [u8; 4] = [  56,  77,  71, 255 ];
-    pub(crate) const COLOR_CLOCK:      [u8; 4] = [ 255,   0,  65, 255 ];
-    pub(crate) const COLOR_LED:        [u8; 4] = [ 255, 255, 255, 255 ];
-    pub(crate) const COLOR_ANNOTATION: [u8; 4] = [  58,  69,  81, 255 ];
-    pub(crate) const COLOR_FILLER:     [u8; 4] = [ 140, 171, 161, 255 ];
+    pub(crate) const COLOR_GRAY:       [u8; 4] =    [42,  53,  65,  255];
+    pub(crate) const COLOR_WHITE:      [u8; 4] =    [159, 168, 174, 255];
+    pub(crate) const COLOR_RED:        [u8; 4] =    [161, 85,  94,  255];
+    pub(crate) const COLOR_ORANGE1:    [u8; 4] =    [161, 108, 86,  255];
+    pub(crate) const COLOR_ORANGE2:    [u8; 4] =    [161, 133, 86,  255];
+    pub(crate) const COLOR_ORANGE3:    [u8; 4] =    [161, 152, 86,  255];
+    pub(crate) const COLOR_YELLOW:     [u8; 4] =    [153, 161, 86,  255];
+    pub(crate) const COLOR_GREEN1:     [u8; 4] =    [136, 161, 86,  255];
+    pub(crate) const COLOR_GREEN2:     [u8; 4] =    [108, 161, 86,  255];
+    pub(crate) const COLOR_CYAN1:      [u8; 4] =    [86,  161, 141, 255];
+    pub(crate) const COLOR_CYAN2:      [u8; 4] =    [86,  147, 161, 255];
+    pub(crate) const COLOR_BLUE1:      [u8; 4] =    [86,  123, 161, 255];
+    pub(crate) const COLOR_BLUE2:      [u8; 4] =    [86,  98,  161, 255];
+    pub(crate) const COLOR_PURPLE:     [u8; 4] =    [102, 86,  161, 255];
+    pub(crate) const COLOR_MAGENTA:    [u8; 4] =    [135, 86,  161, 255];
+    pub(crate) const COLOR_PINK:       [u8; 4] =    [161, 85,  151, 255];
+    pub(crate) const COLOR_WRITE:      [u8; 4] =    [77,  56,  62,  255];
+    pub(crate) const COLOR_CROSS:      [u8; 4] =    [102, 120, 142, 255];
+    pub(crate) const COLOR_READ:       [u8; 4] =    [46,  71,  93,  255];
+    pub(crate) const COLOR_BUFFER:     [u8; 4] =    [146, 255, 99,  255];
+    pub(crate) const COLOR_AND:        [u8; 4] =    [255, 198, 99,  255];
+    pub(crate) const COLOR_OR:         [u8; 4] =    [99,  242, 255, 255];
+    pub(crate) const COLOR_XOR:        [u8; 4] =    [174, 116, 255, 255];
+    pub(crate) const COLOR_NOT:        [u8; 4] =    [255, 98,  138, 255];
+    pub(crate) const COLOR_NAND:       [u8; 4] =    [255, 162, 0,   255];
+    pub(crate) const COLOR_NOR:        [u8; 4] =    [48,  217, 255, 255];
+    pub(crate) const COLOR_XNOR:       [u8; 4] =    [166, 0,   255, 255];
+    pub(crate) const COLOR_LATCHON:    [u8; 4] =    [99,  255, 159, 255];
+    pub(crate) const COLOR_LATCHOFF:   [u8; 4] =    [56,  77,  71,  255];
+    pub(crate) const COLOR_CLOCK:      [u8; 4] =    [255, 0,   65,  255];
+    pub(crate) const COLOR_LED:        [u8; 4] =    [255, 255, 255, 255];
+    pub(crate) const COLOR_ANNOTATION: [u8; 4] =    [58,  69,  81,  255];
+    pub(crate) const COLOR_FILLER:     [u8; 4] =    [140, 171, 161, 255];
+    pub(crate) const COLOR_TUNNEL:     [u8; 4] =    [83,  85,  114, 255];
+    pub(crate) const COLOR_MESH:       [u8; 4] =    [100, 106, 87,  255];
+    pub(crate) const COLOR_WIRELESS_0: [u8; 4] =    [255, 0,   191, 255];
+    pub(crate) const COLOR_WIRELESS_1: [u8; 4] =    [255, 0,   175, 255];
+    pub(crate) const COLOR_WIRELESS_2: [u8; 4] =    [255, 0,   159, 255];
+    pub(crate) const COLOR_WIRELESS_3: [u8; 4] =    [255, 0,   143, 255];
+    pub(crate) const COLOR_TIMER:      [u8; 4] =    [255, 103, 0,   255];
+    pub(crate) const COLOR_RANDOM:     [u8; 4] =    [229, 255, 0,   255];
+    pub(crate) const COLOR_BREAK:      [u8; 4] =    [224, 0,   0,   255];
+    pub(crate) const COLOR_BUS_RED:    [u8; 4] =    [122, 47,  36,  255];
+    pub(crate) const COLOR_BUS_GREEN:  [u8; 4] =    [62,  122, 36,  255];
+    pub(crate) const COLOR_BUS_BLUE:   [u8; 4] =    [36,  65,  122, 255];
+    pub(crate) const COLOR_BUS_TEAL:   [u8; 4] =    [37,  98,  122, 255];
+    pub(crate) const COLOR_BUS_PURPLE: [u8; 4] =    [122, 45,  102, 255];
+    pub(crate) const COLOR_BUS_YELLOW: [u8; 4] =    [122, 112, 36,  255];
+    
+    pub(crate) const COLOR_EMPTY:      [u8; 4] = [0, 0, 0, 0];
     pub(crate) const COLOR_VMEM:       [u8; 4] = COLOR_LATCHOFF;
 }
 use super::*;
@@ -79,6 +95,22 @@ pub(crate) enum Trace {
     Annotation,
     Filler,
     Vmem,
+
+    Tunnel,
+    Mesh,
+    Wireless0,
+    Wireless1,
+    Wireless2,
+    Wireless3,
+    Timer,
+    Random,
+    Break,
+    BusRed,
+    BusGreen,
+    BusBlue,
+    BusTeal,
+    BusPurple,
+    BusYellow,
 }
 impl Trace {
     pub(crate) fn get_color(&self, state: bool) -> [u8; 4] {
@@ -91,42 +123,59 @@ impl Trace {
 
     #[rustfmt::skip]
     pub(crate) fn to_color_raw(self) -> [u8; 4] {
+        use vcb_colors::*;
+        use Trace::*;
         match self {
-            Trace::Gray       => vcb_colors::COLOR_GRAY,
-            Trace::White      => vcb_colors::COLOR_WHITE,
-            Trace::Red        => vcb_colors::COLOR_RED,
-            Trace::Orange1    => vcb_colors::COLOR_ORANGE1,
-            Trace::Orange2    => vcb_colors::COLOR_ORANGE2,
-            Trace::Orange3    => vcb_colors::COLOR_ORANGE3,
-            Trace::Yellow     => vcb_colors::COLOR_YELLOW,
-            Trace::Green1     => vcb_colors::COLOR_GREEN1,
-            Trace::Green2     => vcb_colors::COLOR_GREEN2,
-            Trace::Cyan1      => vcb_colors::COLOR_CYAN1,
-            Trace::Cyan2      => vcb_colors::COLOR_CYAN2,
-            Trace::Blue1      => vcb_colors::COLOR_BLUE1,
-            Trace::Blue2      => vcb_colors::COLOR_BLUE2,
-            Trace::Purple     => vcb_colors::COLOR_PURPLE,
-            Trace::Magenta    => vcb_colors::COLOR_MAGENTA,
-            Trace::Pink       => vcb_colors::COLOR_PINK,
-            Trace::Write      => vcb_colors::COLOR_WRITE,
-            Trace::Empty      => vcb_colors::COLOR_EMPTY,
-            Trace::Cross      => vcb_colors::COLOR_CROSS,
-            Trace::Read       => vcb_colors::COLOR_READ,
-            Trace::Buffer     => vcb_colors::COLOR_BUFFER,
-            Trace::And        => vcb_colors::COLOR_AND,
-            Trace::Or         => vcb_colors::COLOR_OR,
-            Trace::Xor        => vcb_colors::COLOR_XOR,
-            Trace::Not        => vcb_colors::COLOR_NOT,
-            Trace::Nand       => vcb_colors::COLOR_NAND,
-            Trace::Nor        => vcb_colors::COLOR_NOR,
-            Trace::Xnor       => vcb_colors::COLOR_XNOR,
-            Trace::LatchOn    => vcb_colors::COLOR_LATCHON,
-            Trace::LatchOff   => vcb_colors::COLOR_LATCHOFF,
-            Trace::Clock      => vcb_colors::COLOR_CLOCK,
-            Trace::Led        => vcb_colors::COLOR_LED,
-            Trace::Annotation => vcb_colors::COLOR_ANNOTATION,
-            Trace::Filler     => vcb_colors::COLOR_FILLER,
-            Trace::Vmem       => vcb_colors::COLOR_VMEM,
+            Gray       => COLOR_GRAY,
+            White      => COLOR_WHITE,
+            Red        => COLOR_RED,
+            Orange1    => COLOR_ORANGE1,
+            Orange2    => COLOR_ORANGE2,
+            Orange3    => COLOR_ORANGE3,
+            Yellow     => COLOR_YELLOW,
+            Green1     => COLOR_GREEN1,
+            Green2     => COLOR_GREEN2,
+            Cyan1      => COLOR_CYAN1,
+            Cyan2      => COLOR_CYAN2,
+            Blue1      => COLOR_BLUE1,
+            Blue2      => COLOR_BLUE2,
+            Purple     => COLOR_PURPLE,
+            Magenta    => COLOR_MAGENTA,
+            Pink       => COLOR_PINK,
+            Write      => COLOR_WRITE,
+            Empty      => COLOR_EMPTY,
+            Cross      => COLOR_CROSS,
+            Read       => COLOR_READ,
+            Buffer     => COLOR_BUFFER,
+            And        => COLOR_AND,
+            Or         => COLOR_OR,
+            Xor        => COLOR_XOR,
+            Not        => COLOR_NOT,
+            Nand       => COLOR_NAND,
+            Nor        => COLOR_NOR,
+            Xnor       => COLOR_XNOR,
+            LatchOn    => COLOR_LATCHON,
+            LatchOff   => COLOR_LATCHOFF,
+            Clock      => COLOR_CLOCK,
+            Led        => COLOR_LED,
+            Annotation => COLOR_ANNOTATION,
+            Filler     => COLOR_FILLER,
+            Vmem       => COLOR_VMEM,
+            Tunnel     => COLOR_TUNNEL,
+            Mesh       => COLOR_MESH,
+            Wireless0  => COLOR_WIRELESS_0,
+            Wireless1  => COLOR_WIRELESS_1,
+            Wireless2  => COLOR_WIRELESS_2,
+            Wireless3  => COLOR_WIRELESS_3,
+            Timer      => COLOR_TIMER,
+            Random     => COLOR_RANDOM,
+            Break      => COLOR_BREAK,
+            BusRed     => COLOR_BUS_RED,
+            BusGreen   => COLOR_BUS_GREEN,
+            BusBlue    => COLOR_BUS_BLUE,
+            BusTeal    => COLOR_BUS_TEAL,
+            BusPurple  => COLOR_BUS_PURPLE,
+            BusYellow  => COLOR_BUS_YELLOW,
         }
     }
     pub(crate) fn to_color_on(self) -> [u8; 4] {
@@ -157,43 +206,64 @@ impl Trace {
     }
     // colors from file format
     #[rustfmt::skip]
-    pub(crate) fn from_raw_color(color: [u8; 4]) -> Option<Self> {
+    pub(crate) fn from_raw_color(color: [u8; 4]) -> Result<Self, [u8;4]> {
+        use vcb_colors::*;
+        use Trace::*;
         match color {
-            vcb_colors::COLOR_GRAY       => Some(Trace::Gray),
-            vcb_colors::COLOR_WHITE      => Some(Trace::White),
-            vcb_colors::COLOR_RED        => Some(Trace::Red),
-            vcb_colors::COLOR_ORANGE1    => Some(Trace::Orange1),
-            vcb_colors::COLOR_ORANGE2    => Some(Trace::Orange2),
-            vcb_colors::COLOR_ORANGE3    => Some(Trace::Orange3),
-            vcb_colors::COLOR_YELLOW     => Some(Trace::Yellow),
-            vcb_colors::COLOR_GREEN1     => Some(Trace::Green1),
-            vcb_colors::COLOR_GREEN2     => Some(Trace::Green2),
-            vcb_colors::COLOR_CYAN1      => Some(Trace::Cyan1),
-            vcb_colors::COLOR_CYAN2      => Some(Trace::Cyan2),
-            vcb_colors::COLOR_BLUE1      => Some(Trace::Blue1),
-            vcb_colors::COLOR_BLUE2      => Some(Trace::Blue2),
-            vcb_colors::COLOR_PURPLE     => Some(Trace::Purple),
-            vcb_colors::COLOR_MAGENTA    => Some(Trace::Magenta),
-            vcb_colors::COLOR_PINK       => Some(Trace::Pink),
-            vcb_colors::COLOR_WRITE      => Some(Trace::Write),
-            vcb_colors::COLOR_EMPTY      => Some(Trace::Empty),
-            vcb_colors::COLOR_CROSS      => Some(Trace::Cross),
-            vcb_colors::COLOR_READ       => Some(Trace::Read),
-            vcb_colors::COLOR_BUFFER     => Some(Trace::Buffer),
-            vcb_colors::COLOR_AND        => Some(Trace::And),
-            vcb_colors::COLOR_OR         => Some(Trace::Or),
-            vcb_colors::COLOR_XOR        => Some(Trace::Xor),
-            vcb_colors::COLOR_NOT        => Some(Trace::Not),
-            vcb_colors::COLOR_NAND       => Some(Trace::Nand),
-            vcb_colors::COLOR_NOR        => Some(Trace::Nor),
-            vcb_colors::COLOR_XNOR       => Some(Trace::Xnor),
-            vcb_colors::COLOR_LATCHON    => Some(Trace::LatchOn),
-            vcb_colors::COLOR_LATCHOFF   => Some(Trace::LatchOff),
-            vcb_colors::COLOR_CLOCK      => Some(Trace::Clock),
-            vcb_colors::COLOR_LED        => Some(Trace::Led),
-            vcb_colors::COLOR_ANNOTATION => Some(Trace::Annotation),
-            vcb_colors::COLOR_FILLER     => Some(Trace::Filler),
-            _ => None,
+            COLOR_GRAY       => Ok(Gray),
+            COLOR_WHITE      => Ok(White),
+            COLOR_RED        => Ok(Red),
+            COLOR_ORANGE1    => Ok(Orange1),
+            COLOR_ORANGE2    => Ok(Orange2),
+            COLOR_ORANGE3    => Ok(Orange3),
+            COLOR_YELLOW     => Ok(Yellow),
+            COLOR_GREEN1     => Ok(Green1),
+            COLOR_GREEN2     => Ok(Green2),
+            COLOR_CYAN1      => Ok(Cyan1),
+            COLOR_CYAN2      => Ok(Cyan2),
+            COLOR_BLUE1      => Ok(Blue1),
+            COLOR_BLUE2      => Ok(Blue2),
+            COLOR_PURPLE     => Ok(Purple),
+            COLOR_MAGENTA    => Ok(Magenta),
+            COLOR_PINK       => Ok(Pink),
+            COLOR_WRITE      => Ok(Write),
+            COLOR_EMPTY      => Ok(Empty),
+            COLOR_CROSS      => Ok(Cross),
+            COLOR_READ       => Ok(Read),
+            COLOR_BUFFER     => Ok(Buffer),
+            COLOR_AND        => Ok(And),
+            COLOR_OR         => Ok(Or),
+            COLOR_XOR        => Ok(Xor),
+            COLOR_NOT        => Ok(Not),
+            COLOR_NAND       => Ok(Nand),
+            COLOR_NOR        => Ok(Nor),
+            COLOR_XNOR       => Ok(Xnor),
+            COLOR_LATCHON    => Ok(LatchOn),
+            COLOR_LATCHOFF   => Ok(LatchOff),
+            COLOR_CLOCK      => Ok(Clock),
+            COLOR_LED        => Ok(Led),
+            COLOR_ANNOTATION => Ok(Annotation),
+            COLOR_FILLER     => Ok(Filler),
+
+            COLOR_TUNNEL     => Ok(Tunnel),
+            COLOR_MESH       => Ok(Mesh),
+            COLOR_WIRELESS_0 => Ok(Wireless0),
+            COLOR_WIRELESS_1 => Ok(Wireless1),
+            COLOR_WIRELESS_2 => Ok(Wireless2),
+            COLOR_WIRELESS_3 => Ok(Wireless3),
+            COLOR_TIMER      => Ok(Timer),
+            COLOR_RANDOM     => Ok(Random),
+            COLOR_BREAK      => Ok(Break),
+            COLOR_BUS_RED    => Ok(BusRed),
+            COLOR_BUS_GREEN  => Ok(BusGreen),
+            COLOR_BUS_BLUE   => Ok(BusBlue),
+            COLOR_BUS_TEAL   => Ok(BusTeal),
+            COLOR_BUS_PURPLE => Ok(BusPurple),
+            COLOR_BUS_YELLOW => Ok(BusYellow),
+
+
+            _ => Err(color),
+            //_ => {dbg!(color); Ok(Gray)},
         }
     }
     #[inline]
@@ -312,6 +382,7 @@ impl Trace {
             Trace::Led => "🏁",
             Trace::Annotation => "🥚",
             Trace::Filler => "🌯",
+            _ => unimplemented!("trace type not implemented"),
         }
     }
 
@@ -351,6 +422,7 @@ impl Trace {
             Trace::Led => ":led:",
             Trace::Annotation => ":non:",
             Trace::Filler => ":fil:",
+            _ => unimplemented!("trace type missing"),
         }
     }
 }

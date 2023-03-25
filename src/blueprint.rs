@@ -28,10 +28,12 @@ pub struct VcbBoard<T: LogicSim> {
     traces: Vec<Trace>,
     element_ids_internal: Vec<Option<usize>>,
     element_ids_external: Vec<Option<usize>>, // to debug
-    translation_table: Vec<u32>,
     pub(crate) logic_sim: T,
     pub(crate) width: usize,
     pub(crate) height: usize,
+    
+    #[cfg(test)]
+    translation_table: Vec<u32>,
 }
 impl<T: LogicSim + RenderSim + Clone + Send + 'static> VcbBoard<T> {
     pub fn run_gpu(&self) {
@@ -92,10 +94,11 @@ impl<T: LogicSim> VcbBoard<T> {
             element_ids_internal: element_ids,
             element_ids_external,
             traces: plain.traces,
-            translation_table,
             logic_sim,
             width,
             height,
+            #[cfg(test)]
+            translation_table,
         }
     }
 }
