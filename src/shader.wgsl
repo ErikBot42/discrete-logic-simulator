@@ -48,43 +48,15 @@ struct VertexInput {
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     //@location(0) @interpolate(linear) tex_coords: vec2<u32>,
-    @location(1) trace_pos: vec2<f32>,
+    @location(0) trace_pos: vec2<f32>,
 };
 
 
-// TODO: use rectangle that masks out fragments outside board.
 @vertex
 fn vs_main(
     //@builtin(vertex_index) in_vertex_index: u32,
     model: VertexInput,
 ) -> VertexOutput {
-    
-    //var x: f32;
-    //var y: f32;
-    //x = model.position.x;
-    //y = model.position.y;
-    //switch in_vertex_index {
-    //    case 0u: {
-    //        x = 3.0; // right
-    //        y = -1.0;
-    //    }
-    //    case 1u: {
-    //        x = -1.0; // top
-    //        y = 3.0;
-    //    }
-    //    default { // 2
-    //        x = -1.0; // left
-    //        y = -1.0;
-    //    }
-    //}
-
-    //let normalized_pos = (vec2<f32>(x, y) + vec2<f32>(1.0, 1.0))/vec2<f32>(2.0, 2.0);
-    //out.tex_coords = normalized_pos;
-    //out.trace_pos = normalized_pos;
-    //out.trace_pos.x *= params.zoom_x;
-    //out.trace_pos.y *= params.zoom_y;
-    //out.trace_pos -= vec2<f32>(params.offset_x, params.offset_y);
-    //out.tex_coords = vec2<u32>(u32(out.trace_pos.x), u32(out.trace_pos.y));
     
     var out: VertexOutput;
     out.clip_position = vec4<f32>((model.position + params.offset) * params.zoom  , 0.0, 1.0);
@@ -101,18 +73,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     //let packed_data_sample = textureLoad(packed_texture, in.tex_coords, 0).r;
     //let packed_data_sample = textureLoad(packed_texture, vec2<u32>(u32(in.trace_pos.x), u32(in.trace_pos.y)), 0).r;
 
-    let ipos = vec2<i32>(in.trace_pos);
-    let index = u32(ipos.x + i32(params.max_x) * ipos.y);
-
+    let ipos = vec2<u32>(in.trace_pos);
+    let index = u32(ipos.x + u32(params.max_x) * ipos.y);
     let mask = u32(0xFFFFFF);
     let packed_data: u32 = packed[index];
-
     let gate: u32 = packed_data & mask;
     let t = packed_data >> u32(24);
-
     let is_on: u32 = (state[gate / u32(32)] >> (gate % u32(32))) & u32(1);
-
     var rgba = trace_color_rgba[is_on + t * u32(2)];
+
+    // rgba -> vec4<f32>
     let ri = rgba & u32(0xFF); rgba >>= u32(8);
     let gi = rgba & u32(0xFF); rgba >>= u32(8);
     let bi = rgba & u32(0xFF); rgba >>= u32(8);

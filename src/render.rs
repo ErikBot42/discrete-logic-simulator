@@ -171,7 +171,6 @@ impl RenderSimController {
         self.interrupt.store(self.generation, Ordering::Release);
 
         // will just panic instead of block.
-        //let (count, mut new_state) =
         match self.recv.try_recv() {
             Ok((count, mut new_state)) => {
                 mem::swap(state, &mut new_state);
@@ -352,7 +351,7 @@ fn pack_single(gate_id: u32, trace: u8) -> u32 {
 
     gate_id | (u32::from(trace) << 24)
 }
-#[derive(Copy, Clone, Debug)]
+#[derive(Default, Copy, Clone, Debug)]
 struct SimParams {
     max_x: f32,
     max_y: f32,
@@ -475,14 +474,6 @@ impl State {
         //    max_x: render_input.width as f32,
         //    max_y: render_input.height as f32,
         //};
-        let sim_params = SimParams {
-            max_x: render_input.width as f32,
-            max_y: render_input.height as f32,
-            offset_x: 0.0,
-            offset_y: 0.0,
-            zoom_x: 1.0 as f32,
-            zoom_y: 1.0 as f32,
-        };
         let sim_controller = RenderSimController::new(render_input.sim);
 
         let window_size = window.inner_size();
@@ -492,18 +483,10 @@ impl State {
         let surface = unsafe { instance.create_surface(&window) }.unwrap();
         let (adapter, device, queue) = prep_device(instance, &surface).await;
         let (_surface_capabilites, surface_config) =
-            prep_surface(&surface, adapter, window_size, &device);
+            prep_surface(&surface, &adapter, window_size, &device);
 
-        let shader: wgpu::ShaderModule = device.create_shader_module(
-            //wgpu::include_wgsl!("shader.wgsl")
-            wgpu::ShaderModuleDescriptor {
-                label: None,
-                //source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
-                source: wgpu::ShaderSource::Wgsl(
-                    std::fs::read_to_string("src/shader.wgsl").unwrap().into(),
-                ),
-            },
-        );
+        let shader: wgpu::ShaderModule =
+            device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
         let vertices = Vertex::get_vertices(render_input.width, render_input.height);
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -550,6 +533,7 @@ impl State {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
 
+        let sim_params = SimParams::default();
         let sim_param_data = sim_params.as_arr().to_vec();
         let sim_param_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("sim param buffer"),
@@ -859,7 +843,6 @@ impl State {
         self.sim_params.zoom_y = 1.0 / self.sim_params.zoom_y;
         self.sim_params.zoom_x = 1.0 / self.sim_params.zoom_x;
 
-        let scale = dbg!(self.view.zoom);
         self.view.trace_x += dt * self.view.zoom * self.keystates.right;
         self.view.trace_y += dt * self.view.zoom * self.keystates.up;
         self.view.zoom += dt * self.view.zoom * self.keystates.zoom;
@@ -868,7 +851,7 @@ impl State {
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let output = self.surface.get_current_texture()?;
+        let output = dbg!(self.surface.get_current_texture())?;
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -877,17 +860,13 @@ impl State {
             &self.bit_state_buffer,
             0, /* offset */
             bytemuck::cast_slice(&self.bit_state),
-            //bytemuck::cast_slice(&[1_u64, 234, 23423]),
         );
-        let sim_params_arr = dbg!(self.sim_params).as_arr();
-        //dbg!(&self.sim_params);
+        let sim_params_arr = self.sim_params.as_arr();
         self.queue.write_buffer(
             &self.sim_param_buffer,
             0, /* offset */
             bytemuck::cast_slice(&sim_params_arr),
         );
-
-        //let y: Vec<u32> = (0..1000).into_iter().map(|x| x).collect();
 
         let mut encoder = self
             .device
@@ -917,6 +896,7 @@ impl State {
             render_pass.set_bind_group(0, &self.bind_group, &[]);
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+
             render_pass.draw(0..self.num_vertices, 0..1);
         }
 
@@ -929,21 +909,20 @@ impl State {
 
 fn prep_surface(
     surface: &wgpu::Surface,
-    adapter: wgpu::Adapter,
+    adapter: &wgpu::Adapter,
     size: winit::dpi::PhysicalSize<u32>,
     device: &wgpu::Device,
 ) -> (wgpu::SurfaceCapabilities, wgpu::SurfaceConfiguration) {
-    let surface_capabilites = surface.get_capabilities(&adapter);
+    let surface_capabilites = surface.get_capabilities(adapter);
 
     // Try to get a linear color space
-    let surface_format = surface_capabilites
+    let surface_format: wgpu::TextureFormat = surface_capabilites
         .formats
         .iter()
         .copied()
         .find(|f| !f.describe().srgb)
-        .unwrap_or(dbg!(surface_capabilites.formats[0]));
-    dbg!(&surface_format);
-    dbg!(&surface_capabilites);
+        .unwrap_or(surface_capabilites.formats[0]);
+
 
     let surface_config: wgpu::SurfaceConfiguration = wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -994,45 +973,43 @@ fn create_render_pipeline(
     shader: wgpu::ShaderModule,
     surface_config: &wgpu::SurfaceConfiguration,
 ) -> wgpu::RenderPipeline {
-    let render_pipeline: wgpu::RenderPipeline =
-        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &[Vertex::desc()],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
-                polygon_mode: wgpu::PolygonMode::Fill,
-                // Requires Features::DEPTH_CLIP_CONTROL
-                unclipped_depth: false,
-                // Requires Features::CONSERVATIVE_RASTERIZATION
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-        });
-    render_pipeline
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Render Pipeline"),
+        layout: Some(&render_pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: "vs_main",
+            buffers: &[Vertex::desc()],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: "fs_main",
+            targets: &[Some(wgpu::ColorTargetState {
+                format: surface_config.format,
+                blend: Some(wgpu::BlendState::REPLACE),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: Some(wgpu::Face::Back),
+            // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
+            polygon_mode: wgpu::PolygonMode::Fill,
+            // Requires Features::DEPTH_CLIP_CONTROL
+            unclipped_depth: false,
+            // Requires Features::CONSERVATIVE_RASTERIZATION
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview: None,
+    })
 }
 
 pub async fn run<S: RenderSim + Send + 'static>(render_input: RenderInput<S>) {
@@ -1112,8 +1089,4 @@ pub async fn run<S: RenderSim + Send + 'static>(render_input: RenderInput<S>) {
             _ => {},
         }
     });
-}
-
-fn slice_size<T>(slice: &[T]) -> usize {
-    mem::size_of::<T>() * slice.len()
 }
