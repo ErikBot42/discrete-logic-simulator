@@ -7,6 +7,64 @@ use std::hash::Hash;
 use std::iter::repeat;
 use std::ops::Index;
 
+pub(crate) struct Csr<T> {
+    pub(crate) indexes: Vec<T>,
+    pub(crate) outputs: Vec<T>,
+}
+impl<T: std::convert::TryFrom<usize>> Csr<T>
+where
+    <T as TryFrom<usize>>::Error: std::fmt::Debug,
+{
+    pub(crate) fn new(outputs_iter: impl Iterator<Item = Vec<T>>) -> Self {
+        let mut indexes: Vec<T> = Vec::new();
+        let mut outputs: Vec<T> = Vec::new();
+        for mut gate_outputs in outputs_iter {
+            //TODO: use Csr2::push()
+            indexes.push(outputs.len().try_into().unwrap());
+            outputs.append(&mut gate_outputs);
+        }
+        indexes.push(outputs.len().try_into().unwrap());
+        Self { indexes, outputs }
+    }
+    fn push(&mut self, new_outputs: impl Iterator<Item = T>) {
+        self.outputs.extend(new_outputs);
+        self.indexes.push(self.outputs.len().try_into().unwrap());
+    }
+}
+
+//pub(crate) struct Csr {
+//    pub(crate) indexes: Vec<IndexType>,
+//    pub(crate) outputs: Vec<IndexType>,
+//}
+//impl Csr {
+//    /// Make `Csr` from outputs list
+//    pub(crate) fn new(outputs_iter: impl Iterator<Item = Vec<IndexType>>) -> Self {
+//        let mut indexes: Vec<IndexType> = Vec::new();
+//        let mut outputs: Vec<IndexType> = Vec::new();
+//        for mut gate_outputs in outputs_iter {
+//            indexes.push(outputs.len().try_into().unwrap());
+//            outputs.append(&mut gate_outputs);
+//        }
+//        indexes.push(outputs.len().try_into().unwrap());
+//        Self { indexes, outputs }
+//    }
+//    // Pack `Csr` into single array
+//    //pub(crate) fn single(&self) -> Vec<IndexType> {
+//    //    let indexes = &self.indexes;
+//    //    let outputs = &self.outputs;
+//
+//    //    let offset = indexes.len();
+//    //    let mut arr: Vec<IndexType> = Vec::with_capacity(indexes.len() + outputs.len());
+//    //    arr.extend(
+//    //        indexes
+//    //            .iter()
+//    //            .map(|x| *x + IndexType::try_from(offset).unwrap()),
+//    //    );
+//    //    arr.extend_from_slice(outputs);
+//    //    arr
+//    //}
+//}
+
 /// Iterate through all gates, skipping any
 /// placeholder gates.
 trait NetworkInfo {
@@ -308,7 +366,6 @@ impl InitializedNetwork {
             //    .unzip();
 
             dbg!(&active_set, &next_active_set);
-
 
             let (mut constant, mut dynamic): (Vec<_>, Vec<_>) =
                 v.iter().partition(|(i, _)| constness_level[*i].is_some());
@@ -792,14 +849,14 @@ impl GateNetwork {
         T::create(self.network.initialized(optimize))
     }
 
-    pub(crate) fn initialized(self, optimize:bool) -> InitializedNetwork {
+    pub(crate) fn initialized(self, optimize: bool) -> InitializedNetwork {
         self.network.initialized(optimize)
     }
 }
 
 mod fgo {
 
-    //! TODO: 
+    //! TODO:
     //! first: make pass with optimistic oid_recursive for each group, save remaining things
     //! then: collect remaining and repeat until level is 2 (oid + kind)
     //!
@@ -829,7 +886,6 @@ mod fgo {
     //!
     //! => all graphs for each pos have to be entirely disjoint for this to work...
     //!
-
 
     use super::*;
     use nohash_hasher::{IntMap, IntSet};
@@ -1045,7 +1101,7 @@ mod fgo {
                 (
                     kind[i],
                     outputs[i].iter().map(|&i| kind[i]).collect::<Vec<_>>(),
-                    a[LEN-1][i],
+                    a[LEN - 1][i],
                 )
             });
         let hgg_int = ids.iter().cloned().into_group_map_by(|&i| a[0][i]);

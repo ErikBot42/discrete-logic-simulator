@@ -14,6 +14,7 @@ pub mod batch_sim;
 pub(crate) use crate::logic::network::{GateNetwork, InitializedNetwork};
 use std::simd::{Mask, Simd};
 use strum_macros::EnumIter;
+use network::Csr;
 
 //pub type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
 pub type ReferenceSim = reference_sim::ReferenceLogicSim;
@@ -410,38 +411,6 @@ pub(crate) struct CompiledNetworkInner {
     kind: Vec<GateType>,
 }
 
-struct Csr {
-    indexes: Vec<IndexType>,
-    outputs: Vec<IndexType>,
-}
-impl Csr {
-    /// Make `Csr` from outputs list
-    fn new(outputs_iter: impl Iterator<Item = Vec<IndexType>>) -> Self {
-        let mut indexes: Vec<IndexType> = Vec::new();
-        let mut outputs: Vec<IndexType> = Vec::new();
-        for mut gate_outputs in outputs_iter {
-            indexes.push(outputs.len().try_into().unwrap());
-            outputs.append(&mut gate_outputs);
-        }
-        indexes.push(outputs.len().try_into().unwrap());
-        Self { indexes, outputs }
-    }
-    /// Pack `Csr` into single array
-    fn single(&self) -> Vec<IndexType> {
-        let indexes = &self.indexes;
-        let outputs = &self.outputs;
-
-        let offset = indexes.len();
-        let mut arr: Vec<IndexType> = Vec::with_capacity(indexes.len() + outputs.len());
-        arr.extend(
-            indexes
-                .iter()
-                .map(|x| *x + IndexType::try_from(offset).unwrap()),
-        );
-        arr.extend_from_slice(outputs);
-        arr
-    }
-}
 
 /// Contains prepared datastructures to run the network.
 #[derive(Debug, Clone)]
