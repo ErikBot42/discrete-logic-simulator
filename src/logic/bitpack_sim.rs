@@ -23,7 +23,6 @@ struct Soap {
 }
 #[derive(Clone)]
 pub struct BitPackSimInner {
-    translation_table: Vec<IndexType>,
     acc: Vec<BitAccPack>,
     state: Vec<BitInt>,
     parity: Vec<BitInt>,
@@ -304,7 +303,6 @@ impl LogicSim for BitPackSimInner {
             .collect();
 
         let mut this = Self {
-            translation_table: translation_table.clone(),
             acc,
             state,
             parity,

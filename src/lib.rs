@@ -59,11 +59,10 @@ pub mod logic;
 pub mod raw_list;
 pub mod render;
 
-//pub use logic::RenderSim;
 #[cfg(test)]
 mod tests {
     use crate::blueprint::{VcbBoard, VcbInput, VcbParser};
-    use crate::logic::{BitPackSim, LogicSim, ReferenceSim, ScalarSim, SimdSim};
+    use crate::logic::{BitPackSim, LogicSim, ReferenceSim, ScalarSim, SimdSim, BatchSim};
 
     fn prep_cases<SIM: LogicSim>(optimize: bool) -> Vec<(&'static str, VcbBoard<SIM>)> {
         let cases: Vec<(&str, _)> = vec![
@@ -227,6 +226,14 @@ mod tests {
     #[test]
     fn bitpack_regression_test_optimized() {
         run_test::<ReferenceSim, BitPackSim>(true, 20);
+    }
+    #[test]
+    fn batch_regression_test_unoptimized() {
+        run_test::<ReferenceSim, BatchSim>(false, 20);
+    }
+    #[test]
+    fn batch_regression_test_optimized() {
+        run_test::<ReferenceSim, BatchSim>(true, 20);
     }
     //#[test]
     //fn simd_regression_test_unoptimized() {

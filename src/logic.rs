@@ -9,6 +9,7 @@ pub mod bitpack_sim;
 pub mod gate_status;
 pub mod network;
 pub mod reference_sim;
+pub mod batch_sim;
 
 pub(crate) use crate::logic::network::{GateNetwork, InitializedNetwork};
 use std::simd::{Mask, Simd};
@@ -19,6 +20,7 @@ pub type ReferenceSim = reference_sim::ReferenceLogicSim;
 pub type SimdSim = CompiledNetwork<{ UpdateStrategy::Simd as u8 }>;
 pub type ScalarSim = CompiledNetwork<{ UpdateStrategy::ScalarSimd as u8 }>;
 pub type BitPackSim = bitpack_sim::BitPackSimInner;
+pub type BatchSim = batch_sim::ReferenceBatchSim;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, PartialOrd, Ord, Default)]
 /// A = active inputs
@@ -373,6 +375,8 @@ pub enum UpdateStrategy {
     Simd = 2,
     /// Bit manipulation
     BitPack = 3,
+    /// Partial updates
+    Batch = 4,
 }
 impl UpdateStrategy {
     const fn from(value: u8) -> Self {

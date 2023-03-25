@@ -1,9 +1,8 @@
-//! Reference implementation for logic simulation.
-//! As simple as possible, and therefore slow.
+//! Extra optimizations exploiting repeated updates without observation.
 use super::{AccType, Gate, IndexType, LogicSim, RunTimeGateType};
 use itertools::Itertools;
 #[derive(Clone)]
-pub struct ReferenceLogicSim {
+pub struct ReferenceBatchSim {
     update_list: Vec<usize>,
     cluster_update_list: Vec<usize>,
     in_update_list: Vec<bool>,
@@ -13,8 +12,8 @@ pub struct ReferenceLogicSim {
     acc_prev: Vec<AccType>,
     outputs: Vec<Vec<IndexType>>,
 }
-impl crate::logic::RenderSim for ReferenceLogicSim {}
-impl LogicSim for ReferenceLogicSim {
+impl crate::logic::RenderSim for ReferenceBatchSim {}
+impl LogicSim for ReferenceBatchSim {
     fn create(network: super::network::InitializedNetwork) -> (Vec<IndexType>, Self) {
         let gates = network.gates;
         let translation_table = network.translation_table;
@@ -58,12 +57,12 @@ impl LogicSim for ReferenceLogicSim {
         self.update_inner(false);
         self.update_inner(true);
     }
-    const STRATEGY: super::UpdateStrategy = super::UpdateStrategy::Reference;
+    const STRATEGY: super::UpdateStrategy = super::UpdateStrategy::Batch;
     fn num_gates_internal(&self) -> usize {
         self.state.len()
     }
 }
-impl ReferenceLogicSim {
+impl ReferenceBatchSim {
     fn update_inner(&mut self, cluster: bool) {
         let (update_list, next_update_list) = if cluster {
             (&mut self.cluster_update_list, &mut self.update_list)
