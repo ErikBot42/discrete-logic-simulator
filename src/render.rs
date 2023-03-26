@@ -136,12 +136,12 @@ impl RenderSimController {
                 let mut tick_counter = 0;
                 let max_ticks = 1;
                 while interrupt.load(Ordering::Acquire) == generation {
-                    if tick_counter < max_ticks {
+                    //if tick_counter < max_ticks {
                         sim.rupdate();
                         tick_counter += 1;
-                    } else {
-                        std::hint::spin_loop();
-                    }
+                    //} else {
+                    //    std::hint::spin_loop();
+                    //}
                 }
                 generation = generation.wrapping_add(1);
                 let mut v = Vec::new(); // allocation :(
@@ -847,11 +847,11 @@ impl State {
         self.view.trace_y += dt * self.view.zoom * self.keystates.up;
         self.view.zoom += dt * self.view.zoom * self.keystates.zoom;
 
-        self.sim_params = dbg!(&self.view).as_sim_params(ratio);
+        self.sim_params = self.view.as_sim_params(ratio);
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let output = dbg!(self.surface.get_current_texture())?;
+        let output = (self.surface.get_current_texture())?;
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());

@@ -58,8 +58,10 @@ mod vcb_colors {
 }
 use super::*;
 #[non_exhaustive]
+#[repr(u8)]
 #[derive(Debug, PartialEq, Clone, Copy, Eq, Hash, EnumIter)]
 pub(crate) enum Trace {
+    Empty = 0,
     Gray,
     White,
     Red,
@@ -77,7 +79,6 @@ pub(crate) enum Trace {
     Magenta,
     Pink,
     Write,
-    Empty,
     Cross,
     Read,
     Buffer,
@@ -341,7 +342,9 @@ impl Trace {
                 Trace::LatchOn => (GateType::Latch, true),
                 Trace::LatchOff => (GateType::Latch, false),
                 Trace::Vmem => (GateType::Interface(None), false),
-                _ => panic!("unsupported logic trace: {self:?}"),
+                //_ => panic!("unsupported logic trace: {self:?}"),
+                // ignore unsupported
+                _ => (GateType::Cluster, false),
             }
         }
     }
