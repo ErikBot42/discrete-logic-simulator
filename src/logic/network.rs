@@ -59,14 +59,14 @@ where
     <T as TryFrom<usize>>::Error: std::fmt::Debug,
     T: std::convert::TryFrom<usize>,
 {
-    pub(crate) fn new(outputs_iter: impl Iterator<Item = Vec<T>>) -> Self {
+    pub(crate) fn new(outputs_iter: impl IntoIterator<Item = impl IntoIterator<Item = T>>) -> Self {
         let mut this = Self::default();
         for gate_outputs in outputs_iter {
-            this.push(gate_outputs.into_iter());
+            this.push(gate_outputs);
         }
         this
     }
-    fn push(&mut self, new_outputs: impl Iterator<Item = T>) {
+    fn push(&mut self, new_outputs: impl IntoIterator<Item = T>) {
         self.outputs.extend(new_outputs);
         self.indexes.push(self.outputs.len().try_into().unwrap());
     }

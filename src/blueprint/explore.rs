@@ -31,6 +31,8 @@ pub(super) fn compile_network<T: LogicSim>(
     let mut nodes = Vec::new();
     let elements = timed!(
         {
+            explore_new::parse(plain.traces.clone(), width, height);
+
             let mut elements: Vec<_> = plain
                 .traces
                 .iter()
@@ -80,7 +82,11 @@ mod explore_new {
     // stack search floodfill
     // of other has ID, connect, otherwise, noop
     use crate::blueprint::Trace;
+    use crate::logic::network::Csr;
+    use either::Either::{Left, Right};
+    use itertools::Itertools;
     use std::collections::HashMap;
+    use std::mem::replace;
     use Trace::*;
 
     // We are ignoring the Random trace since it is non deterministic.
@@ -127,49 +133,7 @@ mod explore_new {
         this == other || (is_wire(this) && is_wire(other)) || (is_bus(this) || is_bus(other))
     }
 
-    fn parse(traces: Vec<Trace>, width: usize, height: usize) {
-        /*match traces[0] {
-            Write => (), standard
-            Read => (), standard
-
-            Empty => (), not logic
-            Annotation => (),
-            Filler => (),
-
-            Cross => (), traversal
-            Tunnel => (),
-
-
-            Wireless0 => (),
-            Wireless1 => (),
-            Wireless2 => (),
-            Wireless3 => (),
-
-            Vmem => (), -> latch
-
-            Mesh => (), -> special case, can contain buses
-
-            Timer => (),
-            Clock => (),
-
-            Random => (),
-
-            Break => (),
-
-            model buses as OR-gates
-        }*/
-        // (network id of bus, trace) -> network id of trace
-        // NOTE: Same id for diffrent traces possible.
-
-        //let timer_id: Option<usize> = None;
-        //let clock_id: Option<usize> = None;
-        //let break_id: Option<usize> = None;
-        //let wireless_id: [Option<usize>; 4] = [None; 4];
-        //let mesh_id: Option<usize> = None;
-
-        //let bus_connections: HashMap<(usize, Trace), usize> = HashMap::new();
-        //let mesh_connections: HashMap<Trace, usize> = HashMap::new();
-
+    pub(crate) fn parse(traces: Vec<Trace>, width: usize, height: usize) {
         // fill these first, then handle other cases.
 
         let mut fill_state = FillState::default();
@@ -182,25 +146,107 @@ mod explore_new {
 
         let mut ids: Vec<Option<usize>> = (0..traces.len()).map(|_| None).collect();
 
-        fun_name(
+        let mut trace_nodes: Vec<Trace> = Vec::new();
+
+        first_fill_pass(
             height,
             width,
             &mut ids,
             &traces,
-            connect_state,
-            fill_state,
+            &mut connect_state,
+            &mut fill_state,
             &mut max_trace_id,
+            &mut trace_nodes,
         );
+        dbg!(&ids, &connect_state, &fill_state, &max_trace_id);
+
+        // the following will need to be merged:
+        //
+        // mesh_connections: HashMap<Trace, Vec<usize>>,
+        // bus_connections: HashMap<(usize, Trace), Vec<usize>>,
+        // the mesh id also needs to be removed.
+        //
+        // we need to figure out what sets of these overlap...
+
+        let table = {
+            let mut id_sets: Vec<_> = connect_state
+                .mesh_connections
+                .into_iter()
+                .map(|a| a.1)
+                .collect();
+            id_sets.extend(connect_state.bus_connections.into_iter().map(|a| a.1));
+            for set in id_sets.iter_mut() {
+                set.sort()
+            }
+            dbg!(&id_sets);
+
+            let mut table: Vec<_> = (0..max_trace_id).collect();
+            for set in id_sets.iter() {
+                let smallest = unwrap_or_else!(set.iter().map(|&id| table[id]).min(), continue);
+                for id in set.iter().cloned() {
+                    table[id] = smallest;
+                }
+            }
+            for i in 0..max_trace_id {
+                table[i] = table[i].min(table[table[i]]);
+            }
+
+            let mut meta = table.clone();
+            meta.sort();
+            meta.dedup();
+
+            let mut meta_inv: Vec<_> = (0..table.len()).collect();
+            for (i, m) in meta.into_iter().enumerate() {
+                meta_inv[m] = i;
+            }
+            for t in table.iter_mut() {
+                *t = meta_inv[*t];
+            }
+            table
+        };
+
+        for c in connect_state.connections.iter_mut() {
+            c.0 = table[c.0];
+            c.1 = table[c.1];
+        }
+        connect_state.connections.sort();
+
+        let outputs_grouped = connect_state
+            .connections
+            .into_iter()
+            .dedup()
+            .group_by(|a| a.0);
+        let mut outputs_iter = outputs_grouped
+            .into_iter()
+            .map(|(from, outputs)| (from, outputs.map(|(_, output)| output)));
+
+        let mut curr_output = outputs_iter.next();
+
+        let outputs_iter = (0..max_trace_id).map(|id| {
+            if (curr_output.as_ref().map(|(from, _)| *from == id) == Some(true)) &&
+                let Some(iter) = replace(&mut curr_output, outputs_iter.next()).map(|a| a.1) {
+                Left(iter)
+            } else {
+                Right([0_usize; 0].into_iter())
+            }
+        });
+        //panic!(
+        //    "{:?}",
+        //    outputs_iter.map(|o| (o.collect_vec())).collect_vec()
+        //);
+
+        Csr::new(outputs_iter);
     }
 
-    fn fun_name(
+    fn first_fill_pass(
         height: usize,
         width: usize,
         mut ids: &mut [Option<usize>],
         traces: &[Trace],
-        mut connect_state: ConnectState,
-        mut fill_state: FillState,
+        connect_state: &mut ConnectState,
+        fill_state: &mut FillState,
         max_trace_id: &mut usize,
+        trace_nodes: &mut Vec<Trace>,
     ) {
         let mut front: Vec<((i32, i32), usize)> = Vec::new();
         for y in 0..height as i32 {
@@ -214,9 +260,10 @@ mod explore_new {
                     &traces,
                     None,
                     &mut front,
-                    &mut connect_state,
-                    &mut fill_state,
+                    connect_state,
+                    fill_state,
                     max_trace_id,
+                    trace_nodes,
                 );
 
                 // TODO: faster floodfill
@@ -229,15 +276,16 @@ mod explore_new {
                         &traces,
                         Some(prev_id),
                         &mut front,
-                        &mut connect_state,
-                        &mut fill_state,
+                        connect_state,
+                        fill_state,
                         max_trace_id,
+                        trace_nodes,
                     );
                 }
             }
         }
     }
-    #[derive(Default)]
+    #[derive(Debug, Default)]
     struct FillState {
         timer_id: Option<usize>,         // handle at floodfill time
         clock_id: Option<usize>,         // handle at floodfill time
@@ -256,6 +304,7 @@ mod explore_new {
         connect_state: &mut ConnectState,
         fill_state: &mut FillState,
         max_trace_id: &mut usize,
+        trace_nodes: &mut Vec<Trace>,
     ) {
         let dim = (width, height);
         let this_idx = unwrap_or_else!(index(pos, width, height), return);
@@ -265,6 +314,7 @@ mod explore_new {
         }
         // this trace has no id, lets add a new id.
         let this_id = prev_id.unwrap_or_else(|| {
+            dbg!("no prev_id");
             let mut none = None;
             *match this_trace {
                 Clock => &mut fill_state.clock_id,
@@ -277,7 +327,12 @@ mod explore_new {
                 Wireless3 => &mut fill_state.wireless_id[3],
                 _ => &mut none,
             }
-            .get_or_insert_with(|| std::mem::replace(max_trace_id, *max_trace_id + 1))
+            .get_or_insert_with(|| {
+                let next_id = trace_nodes.len();
+                trace_nodes.push(this_trace);
+                next_id
+                /*std::mem::replace(max_trace_id, *max_trace_id + 1)*/
+            })
         });
         ids[this_idx] = Some(this_id);
 
@@ -312,14 +367,14 @@ mod explore_new {
                         }
                     }
                 }
-            } else if new_trace.is_logic() {
-                connect((this_idx, this_trace), (new_idx, new_trace), connect_state);
-                connect((new_idx, new_trace), (this_idx, this_trace), connect_state);
+            } else if new_trace.is_logic() && let Some(new_id) = ids[new_idx]{
+                connect((this_id, this_trace), (new_id, new_trace), connect_state);
+                connect((new_id, new_trace), (this_id, this_trace), connect_state);
             }
         }
     }
 
-    #[derive(Default)]
+    #[derive(Debug, Default)]
     struct ConnectState {
         // need dynamic construction.
         connections: Vec<(usize, usize)>, // sort, dedup after merge
@@ -328,8 +383,8 @@ mod explore_new {
     }
     // connect THIS -> OTHER
     fn connect(
-        (this_idx, this_trace): (usize, Trace),
-        (other_idx, other_trace): (usize, Trace),
+        (this_id, this_trace): (usize, Trace),
+        (other_id, other_trace): (usize, Trace),
         state: &mut ConnectState,
     ) {
         //let mut outputs: Vec<Vec<usize>> = Vec::new(); // need to dedup later
@@ -337,32 +392,26 @@ mod explore_new {
         //let mut mesh_connections: HashMap<Trace, Vec<usize>> = HashMap::new();
         // (bus trace id, trace) -> trace id
         //let mut bus_connections: HashMap<(usize, Trace), Vec<usize>> = HashMap::new();
+        //
 
         if other_trace == Trace::Mesh {
             state
                 .mesh_connections
                 .entry(this_trace)
                 .or_default()
-                .push(this_idx);
-            return;
-        }
-
-        if is_bus(other_trace) {
+                .push(this_id);
+        } else if is_bus(other_trace) {
             state
                 .bus_connections
-                .entry((other_idx, this_trace))
+                .entry((other_id, this_trace))
                 .or_default()
-                .push(this_idx);
-            return;
-        }
-
-        // this -> other
-        if can_have_outputs(this_trace) && other_trace == Trace::Write {
-            state.connections.push((this_idx, other_idx));
-        }
-        // other -> this
-        if can_have_inputs(this_trace) && other_trace == Trace::Read {
-            state.connections.push((other_idx, this_idx));
+                .push(this_id);
+        } else if can_have_outputs(this_trace) && other_trace == Trace::Write {
+            // this -> other
+            state.connections.push((this_id, other_id));
+        } else if can_have_inputs(this_trace) && other_trace == Trace::Read {
+            // other -> this
+            state.connections.push((other_id, this_id));
         }
     }
     fn index_offset(
