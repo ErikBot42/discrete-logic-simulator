@@ -69,26 +69,7 @@ impl<T: LogicSim> VcbBoard<T> {
         self.width * self.height
     }
     fn new(plain: VcbPlainBoard, optimize: bool) -> Self {
-        fn element_id_to_external_id(
-            elements: &[BoardElement],
-            nodes: &[BoardNode],
-            id: usize,
-        ) -> Option<usize> {
-            elements[id].id.and_then(|id| nodes[id].network_id)
-        }
-
-        let (height, width, nodes, elements, network) = compile_network::<T>(&plain);
-        let element_ids_external: Vec<_> = (0..elements.len())
-            .map(|id| element_id_to_external_id(&elements, &nodes, id))
-            .collect();
-        let (translation_table, logic_sim): (_, T) = network.compiled(optimize);
-
-        //TODO: apply translation_table translation
-
-        let element_ids: Vec<_> = element_ids_external
-            .iter()
-            .map(|id| id.map(|id| usize::try_from(translation_table[id]).unwrap()))
-            .collect();
+        let (height, width, element_ids_external, translation_table, logic_sim, element_ids) = construct_vcbboard_parts(&plain, optimize);
 
         VcbBoard {
             element_ids_internal: element_ids,
@@ -101,6 +82,30 @@ impl<T: LogicSim> VcbBoard<T> {
             translation_table,
         }
     }
+}
+
+fn construct_vcbboard_parts<T: LogicSim>(plain: &VcbPlainBoard, optimize: bool) -> (usize, usize, Vec<Option<usize>>, Vec<u32>, T, Vec<Option<usize>>) {
+    fn element_id_to_external_id(
+        elements: &[BoardElement],
+        nodes: &[BoardNode],
+        id: usize,
+    ) -> Option<usize> {
+        elements[id].id.and_then(|id| nodes[id].network_id)
+    }
+
+    let (height, width, nodes, elements, network) = compile_network::<T>(plain);
+    let element_ids_external: Vec<_> = (0..elements.len())
+        .map(|id| element_id_to_external_id(&elements, &nodes, id))
+        .collect();
+    let (translation_table, logic_sim): (_, T) = network.compiled(optimize);
+
+    //TODO: apply translation_table translation
+
+    let element_ids: Vec<_> = element_ids_external
+        .iter()
+        .map(|id| id.map(|id| usize::try_from(translation_table[id]).unwrap()))
+        .collect();
+    (height, width, element_ids_external, translation_table, logic_sim, element_ids)
 }
 impl<T: LogicSim> VcbBoard<T> {
     pub fn update_i(&mut self, iterations: usize) {

@@ -49,15 +49,25 @@ fn foo() {
         order[left] = left;
     }
 }
+pub(crate) trait CsrIndex:
+    Copy + Default + Hash + Ord + Debug + 'static + TryInto<usize> + TryFrom<usize>
+{
+}
+impl<T> CsrIndex for T where
+    T: Copy + Default + Hash + Ord + Debug + 'static + TryInto<usize> + TryFrom<usize>
+{
+}
 #[derive(Clone)]
-pub(crate) struct Csr<T> {
+pub(crate) struct Csr<T: CsrIndex> {
     pub(crate) indexes: Vec<T>,
     pub(crate) outputs: Vec<T>,
 }
-impl<T> Csr<T>
+impl<T: CsrIndex> Csr<T>
 where
-    <T as TryFrom<usize>>::Error: std::fmt::Debug,
-    T: std::convert::TryFrom<usize>,
+    <T as TryFrom<usize>>::Error: Debug,
+    <usize as TryFrom<T>>::Error: Debug,
+    usize: TryFrom<T>,
+    Csr<T>: Index<usize, Output = [T]>,
 {
     pub(crate) fn new(outputs_iter: impl IntoIterator<Item = impl IntoIterator<Item = T>>) -> Self {
         let mut this = Self::default();
@@ -70,24 +80,56 @@ where
         self.outputs.extend(new_outputs);
         self.indexes.push(self.outputs.len().try_into().unwrap());
     }
+    fn len(&self) -> usize {
+        self.indexes.len() - 1
+    }
+    fn adjacency_iter(&self) -> impl Iterator<Item = (T, T)> + '_ {
+        (0..self.len())
+            .map(|i| std::iter::repeat(i.try_into().unwrap()).zip(self.index(i).iter().cloned()))
+            .flatten()
+    }
+    pub(crate) fn from_adjacency(mut adjacency: Vec<(T, T)>, len: usize) -> Self {
+        use either::Either::{Left, Right};
+        use std::mem::replace;
+        adjacency.sort();
+        let outputs_grouped = adjacency.into_iter().dedup().group_by(|a| a.0);
+        let mut outputs_iter = outputs_grouped
+            .into_iter()
+            .map(|(from, outputs)| (from, outputs.map(|(_, output)| output)));
+
+        let mut curr_output = outputs_iter.next();
+        let outputs_iter = (0..len).map(|id| {
+            if (curr_output.as_ref().map(|(from, _)| id == usize::try_from(*from).unwrap()) == Some(true)) &&
+                let Some(iter) = replace(&mut curr_output, outputs_iter.next()).map(|a| a.1) {
+                Left(iter)
+            } else {
+                Right([T::try_from(0_usize).unwrap(); 0].into_iter())
+            }
+        });
+        Self::new(outputs_iter)
+    }
+    fn as_csc(&self) -> Self {
+        Self::from_adjacency(
+            self.adjacency_iter().map(|(from, to)| (to, from)).collect(),
+            self.len(),
+        )
+    }
 }
-impl<T> std::ops::Index<usize> for Csr<T>
+impl<T: CsrIndex> Index<usize> for Csr<T>
 where
-    <T as TryFrom<usize>>::Error: std::fmt::Debug,
-    T: std::convert::TryFrom<usize> + Copy,
-    usize: From<T>,
+    <T as TryInto<usize>>::Error: Debug,
 {
-    type Output = [T]; // = <std::ops::Range<T> as std::slice::SliceIndex<[T]>>::Output;
+    type Output = [T];
     fn index(&self, i: usize) -> &Self::Output {
         let from: usize = self.indexes[i].try_into().unwrap();
         let to: usize = self.indexes[i + 1].try_into().unwrap();
         &self.outputs[from..to]
     }
 }
-impl<T> Default for Csr<T>
+impl<T: CsrIndex> Default for Csr<T>
 where
     T: std::convert::TryFrom<usize>,
-    <T as TryFrom<usize>>::Error: std::fmt::Debug,
+    <T as TryFrom<usize>>::Error: Debug,
 {
     fn default() -> Self {
         Self {
