@@ -299,14 +299,13 @@ mod explore_new {
             *id = id.map(|id| table[id]);
         }
         connect_state.connections.sort();
+        connect_state.connections.dedup();
 
-        Csr::from_adjacency(
-            connect_state.connections.into_iter().dedup().collect(),
-            max_trace_id,
-        );
-        //(Csr::new(outputs_iter), ids, trace_nodes)
-        //
-        todo!()
+        (
+            Csr::from_adjacency(connect_state.connections, max_trace_id),
+            ids,
+            trace_nodes,
+        )
     }
 
     fn first_fill_pass(
