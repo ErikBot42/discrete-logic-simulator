@@ -31,9 +31,9 @@ pub struct VcbBoard<T: LogicSim> {
     pub(crate) logic_sim: T,
     pub(crate) width: usize,
     pub(crate) height: usize,
-    
+
     #[cfg(test)]
-    translation_table: Vec<u32>,
+    _translation_table: Vec<u32>,
 }
 impl<T: LogicSim + RenderSim + Clone + Send + 'static> VcbBoard<T> {
     pub fn run_gpu(&self) {
@@ -69,7 +69,9 @@ impl<T: LogicSim> VcbBoard<T> {
         self.width * self.height
     }
     fn new(plain: VcbPlainBoard, optimize: bool) -> Self {
-        let (height, width, element_ids_external, translation_table, logic_sim, element_ids) = construct_vcbboard_parts(&plain, optimize);
+        let (height, width, element_ids_external, _translation_table, logic_sim, element_ids) =
+            explore::explore_new::construct_vcbboard_parts(&plain, optimize);
+            //construct_vcbboard_parts(&plain, optimize);
 
         VcbBoard {
             element_ids_internal: element_ids,
@@ -79,12 +81,22 @@ impl<T: LogicSim> VcbBoard<T> {
             width,
             height,
             #[cfg(test)]
-            translation_table,
+            _translation_table,
         }
     }
 }
 
-fn construct_vcbboard_parts<T: LogicSim>(plain: &VcbPlainBoard, optimize: bool) -> (usize, usize, Vec<Option<usize>>, Vec<u32>, T, Vec<Option<usize>>) {
+fn construct_vcbboard_parts<T: LogicSim>(
+    plain: &VcbPlainBoard,
+    optimize: bool,
+) -> (
+    usize,
+    usize,
+    Vec<Option<usize>>,
+    Vec<u32>,
+    T,
+    Vec<Option<usize>>,
+) {
     fn element_id_to_external_id(
         elements: &[BoardElement],
         nodes: &[BoardNode],
@@ -105,7 +117,14 @@ fn construct_vcbboard_parts<T: LogicSim>(plain: &VcbPlainBoard, optimize: bool) 
         .iter()
         .map(|id| id.map(|id| usize::try_from(translation_table[id]).unwrap()))
         .collect();
-    (height, width, element_ids_external, translation_table, logic_sim, element_ids)
+    (
+        height,
+        width,
+        element_ids_external,
+        translation_table,
+        logic_sim,
+        element_ids,
+    )
 }
 impl<T: LogicSim> VcbBoard<T> {
     pub fn update_i(&mut self, iterations: usize) {
@@ -132,11 +151,11 @@ impl<T: LogicSim> VcbBoard<T> {
 
     #[cfg(test)]
     fn translate_to_internal(&self, i: usize) -> usize {
-        usize::try_from(self.translation_table[i]).unwrap()
+        usize::try_from(self._translation_table[i]).unwrap()
     }
     #[cfg(test)]
     fn number_of_gates_external(&self) -> usize {
-        self.translation_table.len()
+        self._translation_table.len()
     }
 
     #[must_use]

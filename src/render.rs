@@ -44,7 +44,7 @@ impl Vertex {
             position,
             tex_coords: [
                 (position[0] + f) / (2.0 * f) * (max_width as f32),
-                (position[1] + f) / (2.0 * f) * (max_height as f32),
+                (-position[1] + f) / (2.0 * f) * (max_height as f32),
             ],
         })
     }
@@ -136,12 +136,12 @@ impl RenderSimController {
                 let mut tick_counter = 0;
                 let max_ticks = 1;
                 while interrupt.load(Ordering::Acquire) == generation {
-                    //if tick_counter < max_ticks {
+                    if tick_counter < max_ticks {
                         sim.rupdate();
                         tick_counter += 1;
-                    //} else {
-                    //    std::hint::spin_loop();
-                    //}
+                    } else {
+                        std::hint::spin_loop();
+                    }
                 }
                 generation = generation.wrapping_add(1);
                 let mut v = Vec::new(); // allocation :(
@@ -408,7 +408,8 @@ impl ViewState {
             max_y: self.max_y,
             offset_x: -self.trace_x / self.max_x * 2.0 + 1.0,
             offset_y: -self.trace_y / self.max_y * 2.0 + 1.0,
-            zoom_x: self.max_y / (self.zoom * ratio),
+            zoom_x: self.max_x / (self.zoom * ratio),
+            //zoom_x: self.max_y / (self.zoom * ratio * (self.max_x / self.max_y)),
             zoom_y: self.max_y / self.zoom,
         }
     }
@@ -922,7 +923,6 @@ fn prep_surface(
         .copied()
         .find(|f| !f.describe().srgb)
         .unwrap_or(surface_capabilites.formats[0]);
-
 
     let surface_config: wgpu::SurfaceConfiguration = wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,

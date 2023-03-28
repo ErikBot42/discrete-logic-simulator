@@ -26,29 +26,6 @@ fn reorder_by_indices_with<F: FnMut(usize, usize)>(mut swap_indices: F, mut indi
         }
     }
 }
-fn foo() {
-    let mut v = vec![1, 2, 3, 4];
-    let mut order = vec![3, 1, 0, 2];
-    for i in 0..order.len() {
-        // We iterate through the arrows in the cycle. Keep track of the
-        // element before and after the arrow. (left is before, right after)
-        let mut left = i;
-        let mut right = order[i];
-
-        // Until we are back to the beginning, we swap.
-        while right != i {
-            // Swap the two elements.
-            v.swap(left, right);
-            // Mark the previous element as a length-one loop.
-            order[left] = left;
-            // Go to the next arrow.
-            left = right;
-            right = order[right];
-        }
-        // Mark the last element as a length-one loop as well.
-        order[left] = left;
-    }
-}
 pub(crate) trait CsrIndex:
     Copy + Default + Hash + Ord + Debug + 'static + TryInto<usize> + TryFrom<usize>
 {
@@ -80,10 +57,10 @@ where
         self.outputs.extend(new_outputs);
         self.indexes.push(self.outputs.len().try_into().unwrap());
     }
-    fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.indexes.len() - 1
     }
-    fn adjacency_iter(&self) -> impl Iterator<Item = (T, T)> + '_ {
+    pub(crate) fn adjacency_iter(&self) -> impl Iterator<Item = (T, T)> + '_ {
         (0..self.len())
             .map(|i| std::iter::repeat(i.try_into().unwrap()).zip(self.index(i).iter().cloned()))
             .flatten()
@@ -108,11 +85,14 @@ where
         });
         Self::new(outputs_iter)
     }
-    fn as_csc(&self) -> Self {
+    pub(crate) fn as_csc(&self) -> Self {
         Self::from_adjacency(
             self.adjacency_iter().map(|(from, to)| (to, from)).collect(),
             self.len(),
         )
+    }
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &[T]> {
+        (0..self.len()).map(|i| &self[i])
     }
 }
 impl<T: CsrIndex> Index<usize> for Csr<T>
@@ -139,6 +119,93 @@ where
     }
 }
 
+#[derive(Hash, Clone, Eq, PartialEq)]
+struct GateNode {
+    kind: GateType, // add constant on/off nodes?
+    initial_state: bool,
+}
+//struct GateNodeFinal {
+//    kind: GateType,
+//    initial_state: bool,
+//    acc_offset: usize,
+//    constant: Option<bool>
+//}
+struct CsrGraph<T: CsrIndex> {
+    /// mapping from original nodes to optimized nodes
+    /// |n| -> |k|
+    table: Vec<T>,
+    /// |k|
+    csr: Csr<T>,
+    /// |k|
+    nodes: Vec<GateNode>,
+}
+impl<T: CsrIndex> CsrGraph<T>
+where
+    <T as TryFrom<usize>>::Error: std::fmt::Debug,
+{
+    fn new(csr: Csr<T>, nodes: Vec<GateNode>) -> Self {
+        Self {
+            table: (0..nodes.len()).map(|i| i.try_into().unwrap()).collect(),
+            csr,
+            nodes,
+        }
+    }
+}
+mod passes {
+    use super::*;
+    // https://faultlore.com/blah/oops-that-was-important/
+    //
+    // TODO: keep a "futures" csc that invalidates itself? put feature in Csr?
+
+    /// Normalize gatetype
+    /// (node, inputs) -> node, stable
+    fn node_normalization_pass<T: CsrIndex>(graph: &mut CsrGraph<T>, /*&mut Option<Csc>*/)
+    where
+        <T as TryFrom<usize>>::Error: Debug,
+        <usize as TryFrom<T>>::Error: Debug,
+        usize: TryFrom<T>,
+        Csr<T>: Index<usize, Output = [T]>,
+    {
+        let csc = graph.csr.as_csc();
+        for (node, input_cardinality) in graph.nodes.iter_mut().zip(csc.iter().map(|i| i.len())) {
+            use GateType::*;
+            node.kind = match input_cardinality {
+                0 | 1 => match node.kind {
+                    And | Or | Xor => Or,
+                    Nor | Nand | Xnor => Nor,
+                    Latch => Latch,
+                    Interface(s) => Interface(s),
+                    Cluster => Cluster,
+                },
+                _ => node.kind,
+            };
+        }
+    }
+    fn node_merge_pass<T: CsrIndex>(graph: &mut CsrGraph<T>, /*&mut Option<Csc>*/) 
+    where
+        <T as TryFrom<usize>>::Error: Debug,
+        <usize as TryFrom<T>>::Error: Debug,
+        usize: TryFrom<T>,
+        Csr<T>: Index<usize, Output = [T]>,
+    {
+        let csc = graph.csr.as_csc();
+        // gate node + inputs -> new id
+        let mut map: HashMap<(&GateNode, &[T]), usize> = HashMap::new();
+        for (node, inputs) in graph.nodes.iter().zip(csc.iter()) {
+            if let Some(id) = map.get(&(node, inputs)) {
+                map.insert((node, inputs), 0_usize);
+            } else {
+            }
+        }
+    }
+
+    //TODO: * OPTIM: node normalization (1 or 0 input case)
+    //TODO: * OPTIM: merge identical nodes (-> extra outputs)
+    //TODO: * OPTIM: remove redundant connections
+    //TODO: * OPTIM: constant propagation (remove/disconnect outputs of gates with zero inputs)
+    //TODO: * OPTIM: detect what gates will be constants (by generating acc ranges?)
+    //TODO: * OPTIM: logical optimizations, preserving external view (very hard)
+}
 /// Iterate through all gates, skipping any
 /// placeholder gates.
 trait NetworkInfo {
@@ -902,7 +969,8 @@ impl GateNetwork {
             assert_ne!(
                 kind == GateType::Cluster,
                 self.network.gates[input_id].kind == GateType::Cluster,
-                "Connection was made between cluster and non cluster for gate {gate_id}"
+                "Connection was made between cluster and non cluster for gate {gate_id}: {kind:?} {:?}",
+                self.network.gates[input_id].kind
             );
             // panics if it cannot fit in IndexType
             self.network.gates[input_id]

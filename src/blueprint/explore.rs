@@ -78,7 +78,7 @@ pub(super) fn compile_network<T: LogicSim>(
     (height, width, nodes, elements, network)
 }
 
-mod explore_new {
+pub(crate) mod explore_new {
     use crate::blueprint::{LogicSim, VcbPlainBoard};
     // stack search floodfill
     // of other has ID, connect, otherwise, noop
@@ -93,7 +93,28 @@ mod explore_new {
 
     // We are ignoring the Random trace since it is non deterministic.
     fn is_passive(trace: Trace) -> bool {
-        matches!(trace, Empty | Annotation | Filler | Random)
+        match trace {
+            Empty | Annotation | Filler | Random | Tunnel | Cross => true,
+            Gray | White | Red | Orange1 | Orange2 | Orange3 | Yellow | Green1 | Green2 | Cyan1
+            | Cyan2 | Blue1 | Blue2 | Purple | Magenta | Pink | Write | Read | Buffer | And
+            | Or | Xor | Not | Nand | Nor | Xnor | LatchOn | LatchOff | Clock | Led | Vmem
+            | Mesh | Wireless0 | Wireless1 | Wireless2 | Wireless3 | Timer | Break | BusRed
+            | BusGreen | BusBlue | BusTeal | BusPurple | BusYellow => false,
+        }
+    }
+    fn validate_connection(first: Trace, second: Trace) {
+        assert!(is_gate(first) != is_gate(second), "{first:?} {second:?}");
+        assert!(is_gate(first) || is_wire(first), "{first:?}");
+        assert!(is_gate(second) || is_wire(second), "{second:?}");
+
+        assert!(!is_passive(first), "{first:?}");
+        assert!(!is_passive(second), "{first:?}");
+    }
+    #[rustfmt::skip]
+    fn is_gate(trace: Trace) -> bool {
+        matches!(trace,
+            Buffer | And | Or | Xor | Not | Nand | Nor | Xnor | LatchOn | LatchOff | Clock | Led | Vmem | Wireless0 | Wireless1 | Wireless2 | Wireless3 | Timer | Random | Break
+        )
     }
     #[rustfmt::skip]
     // INCLUDES READ/WRITE
@@ -110,7 +131,10 @@ mod explore_new {
         )
     }
     fn is_bus_or_mesh(trace: Trace) -> bool {
-        trace == Mesh || is_bus(trace)
+        is_mesh(trace) || is_bus(trace)
+    }
+    fn is_mesh(trace: Trace) -> bool {
+        trace == Mesh
     }
 
     /// is it valid for this gate to have outputs through write
@@ -135,12 +159,21 @@ mod explore_new {
     }
 
     fn should_merge(this: Trace, other: Trace) -> bool {
-        this == other || (is_wire(this) && is_wire(other)) || (is_bus(this) || is_bus(other))
+        assert!(!is_passive(this), "{this:?}");
+        //dbg!((this, other));
+        // other may be invalid
+        this == other || // identical non-passive traces always merge.
+            (is_wire(this) && is_wire(other)) // wires always merge
+            || (is_bus(this) && is_bus(other)) // buses always merge
     }
     fn to_gatetype_state(trace: Trace) -> (GateType, bool) {
         match trace {
-            Filler | Annotation | Tunnel | Cross | Empty => unreachable!(),
-            BusRed | BusGreen | BusBlue | BusTeal | BusPurple | BusYellow | Mesh => unreachable!(),
+            Filler | Annotation | Tunnel | Cross | Empty => unreachable!("{trace:?}"),
+            BusRed | BusGreen | BusBlue | BusTeal | BusPurple | BusYellow | Mesh => {
+                //unreachable!("{trace:?}")
+                println!("TODO: bus found, plz remove");
+                (GateType::Or, false)
+            },
             Read | Write | Gray | White | Red | Orange1 | Orange2 | Orange3 | Yellow | Green1
             | Green2 | Cyan1 | Cyan2 | Blue1 | Blue2 | Purple | Magenta | Pink => {
                 (GateType::Cluster, false)
@@ -165,7 +198,7 @@ mod explore_new {
 
     //            let (height, width, element_ids_external, translation_table, logic_sim, element_ids) = construct_vcbboard_parts(&plain, optimize);
     //fn construct_vcbboard_parts<T: LogicSim>(plain: &VcbPlainBoard, optimize: bool) -> (usize, usize, Vec<Option<usize>>, Vec<u32>, T, Vec<Option<usize>>) {
-    fn construct_vcbboard_parts<T: LogicSim>(
+    pub(crate) fn construct_vcbboard_parts<T: LogicSim>(
         plain: &VcbPlainBoard,
         optimize: bool,
     ) -> (
@@ -177,6 +210,7 @@ mod explore_new {
         Vec<Option<usize>>,
     ) {
         let (csr, ids, trace_nodes) = parse(&plain.traces, plain.width, plain.height);
+        let csc = csr.as_csc();
 
         let network = {
             let mut network = GateNetwork::default();
@@ -184,10 +218,30 @@ mod explore_new {
                 let (gatetype, state) = to_gatetype_state(trace);
                 assert_eq!(i, network.add_vertex(gatetype, state));
             }
-
-            todo!();
+            for ((id, inputs), &trace) in csc.iter().enumerate().zip(trace_nodes.iter()) {
+                let inputs = inputs.to_vec();
+                network.add_inputs(to_gatetype_state(trace).0, id, inputs);
+            }
+            network
         };
-        todo!()
+        let (table, sim) = T::create(network.initialized(optimize));
+
+        let element_ids: Vec<_> = ids
+            .iter()
+            .cloned()
+            .map(|i| i.map(|i| table[i] as usize))
+            .collect();
+        let element_ids_external = ids;
+
+        (
+            plain.height,
+            plain.width,
+            element_ids_external,
+            table,
+            sim,
+            element_ids,
+        )
+        //(height, width, element_ids_external, translation_table, logic_sim, element_ids)
     }
 
     pub(crate) fn parse(
@@ -203,8 +257,6 @@ mod explore_new {
         // trace id -> gate id
         // let mut trace_index_map: Vec<Option<usize>> = Vec::new();
 
-        let mut max_trace_id = 0;
-
         let mut ids: Vec<Option<usize>> = (0..traces.len()).map(|_| None).collect();
 
         let mut trace_nodes: Vec<Trace> = Vec::new();
@@ -216,10 +268,15 @@ mod explore_new {
             traces,
             &mut connect_state,
             &mut fill_state,
-            &mut max_trace_id,
             &mut trace_nodes,
         );
-        dbg!(&ids, &connect_state, &fill_state, &max_trace_id);
+        connect_state
+            .connections
+            .iter()
+            .for_each(|(a, b)| validate_connection(trace_nodes[*a], trace_nodes[*b]));
+        //dbg!(&ids, &connect_state, &fill_state);
+
+        let max_trace_id = trace_nodes.len();
 
         // the following will need to be merged:
         //
@@ -230,19 +287,35 @@ mod explore_new {
         // we need to figure out what sets of these overlap...
 
         // trace id -> (merged) gate id
-        let table = {
+
+        //dbg!(connect_state
+        //    .connections
+        //    .iter()
+        //    .map(|&(a, b)| (trace_nodes[a], trace_nodes[b]))
+        //    .collect_vec());
+        let (table, table_inv, num_ids_after_merge) = {
             let mut id_sets: Vec<_> = connect_state
                 .mesh_connections
                 .into_iter()
                 .map(|a| a.1)
                 .collect();
-            id_sets.extend(connect_state.bus_connections.into_iter().map(|a| a.1));
+            id_sets.extend(
+                dbg!(connect_state
+                    .bus_connections
+                    .into_iter()
+                    .map(|a| a.1)
+                    .collect_vec())
+                .into_iter(),
+            );
             for set in id_sets.iter_mut() {
                 set.sort() // probably not needed, but may be better for cache stuff later?
             }
-            dbg!(&id_sets);
+            //dbg!(&id_sets);
 
             let mut table: Vec<_> = (0..max_trace_id).collect();
+            let mut table_inv = table.iter().map(|&i| Some(i)).collect_vec();
+            let num_ids_after_merge = max_trace_id;
+            //dbg!(&table);
             for set in id_sets.iter() {
                 let smallest = unwrap_or_else!(set.iter().map(|&id| table[id]).min(), continue);
                 for id in set.iter().cloned() {
@@ -275,6 +348,8 @@ mod explore_new {
             meta.sort();
             meta.dedup();
 
+            let num_ids_after_merge = meta.len();
+
             let mut meta_inv: Vec<_> = (0..table.len()).collect();
             for (i, m) in meta.into_iter().enumerate() {
                 meta_inv[m] = i;
@@ -282,30 +357,49 @@ mod explore_new {
             for t in table.iter_mut() {
                 *t = meta_inv[*t];
             }
-            table
+            let mut table_inv: Vec<_> = (0..table.len()).map(|_| None).collect();
+            for (i, t) in table.iter().cloned().enumerate() {
+                table_inv[t] = Some(i);
+            }
+            (table, table_inv, num_ids_after_merge)
         };
+        drop(max_trace_id);
 
         // TODO: delete busses, mesh
 
         // delete bus/mesh connections
         connect_state
             .connections
+            .iter()
+            .for_each(|(a, b)| validate_connection(trace_nodes[*a], trace_nodes[*b]));
+
+        connect_state
+            .connections
             .retain(|&(a, b)| !is_bus_or_mesh(trace_nodes[a]) && !is_bus_or_mesh(trace_nodes[b]));
+        connect_state
+            .connections
+            .iter()
+            .for_each(|(a, b)| validate_connection(trace_nodes[*a], trace_nodes[*b]));
         for c in connect_state.connections.iter_mut() {
             c.0 = table[c.0];
             c.1 = table[c.1];
         }
-        for id in ids.iter_mut() {
-            *id = id.map(|id| table[id]);
-        }
         connect_state.connections.sort();
         connect_state.connections.dedup();
 
-        (
-            Csr::from_adjacency(connect_state.connections, max_trace_id),
-            ids,
-            trace_nodes,
-        )
+        assert_eq!(table.len(), trace_nodes.len());
+        let trace_nodes: Vec<_> = (0..num_ids_after_merge)
+            .map(|i| trace_nodes[table_inv[i].unwrap()])
+            .collect();
+        let csr = Csr::from_adjacency(connect_state.connections, num_ids_after_merge);
+        assert_eq!(csr.len(), trace_nodes.len());
+        csr.adjacency_iter()
+            .for_each(|(a, b)| (validate_connection(trace_nodes[a], trace_nodes[b])));
+
+        for id in ids.iter_mut() {
+            *id = id.map(|id| table[id]);
+        }
+        (csr, ids, trace_nodes)
     }
 
     fn first_fill_pass(
@@ -315,7 +409,6 @@ mod explore_new {
         traces: &[Trace],
         connect_state: &mut ConnectState,
         fill_state: &mut FillState,
-        max_trace_id: &mut usize,
         trace_nodes: &mut Vec<Trace>,
     ) {
         let mut front: Vec<((i32, i32), usize)> = Vec::new();
@@ -332,7 +425,6 @@ mod explore_new {
                     &mut front,
                     connect_state,
                     fill_state,
-                    max_trace_id,
                     trace_nodes,
                 );
 
@@ -348,7 +440,6 @@ mod explore_new {
                         &mut front,
                         connect_state,
                         fill_state,
-                        max_trace_id,
                         trace_nodes,
                     );
                 }
@@ -373,7 +464,6 @@ mod explore_new {
         front: &mut Vec<((i32, i32), usize)>,
         connect_state: &mut ConnectState,
         fill_state: &mut FillState,
-        max_trace_id: &mut usize,
         trace_nodes: &mut Vec<Trace>,
     ) {
         let dim = (width, height);
@@ -403,6 +493,9 @@ mod explore_new {
                 /*std::mem::replace(max_trace_id, *max_trace_id + 1)*/
             })
         });
+        if let Some(prev_id) = prev_id {
+            assert!(should_merge(trace_nodes[this_id], trace_nodes[prev_id]));
+        }
         ids[this_idx] = Some(this_id);
 
         for delta in [(0, 1), (0, -1), (1, 0), (-1, 0)] {
@@ -436,9 +529,9 @@ mod explore_new {
                         }
                     }
                 }
-            } else if new_trace.is_logic() && let Some(new_id) = ids[new_idx]{
-                connect((this_id, this_trace), (new_id, new_trace), connect_state);
-                connect((new_id, new_trace), (this_id, this_trace), connect_state);
+            } else if !is_passive(new_trace) && let Some(new_id) = ids[new_idx]{
+                connect((this_id, this_trace), (new_id, new_trace), connect_state, trace_nodes);
+                connect((new_id, new_trace), (this_id, this_trace), connect_state, trace_nodes);
             }
         }
     }
@@ -455,6 +548,7 @@ mod explore_new {
         (this_id, this_trace): (usize, Trace),
         (other_id, other_trace): (usize, Trace),
         state: &mut ConnectState,
+        trace_nodes: &mut Vec<Trace>,
     ) {
         //let mut outputs: Vec<Vec<usize>> = Vec::new(); // need to dedup later
 
@@ -462,25 +556,35 @@ mod explore_new {
         // (bus trace id, trace) -> trace id
         //let mut bus_connections: HashMap<(usize, Trace), Vec<usize>> = HashMap::new();
         //
-
+        //dbg!(this_trace);
+        //dbg!(trace_nodes[this_id]);
+        //dbg!(other_trace);
+        //dbg!(trace_nodes[other_id]);
         if other_trace == Trace::Mesh {
             state
                 .mesh_connections
                 .entry(this_trace)
                 .or_default()
                 .push(this_id);
+            assert!(!is_mesh(this_trace));
+            assert_ne!(is_mesh(this_trace), is_mesh(other_trace));
         } else if is_bus(other_trace) {
             state
                 .bus_connections
                 .entry((other_id, this_trace))
                 .or_default()
                 .push(this_id);
+            assert_ne!(is_bus(this_trace), is_bus(other_trace));
         } else if can_have_outputs(this_trace) && other_trace == Trace::Write {
             // this -> other
             state.connections.push((this_id, other_id));
+            validate_connection(this_trace, other_trace);
+            validate_connection(trace_nodes[this_id], trace_nodes[other_id]);
         } else if can_have_inputs(this_trace) && other_trace == Trace::Read {
             // other -> this
             state.connections.push((other_id, this_id));
+            validate_connection(this_trace, other_trace);
+            validate_connection(trace_nodes[this_id], trace_nodes[other_id]);
         }
     }
     fn index_offset(

@@ -7,10 +7,10 @@ use std::hint::black_box;
 
 fn input_data() -> Vec<(&'static str, VcbInput)> {
     vec![
-        //(
-        //    "serial mult",
-        //    VcbInput::World(include_str!("../test_files/serial_multipliers.vcb").to_string()),
-        //),
+        (
+            "serial mult",
+            VcbInput::World(include_str!("../test_files/serial_multipliers.vcb").to_string()),
+        ),
         (
             "big_decoder",
             VcbInput::BlueprintLegacy(
@@ -69,6 +69,7 @@ fn bench_parsing<T: LogicSim>(
     input: &[(&'static str, VcbInput)],
 ) {
     let mut c_run = c.benchmark_group(group_name);
+    c_run.sample_size(10);
     for (name, data) in input {
         c_run.bench_function(*name, |b| {
             b.iter(|| {
