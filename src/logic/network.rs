@@ -159,7 +159,7 @@ mod passes {
 
     /// Normalize gatetype
     /// (node, inputs) -> node, stable
-    fn node_normalization_pass<T: CsrIndex>(graph: &mut CsrGraph<T>, /*&mut Option<Csc>*/)
+    fn node_normalization_pass<T: CsrIndex>(graph: &mut CsrGraph<T> /*&mut Option<Csc>*/)
     where
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
@@ -181,21 +181,26 @@ mod passes {
             };
         }
     }
-    fn node_merge_pass<T: CsrIndex>(graph: &mut CsrGraph<T>, /*&mut Option<Csc>*/) 
+    /// ASSUME: csr outputs sorted (why?)
+    /// ASSUME: input is Csc
+    fn node_merge_pass<T: CsrIndex>(csc: &mut Csr<T>, nodes: Vec<GateNode> /*&mut Option<Csc>*/)
     where
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
         Csr<T>: Index<usize, Output = [T]>,
     {
-        let csc = graph.csr.as_csc();
         // gate node + inputs -> new id
         let mut map: HashMap<(&GateNode, &[T]), usize> = HashMap::new();
-        for (node, inputs) in graph.nodes.iter().zip(csc.iter()) {
-            if let Some(id) = map.get(&(node, inputs)) {
-                map.insert((node, inputs), 0_usize);
+        let mut table = Vec::new();
+        for (node, inputs) in nodes.iter().zip(csc.iter()) {
+            table.push(if let Some(id) = map.get(&(node, inputs)) {
+                *id
             } else {
-            }
+                let id = table.len();
+                map.insert((node, inputs), id);
+                id
+            })
         }
     }
 
