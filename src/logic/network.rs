@@ -1,5 +1,5 @@
 //! network.rs: Manage and optimize the network while preserving behaviour.
-use crate::logic::{gate_status, Gate, GateKey, GateType, IndexType, UpdateStrategy};
+use crate::logic::{gate_status, Gate, GateKey, GateType, IndexType};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;

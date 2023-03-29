@@ -274,26 +274,8 @@ pub(crate) mod explore_new {
             .connections
             .iter()
             .for_each(|(a, b)| validate_connection(trace_nodes[*a], trace_nodes[*b]));
-        //dbg!(&ids, &connect_state, &fill_state);
-
-        let max_trace_id = trace_nodes.len();
-
-        // the following will need to be merged:
-        //
-        // mesh_connections: HashMap<Trace, Vec<usize>>,
-        // bus_connections: HashMap<(usize, Trace), Vec<usize>>,
-        // the mesh id also needs to be removed.
-        //
-        // we need to figure out what sets of these overlap...
-
-        // trace id -> (merged) gate id
-
-        //dbg!(connect_state
-        //    .connections
-        //    .iter()
-        //    .map(|&(a, b)| (trace_nodes[a], trace_nodes[b]))
-        //    .collect_vec());
         let (table, table_inv, num_ids_after_merge) = {
+            let max_trace_id = trace_nodes.len();
             let mut id_sets: Vec<_> = connect_state
                 .mesh_connections
                 .into_iter()
@@ -310,12 +292,8 @@ pub(crate) mod explore_new {
             for set in id_sets.iter_mut() {
                 set.sort() // probably not needed, but may be better for cache stuff later?
             }
-            //dbg!(&id_sets);
 
             let mut table: Vec<_> = (0..max_trace_id).collect();
-            let mut table_inv = table.iter().map(|&i| Some(i)).collect_vec();
-            let num_ids_after_merge = max_trace_id;
-            //dbg!(&table);
             for set in id_sets.iter() {
                 let smallest = unwrap_or_else!(set.iter().map(|&id| table[id]).min(), continue);
                 for id in set.iter().cloned() {
@@ -363,7 +341,6 @@ pub(crate) mod explore_new {
             }
             (table, table_inv, num_ids_after_merge)
         };
-        drop(max_trace_id);
 
         // TODO: delete busses, mesh
 
