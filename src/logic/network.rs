@@ -139,9 +139,14 @@ mod sparse {
         pub(crate) fn iter(&self) -> impl Iterator<Item = &[T]> {
             (0..self.len()).map(|i| &self[i])
         }
-
-        /// Sort the slices in this [`Sparse<T, CSR>`].
-        pub(crate) fn sort(&mut self) {
+        pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = &mut [T]> {
+            SparseIterMut::new(&self.indexes, &mut self.outputs)
+        }
+        pub(crate) fn iter_inner(&self) -> impl Iterator<Item = T> + '_ {
+            self.outputs.iter().cloned()
+        }
+        pub(crate) fn iter_inner_mut(&mut self) -> impl Iterator<Item = &mut T> {
+            self.outputs.iter_mut()
         }
     }
     impl<T: SparseIndex, const CSR: bool> Index<usize> for Sparse<T, CSR>
@@ -176,6 +181,44 @@ mod sparse {
             }
         }
     }
+
+    struct SparseIterMut<'a, T: SparseIndex> {
+        indexes: &'a [T],
+        outputs: &'a mut [T],
+        current: usize,
+    }
+    impl<'a, T: SparseIndex> Iterator for SparseIterMut<'a, T>
+    where
+        usize: TryFrom<T>,
+        <usize as TryFrom<T>>::Error: std::fmt::Debug,
+    {
+        type Item = &'a mut [T];
+
+        fn next(&mut self) -> Option<Self::Item> {
+            let slice = take(&mut self.outputs);
+            if slice.is_empty() {
+                return None;
+            }
+            let size = usize::try_from(self.indexes[self.current + 1]).unwrap()
+                - usize::try_from(self.indexes[self.current]).unwrap();
+            self.current += 1;
+
+            let (l, r) = slice.split_at_mut(size);
+            self.outputs = r;
+            Some(l)
+        }
+    }
+    impl<'a, T: SparseIndex> SparseIterMut<'a, T> {
+        fn new(indexes: &'a [T], outputs: &'a mut [T]) -> Self {
+            Self {
+                indexes,
+                outputs,
+                current: 0,
+            }
+        }
+    }
+
+    use std::mem::take;
 }
 #[derive(Hash, Clone, Eq, PartialEq)]
 pub(crate) struct GateNode {
@@ -229,36 +272,47 @@ mod passes {
             };
         }
     }
-    /// ASSUME: csc slices sorted (we sort here to normalize hash)
-    fn node_merge_pass<T: SparseIndex>(csc: &mut Csc<T>, nodes: &Vec<GateNode>)
-    where
+
+    /// NOTE: sorts inputs each time
+    /// NOTE: csc output not nessesarily sorted.
+    fn node_merge_pass<T: SparseIndex>(
+        csc: &mut Csc<T>,
+        nodes: &mut Vec<GateNode>,
+        translation_table: &mut [T],
+    ) where
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
         Csc<T>: Index<usize, Output = [T]>,
         Csc<T>: IndexMut<usize, Output = [T]>,
     {
-        // TODO: sort csc slices
-        // gate node + inputs -> new id
-        let mut map: HashMap<(&GateNode, &[T]), usize> = HashMap::new();
+        csc.iter_mut().for_each(|inputs| inputs.sort()); // normalize inputs
+        let mut map: HashMap<(&GateNode, &[T]), usize> = HashMap::new(); // TODO: faster hashmap
         let mut table = Vec::new();
+        let mut new_nodes = Vec::new();
         for (node, inputs) in nodes.iter().zip(csc.iter()) {
             table.push(if let Some(id) = map.get(&(node, inputs)) {
                 *id
             } else {
                 let id = table.len();
                 map.insert((node, inputs), id);
+                new_nodes.push(node.clone());
                 id
             })
         }
+        let f = |a: &mut T| *a = table[usize::try_from(*a).unwrap()].try_into().unwrap();
+        csc.iter_inner_mut().for_each(f);
+        translation_table.iter_mut().for_each(f);
+        *nodes = new_nodes;
     }
 
-    //TODO: * OPTIM: node normalization (1 or 0 input case)
-    //TODO: * OPTIM: merge identical nodes (-> extra outputs)
-    //TODO: * OPTIM: remove redundant connections
-    //TODO: * OPTIM: constant propagation (remove/disconnect outputs of gates with zero inputs)
-    //TODO: * OPTIM: detect what gates will be constants (by generating acc ranges?)
-    //TODO: * OPTIM: logical optimizations, preserving external view (very hard)
+    //TODO: [x] OPTIM: node normalization (1 or 0 input case)
+    //TODO: [x] OPTIM: merge identical nodes (-> extra outputs)
+    //TODO: [ ] OPTIM: remove redundant connections
+    //TODO: [ ] OPTIM: constant propagation (remove/disconnect outputs of gates with zero inputs)
+    //TODO: [ ] OPTIM: detect what gates will be constants (by generating acc ranges?)
+    //TODO: [ ] OPTIM: logical optimizations, preserving external view (very hard)
+    //TODO: [ ] pass ordering
 }
 /// Iterate through all gates, skipping any
 /// placeholder gates.
