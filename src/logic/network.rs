@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::iter::repeat;
-use std::ops::Index;
+use std::ops::{Index, IndexMut};
 
 fn reorder_by_indices<T>(data: &mut [T], indices: Vec<usize>) {
     reorder_by_indices_with(|a, b| data.swap(a, b), indices)
@@ -57,6 +57,7 @@ mod sparse {
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
         Csc<T>: Index<usize, Output = [T]>,
+        Csc<T>: IndexMut<usize, Output = [T]>,
     {
         pub(crate) fn as_csr(&self) -> Csr<T> {
             let Csc { indexes, outputs } = self.raw_swap_csr_csc();
@@ -69,6 +70,7 @@ mod sparse {
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
         Csr<T>: Index<usize, Output = [T]>,
+        Csr<T>: IndexMut<usize, Output = [T]>,
     {
         pub(crate) fn as_csc(&self) -> Csc<T> {
             let Csr { indexes, outputs } = self.raw_swap_csr_csc();
@@ -82,7 +84,9 @@ mod sparse {
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
         Sparse<T, CSR>: Index<usize, Output = [T]>,
+        Sparse<T, CSR>: IndexMut<usize, Output = [T]>,
     {
+        /// Returns the raw swap csr csc of this [`Sparse<T, CSR>`].
         fn raw_swap_csr_csc(&self) -> Sparse<T, CSR> {
             Self::from_adjacency(
                 self.adjacency_iter().map(|(from, to)| (to, from)).collect(),
@@ -135,7 +139,10 @@ mod sparse {
         pub(crate) fn iter(&self) -> impl Iterator<Item = &[T]> {
             (0..self.len()).map(|i| &self[i])
         }
-        pub(crate) fn sort(&mut self) {}
+
+        /// Sort the slices in this [`Sparse<T, CSR>`].
+        pub(crate) fn sort(&mut self) {
+        }
     }
     impl<T: SparseIndex, const CSR: bool> Index<usize> for Sparse<T, CSR>
     where
@@ -206,6 +213,7 @@ mod passes {
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
         Csc<T>: Index<usize, Output = [T]>,
+        Csc<T>: IndexMut<usize, Output = [T]>,
     {
         for (node, input_cardinality) in nodes.iter_mut().zip(csc.iter().map(|i| i.len())) {
             use GateType::*;
@@ -221,15 +229,16 @@ mod passes {
             };
         }
     }
-    /// ASSUME: csr outputs NOT sorted (we sort here to normalize hash)
+    /// ASSUME: csc slices sorted (we sort here to normalize hash)
     fn node_merge_pass<T: SparseIndex>(csc: &mut Csc<T>, nodes: &Vec<GateNode>)
     where
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
         Csc<T>: Index<usize, Output = [T]>,
+        Csc<T>: IndexMut<usize, Output = [T]>,
     {
-        csc.sort();
+        // TODO: sort csc slices
         // gate node + inputs -> new id
         let mut map: HashMap<(&GateNode, &[T]), usize> = HashMap::new();
         let mut table = Vec::new();

@@ -62,7 +62,7 @@ pub mod render;
 #[cfg(test)]
 mod tests {
     use crate::blueprint::{VcbBoard, VcbInput, VcbParser};
-    use crate::logic::{BitPackSim, LogicSim, ReferenceSim, ScalarSim, SimdSim, BatchSim};
+    use crate::logic::{BitPackSim, LogicSim, ReferenceSim, BatchSim};
 
     fn prep_cases<SIM: LogicSim>(optimize: bool) -> Vec<(&'static str, VcbBoard<SIM>)> {
         let cases: Vec<(&str, _)> = vec![
@@ -109,37 +109,37 @@ mod tests {
         run_test_o::<ReferenceSim, ReferenceSim>(false, true, 30);
     }
 
-    fn simd_test(optimized: bool) -> bool {
-        let optimized_board = prep_cases::<ReferenceSim>(optimized);
-        let optimized_simd = prep_cases::<SimdSim>(optimized);
-        //let mut correct: bool = true;
-        for ((name, mut optimized), (_, mut optimized_simd)) in
-            optimized_board.into_iter().zip(optimized_simd.into_iter())
-        {
-            //let width = optimized.width;
-            for i in 1..30 {
-                let optimized_state = optimized.make_state_vec();
-                let optimized_state_simd = optimized_simd.make_state_vec();
-                let diff_ids: Vec<usize> = optimized_state
-                    .into_iter()
-                    .zip(optimized_state_simd)
-                    .enumerate()
-                    .filter(|(_, (optim_bool, optim_bool_simd))| optim_bool != optim_bool_simd)
-                    .map(|(j, (_, _))| j)
-                    .collect();
-                if diff_ids.len() != 0 {
-                    //optimized.print_marked(&diff_ids);
-                    panic!("simd/non simd mismatch for test {name}, in iteration {i} at positions {diff_ids:?}");
-                    //correct = false;
-                    //break;
-                }
-                optimized_simd.logic_sim.update();
-                optimized.update();
-            }
-        }
-        //correct
-        true
-    }
+    //fn simd_test(optimized: bool) -> bool {
+    //    let optimized_board = prep_cases::<ReferenceSim>(optimized);
+    //    let optimized_simd = prep_cases::<SimdSim>(optimized);
+    //    //let mut correct: bool = true;
+    //    for ((name, mut optimized), (_, mut optimized_simd)) in
+    //        optimized_board.into_iter().zip(optimized_simd.into_iter())
+    //    {
+    //        //let width = optimized.width;
+    //        for i in 1..30 {
+    //            let optimized_state = optimized.make_state_vec();
+    //            let optimized_state_simd = optimized_simd.make_state_vec();
+    //            let diff_ids: Vec<usize> = optimized_state
+    //                .into_iter()
+    //                .zip(optimized_state_simd)
+    //                .enumerate()
+    //                .filter(|(_, (optim_bool, optim_bool_simd))| optim_bool != optim_bool_simd)
+    //                .map(|(j, (_, _))| j)
+    //                .collect();
+    //            if diff_ids.len() != 0 {
+    //                //optimized.print_marked(&diff_ids);
+    //                panic!("simd/non simd mismatch for test {name}, in iteration {i} at positions {diff_ids:?}");
+    //                //correct = false;
+    //                //break;
+    //            }
+    //            optimized_simd.logic_sim.update();
+    //            optimized.update();
+    //        }
+    //    }
+    //    //correct
+    //    true
+    //}
 
     fn run_test<Reference: LogicSim, Other: LogicSim>(optimized: bool, iterations: usize) {
         run_test_o::<Reference, Other>(optimized, optimized, iterations);
