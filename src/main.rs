@@ -7,9 +7,8 @@ use crossterm::terminal::{
 };
 use logic_simulator::blueprint::{VcbInput, VcbParser};
 use logic_simulator::logic::{
-    BatchSim, BitPackSim, LogicSim, ReferenceSim, RenderSim, ScalarSim, SimdSim, UpdateStrategy,
+    BatchSim, BitPackSim, LogicSim, ReferenceSim, RenderSim, UpdateStrategy,
 };
-use logic_simulator::render;
 use std::fs::read_to_string;
 use std::io::stdout;
 use std::path::PathBuf;
@@ -120,12 +119,6 @@ fn main() {
     match args.implementation {
         UpdateStrategy::Reference => {
             handle_board::<ReferenceSim>(&args, parser_input);
-        },
-        UpdateStrategy::ScalarSimd => {
-            handle_board::<ScalarSim>(&args, parser_input);
-        },
-        UpdateStrategy::Simd => {
-            handle_board::<SimdSim>(&args, parser_input);
         },
         UpdateStrategy::BitPack => {
             handle_board::<BitPackSim>(&args, parser_input);

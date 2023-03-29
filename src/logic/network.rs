@@ -183,8 +183,10 @@ mod passes {
     }
     /// ASSUME: csr outputs sorted (why?)
     /// ASSUME: input is Csc
-    fn node_merge_pass<T: CsrIndex>(csc: &mut Csr<T>, nodes: Vec<GateNode> /*&mut Option<Csc>*/)
-    where
+    fn node_merge_pass<T: CsrIndex>(
+        csc: &mut Csr<T>,
+        nodes: Vec<GateNode>, /*&mut Option<Csc>*/
+    ) where
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
@@ -274,12 +276,6 @@ pub struct InitializedNetwork {
     pub(crate) translation_table: Vec<IndexType>,
 }
 impl InitializedNetwork {
-    pub(crate) fn with_gaps(self, strategy: UpdateStrategy) -> NetworkWithGaps {
-        match strategy {
-            UpdateStrategy::ScalarSimd => Self::prepare_for_scalar_packing(&self),
-            _ => NetworkWithGaps::create_from(self),
-        }
-    }
     fn create_from(network: EditableNetwork, optimize: bool) -> Self {
         assert_ne!(network.gates.len(), 0, "no gates where added.");
         let new_network = InitializedNetwork {
