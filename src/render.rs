@@ -85,17 +85,17 @@ use crate::logic::RenderSim;
 // }
 
 use std::marker::Send;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Barrier, Mutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
-#[derive(Debug)]
-enum RenderSimTask {
-    Exit,
-    CopyData,
-    Run,
-    Step,
-    Pause,
-}
+//#[derive(Debug)]
+//enum RenderSimTask {
+//    Exit,
+//    CopyData,
+//    Run,
+//    Step,
+//    Pause,
+//}
 
 // things left to evaluate:
 // # async mpsc variants.
@@ -188,18 +188,18 @@ impl RenderSimController {
             mem::replace(&mut self.last_counter_reset, Instant::now()).elapsed(),
         )
     }
-    // stop sim from calling update
-    fn pause(&mut self) {
-        todo!()
-    }
-    // resume to max speed
-    fn resume(&mut self) {
-        todo!()
-    }
-    // only on paused sim
-    fn step(&mut self, steps: usize) {
-        todo!()
-    }
+    //// stop sim from calling update
+    //fn pause(&mut self) {
+    //    todo!()
+    //}
+    //// resume to max speed
+    //fn resume(&mut self) {
+    //    todo!()
+    //}
+    //// only on paused sim
+    //fn step(&mut self, steps: usize) {
+    //    todo!()
+    //}
 }
 /*struct RenderSimController {
     barrier: Arc<Barrier>,

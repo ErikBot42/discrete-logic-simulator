@@ -26,12 +26,13 @@ fn reorder_by_indices_with<F: FnMut(usize, usize)>(mut swap_indices: F, mut indi
         }
     }
 }
-mod csr {
-    use super::*;
+mod sparse {
+    use itertools::Itertools;
+    use std::convert::TryFrom;
     use std::fmt::Debug;
     use std::hash::Hash;
-    use std::iter::repeat;
-    use std::ops::Index;
+    use std::ops::{Index, IndexMut};
+
     pub(crate) trait SparseIndex:
         Copy + Default + Hash + Ord + Debug + 'static + TryInto<usize> + TryFrom<usize>
     {
@@ -40,10 +41,27 @@ mod csr {
         T: Copy + Default + Hash + Ord + Debug + 'static + TryInto<usize> + TryFrom<usize>
     {
     }
+
+    pub(crate) type Csc<T> = Sparse<T, false>;
+    pub(crate) type Csr<T> = Sparse<T, true>;
+
     #[derive(Clone)]
-    pub(crate) struct Csr<T: SparseIndex> {
+    pub(crate) struct Sparse<T: SparseIndex, const CSR: bool> {
         pub(crate) indexes: Vec<T>,
         pub(crate) outputs: Vec<T>,
+    }
+
+    impl<T: SparseIndex> Csc<T>
+    where
+        <T as TryFrom<usize>>::Error: Debug,
+        <usize as TryFrom<T>>::Error: Debug,
+        usize: TryFrom<T>,
+        Csc<T>: Index<usize, Output = [T]>,
+    {
+        pub(crate) fn as_csr(&self) -> Csr<T> {
+            let Csc { indexes, outputs } = self.raw_swap_csr_csc();
+            Csr { indexes, outputs }
+        }
     }
     impl<T: SparseIndex> Csr<T>
     where
@@ -52,6 +70,25 @@ mod csr {
         usize: TryFrom<T>,
         Csr<T>: Index<usize, Output = [T]>,
     {
+        pub(crate) fn as_csc(&self) -> Csc<T> {
+            let Csr { indexes, outputs } = self.raw_swap_csr_csc();
+            Csc { indexes, outputs }
+        }
+    }
+
+    impl<T: SparseIndex, const CSR: bool> Sparse<T, CSR>
+    where
+        <T as TryFrom<usize>>::Error: Debug,
+        <usize as TryFrom<T>>::Error: Debug,
+        usize: TryFrom<T>,
+        Sparse<T, CSR>: Index<usize, Output = [T]>,
+    {
+        fn raw_swap_csr_csc(&self) -> Sparse<T, CSR> {
+            Self::from_adjacency(
+                self.adjacency_iter().map(|(from, to)| (to, from)).collect(),
+                self.len(),
+            )
+        }
         pub(crate) fn new(
             outputs_iter: impl IntoIterator<Item = impl IntoIterator<Item = T>>,
         ) -> Self {
@@ -86,26 +123,21 @@ mod csr {
 
             let mut curr_output = outputs_iter.next();
             let outputs_iter = (0..len).map(|id| {
-            if (curr_output.as_ref().map(|(from, _)| id == usize::try_from(*from).unwrap()) == Some(true)) &&
-                let Some(iter) = replace(&mut curr_output, outputs_iter.next()).map(|a| a.1) {
-                Left(iter)
-            } else {
-                Right([T::try_from(0_usize).unwrap(); 0].into_iter())
-            }
-        });
+                    if (curr_output.as_ref().map(|(from, _)| id == usize::try_from(*from).unwrap()) == Some(true)) &&
+                        let Some(iter) = replace(&mut curr_output, outputs_iter.next()).map(|a| a.1) {
+                        Left(iter)
+                    } else {
+                        Right([T::try_from(0_usize).unwrap(); 0].into_iter())
+                    }
+                });
             Self::new(outputs_iter)
-        }
-        pub(crate) fn as_csc(&self) -> Self {
-            Self::from_adjacency(
-                self.adjacency_iter().map(|(from, to)| (to, from)).collect(),
-                self.len(),
-            )
         }
         pub(crate) fn iter(&self) -> impl Iterator<Item = &[T]> {
             (0..self.len()).map(|i| &self[i])
         }
+        pub(crate) fn sort(&mut self) {}
     }
-    impl<T: SparseIndex> Index<usize> for Csr<T>
+    impl<T: SparseIndex, const CSR: bool> Index<usize> for Sparse<T, CSR>
     where
         <T as TryInto<usize>>::Error: Debug,
     {
@@ -116,27 +148,24 @@ mod csr {
             &self.outputs[from..to]
         }
     }
-    impl<T: SparseIndex> Default for Csr<T>
+    impl<T: SparseIndex, const CSR: bool> IndexMut<usize> for Sparse<T, CSR>
     where
-        T: std::convert::TryFrom<usize>,
+        <T as TryInto<usize>>::Error: Debug,
+    {
+        fn index_mut(&mut self, i: usize) -> &mut Self::Output {
+            let from: usize = self.indexes[i].try_into().unwrap();
+            let to: usize = self.indexes[i + 1].try_into().unwrap();
+            &mut self.outputs[from..to]
+        }
+    }
+    impl<T: SparseIndex, const CSR: bool> Default for Sparse<T, CSR>
+    where
         <T as TryFrom<usize>>::Error: Debug,
     {
         fn default() -> Self {
             Self {
                 indexes: vec![0_usize.try_into().unwrap()],
                 outputs: Vec::new(),
-            }
-        }
-    }
-    impl<T: SparseIndex> CsrGraph<T>
-    where
-        <T as TryFrom<usize>>::Error: std::fmt::Debug,
-    {
-        fn new(csr: Csr<T>, nodes: Vec<GateNode>) -> Self {
-            Self {
-                table: (0..nodes.len()).map(|i| i.try_into().unwrap()).collect(),
-                csr,
-                nodes,
             }
         }
     }
@@ -161,8 +190,8 @@ pub(crate) struct CsrGraph<T: SparseIndex> {
     /// |k|
     pub(crate) nodes: Vec<GateNode>,
 }
-pub(crate) use csr::Csr;
-use csr::SparseIndex;
+use sparse::SparseIndex;
+pub(crate) use sparse::{Csc, Csr};
 mod passes {
     use super::*;
     // https://faultlore.com/blah/oops-that-was-important/
@@ -171,15 +200,14 @@ mod passes {
 
     /// Normalize gatetype
     /// (node, inputs) -> node, stable
-    fn node_normalization_pass<T: SparseIndex>(graph: &mut CsrGraph<T> /*&mut Option<Csc>*/)
+    fn node_normalization_pass<T: SparseIndex>(nodes: &mut Vec<GateNode>, csc: &Csc<T>)
     where
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
-        Csr<T>: Index<usize, Output = [T]>,
+        Csc<T>: Index<usize, Output = [T]>,
     {
-        let csc = graph.csr.as_csc();
-        for (node, input_cardinality) in graph.nodes.iter_mut().zip(csc.iter().map(|i| i.len())) {
+        for (node, input_cardinality) in nodes.iter_mut().zip(csc.iter().map(|i| i.len())) {
             use GateType::*;
             node.kind = match input_cardinality {
                 0 | 1 => match node.kind {
@@ -193,17 +221,15 @@ mod passes {
             };
         }
     }
-    /// ASSUME: csr outputs sorted (why?)
-    /// ASSUME: input is Csc
-    fn node_merge_pass<T: SparseIndex>(
-        csc: &mut Csr<T>,
-        nodes: Vec<GateNode>, /*&mut Option<Csc>*/
-    ) where
+    /// ASSUME: csr outputs NOT sorted (we sort here to normalize hash)
+    fn node_merge_pass<T: SparseIndex>(csc: &mut Csc<T>, nodes: &Vec<GateNode>)
+    where
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
-        Csr<T>: Index<usize, Output = [T]>,
+        Csc<T>: Index<usize, Output = [T]>,
     {
+        csc.sort();
         // gate node + inputs -> new id
         let mut map: HashMap<(&GateNode, &[T]), usize> = HashMap::new();
         let mut table = Vec::new();
