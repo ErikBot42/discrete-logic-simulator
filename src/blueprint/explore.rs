@@ -527,16 +527,6 @@ pub(crate) mod explore_new {
         state: &mut ConnectState,
         trace_nodes: &mut Vec<Trace>,
     ) {
-        //let mut outputs: Vec<Vec<usize>> = Vec::new(); // need to dedup later
-
-        //let mut mesh_connections: HashMap<Trace, Vec<usize>> = HashMap::new();
-        // (bus trace id, trace) -> trace id
-        //let mut bus_connections: HashMap<(usize, Trace), Vec<usize>> = HashMap::new();
-        //
-        //dbg!(this_trace);
-        //dbg!(trace_nodes[this_id]);
-        //dbg!(other_trace);
-        //dbg!(trace_nodes[other_id]);
         if other_trace == Trace::Mesh {
             state
                 .mesh_connections

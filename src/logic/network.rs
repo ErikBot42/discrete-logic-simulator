@@ -26,56 +26,66 @@ fn reorder_by_indices_with<F: FnMut(usize, usize)>(mut swap_indices: F, mut indi
         }
     }
 }
-pub(crate) trait CsrIndex:
-    Copy + Default + Hash + Ord + Debug + 'static + TryInto<usize> + TryFrom<usize>
-{
-}
-impl<T> CsrIndex for T where
-    T: Copy + Default + Hash + Ord + Debug + 'static + TryInto<usize> + TryFrom<usize>
-{
-}
-#[derive(Clone)]
-pub(crate) struct Csr<T: CsrIndex> {
-    pub(crate) indexes: Vec<T>,
-    pub(crate) outputs: Vec<T>,
-}
-impl<T: CsrIndex> Csr<T>
-where
-    <T as TryFrom<usize>>::Error: Debug,
-    <usize as TryFrom<T>>::Error: Debug,
-    usize: TryFrom<T>,
-    Csr<T>: Index<usize, Output = [T]>,
-{
-    pub(crate) fn new(outputs_iter: impl IntoIterator<Item = impl IntoIterator<Item = T>>) -> Self {
-        let mut this = Self::default();
-        for gate_outputs in outputs_iter {
-            this.push(gate_outputs);
+mod csr {
+    use super::*;
+    use std::fmt::Debug;
+    use std::hash::Hash;
+    use std::iter::repeat;
+    use std::ops::Index;
+    pub(crate) trait SparseIndex:
+        Copy + Default + Hash + Ord + Debug + 'static + TryInto<usize> + TryFrom<usize>
+    {
+    }
+    impl<T> SparseIndex for T where
+        T: Copy + Default + Hash + Ord + Debug + 'static + TryInto<usize> + TryFrom<usize>
+    {
+    }
+    #[derive(Clone)]
+    pub(crate) struct Csr<T: SparseIndex> {
+        pub(crate) indexes: Vec<T>,
+        pub(crate) outputs: Vec<T>,
+    }
+    impl<T: SparseIndex> Csr<T>
+    where
+        <T as TryFrom<usize>>::Error: Debug,
+        <usize as TryFrom<T>>::Error: Debug,
+        usize: TryFrom<T>,
+        Csr<T>: Index<usize, Output = [T]>,
+    {
+        pub(crate) fn new(
+            outputs_iter: impl IntoIterator<Item = impl IntoIterator<Item = T>>,
+        ) -> Self {
+            let mut this = Self::default();
+            for gate_outputs in outputs_iter {
+                this.push(gate_outputs);
+            }
+            this
         }
-        this
-    }
-    fn push(&mut self, new_outputs: impl IntoIterator<Item = T>) {
-        self.outputs.extend(new_outputs);
-        self.indexes.push(self.outputs.len().try_into().unwrap());
-    }
-    pub(crate) fn len(&self) -> usize {
-        self.indexes.len() - 1
-    }
-    pub(crate) fn adjacency_iter(&self) -> impl Iterator<Item = (T, T)> + '_ {
-        (0..self.len())
-            .map(|i| std::iter::repeat(i.try_into().unwrap()).zip(self.index(i).iter().cloned()))
-            .flatten()
-    }
-    pub(crate) fn from_adjacency(mut adjacency: Vec<(T, T)>, len: usize) -> Self {
-        use either::Either::{Left, Right};
-        use std::mem::replace;
-        adjacency.sort();
-        let outputs_grouped = adjacency.into_iter().dedup().group_by(|a| a.0);
-        let mut outputs_iter = outputs_grouped
-            .into_iter()
-            .map(|(from, outputs)| (from, outputs.map(|(_, output)| output)));
+        fn push(&mut self, new_outputs: impl IntoIterator<Item = T>) {
+            self.outputs.extend(new_outputs);
+            self.indexes.push(self.outputs.len().try_into().unwrap());
+        }
+        pub(crate) fn len(&self) -> usize {
+            self.indexes.len() - 1
+        }
+        pub(crate) fn adjacency_iter(&self) -> impl Iterator<Item = (T, T)> + '_ {
+            (0..self.len())
+                .map(|i| {
+                    std::iter::repeat(i.try_into().unwrap()).zip(self.index(i).iter().cloned())
+                })
+                .flatten()
+        }
+        pub(crate) fn from_adjacency(mut adjacency: Vec<(T, T)>, len: usize) -> Self {
+            use either::Either::{Left, Right};
+            use std::mem::replace;
+            adjacency.sort();
+            let outputs_grouped = adjacency.into_iter().dedup().group_by(|a| a.0);
+            let mut outputs_iter = outputs_grouped
+                .into_iter()
+                .map(|(from, outputs)| (from, outputs.map(|(_, output)| output)));
 
-        let mut curr_output = outputs_iter.next();
-        let outputs_iter = (0..len).map(|id| {
+            let mut curr_output = outputs_iter.next();
+            let outputs_iter = (0..len).map(|id| {
             if (curr_output.as_ref().map(|(from, _)| id == usize::try_from(*from).unwrap()) == Some(true)) &&
                 let Some(iter) = replace(&mut curr_output, outputs_iter.next()).map(|a| a.1) {
                 Left(iter)
@@ -83,44 +93,56 @@ where
                 Right([T::try_from(0_usize).unwrap(); 0].into_iter())
             }
         });
-        Self::new(outputs_iter)
+            Self::new(outputs_iter)
+        }
+        pub(crate) fn as_csc(&self) -> Self {
+            Self::from_adjacency(
+                self.adjacency_iter().map(|(from, to)| (to, from)).collect(),
+                self.len(),
+            )
+        }
+        pub(crate) fn iter(&self) -> impl Iterator<Item = &[T]> {
+            (0..self.len()).map(|i| &self[i])
+        }
     }
-    pub(crate) fn as_csc(&self) -> Self {
-        Self::from_adjacency(
-            self.adjacency_iter().map(|(from, to)| (to, from)).collect(),
-            self.len(),
-        )
+    impl<T: SparseIndex> Index<usize> for Csr<T>
+    where
+        <T as TryInto<usize>>::Error: Debug,
+    {
+        type Output = [T];
+        fn index(&self, i: usize) -> &Self::Output {
+            let from: usize = self.indexes[i].try_into().unwrap();
+            let to: usize = self.indexes[i + 1].try_into().unwrap();
+            &self.outputs[from..to]
+        }
     }
-    pub(crate) fn iter(&self) -> impl Iterator<Item = &[T]> {
-        (0..self.len()).map(|i| &self[i])
+    impl<T: SparseIndex> Default for Csr<T>
+    where
+        T: std::convert::TryFrom<usize>,
+        <T as TryFrom<usize>>::Error: Debug,
+    {
+        fn default() -> Self {
+            Self {
+                indexes: vec![0_usize.try_into().unwrap()],
+                outputs: Vec::new(),
+            }
+        }
     }
-}
-impl<T: CsrIndex> Index<usize> for Csr<T>
-where
-    <T as TryInto<usize>>::Error: Debug,
-{
-    type Output = [T];
-    fn index(&self, i: usize) -> &Self::Output {
-        let from: usize = self.indexes[i].try_into().unwrap();
-        let to: usize = self.indexes[i + 1].try_into().unwrap();
-        &self.outputs[from..to]
-    }
-}
-impl<T: CsrIndex> Default for Csr<T>
-where
-    T: std::convert::TryFrom<usize>,
-    <T as TryFrom<usize>>::Error: Debug,
-{
-    fn default() -> Self {
-        Self {
-            indexes: vec![0_usize.try_into().unwrap()],
-            outputs: Vec::new(),
+    impl<T: SparseIndex> CsrGraph<T>
+    where
+        <T as TryFrom<usize>>::Error: std::fmt::Debug,
+    {
+        fn new(csr: Csr<T>, nodes: Vec<GateNode>) -> Self {
+            Self {
+                table: (0..nodes.len()).map(|i| i.try_into().unwrap()).collect(),
+                csr,
+                nodes,
+            }
         }
     }
 }
-
 #[derive(Hash, Clone, Eq, PartialEq)]
-struct GateNode {
+pub(crate) struct GateNode {
     kind: GateType, // add constant on/off nodes?
     initial_state: bool,
 }
@@ -130,27 +152,17 @@ struct GateNode {
 //    acc_offset: usize,
 //    constant: Option<bool>
 //}
-struct CsrGraph<T: CsrIndex> {
+pub(crate) struct CsrGraph<T: SparseIndex> {
     /// mapping from original nodes to optimized nodes
     /// |n| -> |k|
-    table: Vec<T>,
+    pub(crate) table: Vec<T>,
     /// |k|
-    csr: Csr<T>,
+    pub(crate) csr: Csr<T>,
     /// |k|
-    nodes: Vec<GateNode>,
+    pub(crate) nodes: Vec<GateNode>,
 }
-impl<T: CsrIndex> CsrGraph<T>
-where
-    <T as TryFrom<usize>>::Error: std::fmt::Debug,
-{
-    fn new(csr: Csr<T>, nodes: Vec<GateNode>) -> Self {
-        Self {
-            table: (0..nodes.len()).map(|i| i.try_into().unwrap()).collect(),
-            csr,
-            nodes,
-        }
-    }
-}
+pub(crate) use csr::Csr;
+use csr::SparseIndex;
 mod passes {
     use super::*;
     // https://faultlore.com/blah/oops-that-was-important/
@@ -159,7 +171,7 @@ mod passes {
 
     /// Normalize gatetype
     /// (node, inputs) -> node, stable
-    fn node_normalization_pass<T: CsrIndex>(graph: &mut CsrGraph<T> /*&mut Option<Csc>*/)
+    fn node_normalization_pass<T: SparseIndex>(graph: &mut CsrGraph<T> /*&mut Option<Csc>*/)
     where
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
@@ -183,7 +195,7 @@ mod passes {
     }
     /// ASSUME: csr outputs sorted (why?)
     /// ASSUME: input is Csc
-    fn node_merge_pass<T: CsrIndex>(
+    fn node_merge_pass<T: SparseIndex>(
         csc: &mut Csr<T>,
         nodes: Vec<GateNode>, /*&mut Option<Csc>*/
     ) where
