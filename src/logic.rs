@@ -4,17 +4,17 @@
 #![allow(clippy::inline_always)]
 //#![allow(dead_code)]
 
+pub mod batch_sim;
 pub mod bitmanip;
 pub mod bitpack_sim;
 pub mod gate_status;
 pub mod network;
 pub mod reference_sim;
-pub mod batch_sim;
 
 pub(crate) use crate::logic::network::{GateNetwork, InitializedNetwork};
+use network::Csr;
 use std::simd::{Mask, Simd};
 use strum_macros::EnumIter;
-use network::Csr;
 
 //pub type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
 pub type ReferenceSim = reference_sim::ReferenceLogicSim;
@@ -72,6 +72,25 @@ impl GateType {
     }
     fn is_cluster(self) -> bool {
         matches!(self, GateType::Cluster)
+    }
+
+    /// Is this gate always constantly off
+    fn constant_analysis(k: GateType, max_active: usize, inputs: usize) {
+        let rtype = RunTimeGateType::new(k);
+        let acc0: AccType = Gate::calc_acc_i(inputs, k);
+        let acc1: AccType = acc0.wrapping_add(AccType::try_from(max_active).unwrap());
+        // extreme points for acc will always be [0, max_active] for and, or, nor, nand
+        // AndNor => acc == 0,
+        // OrNand => acc != 0,
+        // XorXnor => acc & 1 == 1,
+        // Latch => state != ((acc & 1 == 1) && (acc_prev & 1 == 0)),
+        // TODO: EXPAND MATCHING TO INCLUDE LATCH
+        match rtype {
+            RunTimeGateType::AndNor => acc0 != 0 && acc1 != 0,
+            RunTimeGateType::OrNand => acc0 == 0 && acc1 == 0,
+            RunTimeGateType::XorXnor => acc0 == 0 && acc1 == 0,
+            RunTimeGateType::Latch => false,
+        };
     }
 }
 
@@ -268,6 +287,20 @@ impl Gate {
         self.inputs.append(inputs);
         self.inputs.sort_unstable(); // TODO: probably not needed
     }
+    const fn evaluate_simple<T>(
+        acc: AccType,
+        acc_prev_parity: bool,
+        state: bool,
+        kind: RunTimeGateType,
+    ) -> bool {
+        let acc_prev = acc_prev_parity as AccType;
+        match kind {
+            RunTimeGateType::OrNand => acc != 0,
+            RunTimeGateType::AndNor => acc == 0,
+            RunTimeGateType::XorXnor => acc & 1 == 1,
+            RunTimeGateType::Latch => state != ((acc & 1 == 1) && (acc_prev & 1 == 0)),
+        }
+    }
     #[inline]
     const fn evaluate(acc: AccType, acc_prev: AccType, state: bool, kind: RunTimeGateType) -> bool {
         match kind {
@@ -373,10 +406,6 @@ pub enum UpdateStrategy {
     /// Partial updates
     Batch = 4,
 }
-
-
-
-
 
 #[cfg(test)]
 mod tests {

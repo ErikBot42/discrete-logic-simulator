@@ -41,8 +41,9 @@ mod sparse {
         T: Copy + Default + Hash + Ord + Debug + 'static + TryInto<usize> + TryFrom<usize>
     {
     }
-
+    /// Compressed Sparse Column, "list of inputs"
     pub(crate) type Csc<T> = Sparse<T, false>;
+    /// Compressed Sparse Row, "list of outputs"
     pub(crate) type Csr<T> = Sparse<T, true>;
 
     #[derive(Clone)]
@@ -56,7 +57,6 @@ mod sparse {
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
-        Csc<T>: Index<usize, Output = [T]>,
         Csc<T>: IndexMut<usize, Output = [T]>,
     {
         pub(crate) fn as_csr(&self) -> Csr<T> {
@@ -69,7 +69,6 @@ mod sparse {
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
-        Csr<T>: Index<usize, Output = [T]>,
         Csr<T>: IndexMut<usize, Output = [T]>,
     {
         pub(crate) fn as_csc(&self) -> Csc<T> {
@@ -83,7 +82,6 @@ mod sparse {
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
-        Sparse<T, CSR>: Index<usize, Output = [T]>,
         Sparse<T, CSR>: IndexMut<usize, Output = [T]>,
     {
         /// Returns the raw swap csr csc of this [`Sparse<T, CSR>`].
@@ -147,6 +145,10 @@ mod sparse {
         }
         pub(crate) fn iter_inner_mut(&mut self) -> impl Iterator<Item = &mut T> {
             self.outputs.iter_mut()
+        }
+        /// Sort slices in [`Sparse<T, CSR>`].
+        pub(crate) fn sort(&mut self) {
+            self.iter_mut().for_each(|inputs| inputs.sort());
         }
     }
     impl<T: SparseIndex, const CSR: bool> Index<usize> for Sparse<T, CSR>
@@ -255,7 +257,6 @@ mod passes {
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
-        Csc<T>: Index<usize, Output = [T]>,
         Csc<T>: IndexMut<usize, Output = [T]>,
     {
         for (node, input_cardinality) in nodes.iter_mut().zip(csc.iter().map(|i| i.len())) {
@@ -273,8 +274,7 @@ mod passes {
         }
     }
 
-    /// NOTE: sorts inputs each time
-    /// NOTE: csc output not nessesarily sorted.
+    /// NOTE: unsorted input and unsorted output
     fn node_merge_pass<T: SparseIndex>(
         csc: &mut Csc<T>,
         nodes: &mut Vec<GateNode>,
@@ -283,10 +283,9 @@ mod passes {
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
-        Csc<T>: Index<usize, Output = [T]>,
         Csc<T>: IndexMut<usize, Output = [T]>,
     {
-        csc.iter_mut().for_each(|inputs| inputs.sort()); // normalize inputs
+        csc.sort(); // normalize inputs
         let mut map: HashMap<(&GateNode, &[T]), usize> = HashMap::new(); // TODO: faster hashmap
         let mut table = Vec::new();
         let mut new_nodes = Vec::new();
@@ -300,19 +299,77 @@ mod passes {
                 id
             })
         }
-        let f = |a: &mut T| *a = table[usize::try_from(*a).unwrap()].try_into().unwrap();
-        csc.iter_inner_mut().for_each(f);
-        translation_table.iter_mut().for_each(f);
+        let f = |a: T| table[usize::try_from(a).unwrap()].try_into().unwrap();
+        translation_table.iter_mut().for_each(|t| *t = f(*t));
         *nodes = new_nodes;
+        *csc = Csc::from_adjacency(
+            csc.adjacency_iter().map(|(a, b)| (f(a), f(b))).collect(),
+            nodes.len(),
+        );
+        assert_eq!(nodes.len(), table.len());
     }
 
-    //TODO: [x] OPTIM: node normalization (1 or 0 input case)
-    //TODO: [x] OPTIM: merge identical nodes (-> extra outputs)
-    //TODO: [ ] OPTIM: remove redundant connections
-    //TODO: [ ] OPTIM: constant propagation (remove/disconnect outputs of gates with zero inputs)
-    //TODO: [ ] OPTIM: detect what gates will be constants (by generating acc ranges?)
-    //TODO: [ ] OPTIM: logical optimizations, preserving external view (very hard)
-    //TODO: [ ] pass ordering
+    /// TODO: combine with constant analysis pass?
+    /// Removes redundant connections created from other passes.
+    fn redundant_input_connections_pass<T: SparseIndex>(csc: &mut Csc<T>, nodes: &Vec<GateNode>)
+    where
+        <T as TryFrom<usize>>::Error: Debug,
+        <usize as TryFrom<T>>::Error: Debug,
+        usize: TryFrom<T>,
+        Csc<T>: IndexMut<usize, Output = [T]>,
+    {
+        csc.sort();
+        use either::Either::{Left, Right};
+        let inputs_iter = csc.iter().zip(nodes.iter()).map(|(slice, node)| {
+            let slice = slice.iter().cloned();
+            if node.kind.can_delete_single_identical_inputs() {
+                Left(Left(slice.dedup()))
+            } else if node.kind.can_delete_double_identical_inputs() {
+                Left(Right(slice.peekable().batching(|it| {
+                    let next = it.next();
+                    if next == it.peek().copied() {
+                        it.next();
+                        None
+                    } else {
+                        next
+                    }
+                })))
+            } else {
+                Right(slice)
+            }
+        });
+        *csc = Csc::new(inputs_iter);
+    }
+
+    // TODO: GUARD
+    // -> (is node constant, max active inputs)
+    fn constant_analysis_pass<T: SparseIndex>(
+        csc: &Csc<T>,
+        nodes: &Vec<GateNode>,
+    ) -> (Vec<bool>, Vec<usize>)
+    where
+        <T as TryFrom<usize>>::Error: Debug,
+        <usize as TryFrom<T>>::Error: Debug,
+        usize: TryFrom<T>,
+        Csc<T>: IndexMut<usize, Output = [T]>,
+    {
+        todo!()
+    }
+
+    // TODO: OPTIM:
+    // [x] node normalization (1 or 0 input case)
+    // [x] merge identical nodes (-> extra outputs)
+    // [x] remove redundant connections
+    // [ ] constant propagation (remove/disconnect outputs of gates with zero inputs)
+    // [ ] detect what gates will be constants (by generating acc ranges?) (bidirectional search: inputs & outputs)
+    // [ ] logical optimizations, preserving external view (very hard)
+    // [ ] pass ordering
+    //
+    // TODO: exploit lifetime system to enforce metadata correctness through passes.
+    //
+    // TODO: if internal IR graph possible, use it to figure out what passes can/should be run
+    // automatically ("invalidate" completion of passes if they modify stuff), maybe something
+    // like https://github.com/typst/comemo/
 }
 /// Iterate through all gates, skipping any
 /// placeholder gates.
