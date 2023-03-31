@@ -250,30 +250,6 @@ mod passes {
     //
     // TODO: keep a "futures" csc that invalidates itself? put feature in Csr?
 
-    /// Normalize gatetype
-    /// (node, inputs) -> node, stable
-    fn node_normalization_pass<T: SparseIndex>(nodes: &mut Vec<GateNode>, csc: &Csc<T>)
-    where
-        <T as TryFrom<usize>>::Error: Debug,
-        <usize as TryFrom<T>>::Error: Debug,
-        usize: TryFrom<T>,
-        Csc<T>: IndexMut<usize, Output = [T]>,
-    {
-        for (node, input_cardinality) in nodes.iter_mut().zip(csc.iter().map(|i| i.len())) {
-            use GateType::*;
-            node.kind = match input_cardinality {
-                0 | 1 => match node.kind {
-                    And | Or | Xor => Or,
-                    Nor | Nand | Xnor => Nor,
-                    Latch => Latch,
-                    Interface(s) => Interface(s),
-                    Cluster => Cluster,
-                },
-                _ => node.kind,
-            };
-        }
-    }
-
     /// NOTE: unsorted input and unsorted output
     fn node_merge_pass<T: SparseIndex>(
         csc: &mut Csc<T>,
@@ -310,9 +286,11 @@ mod passes {
     }
 
     /// TODO: combine with constant analysis pass?
-    /// Removes redundant connections created from other passes.
-    fn redundant_input_connections_pass<T: SparseIndex>(csc: &mut Csc<T>, nodes: &Vec<GateNode>)
-    where
+    /// Removes duplicate connections created from other passes, preserving gate behavior.
+    fn remove_duplicate_input_connections_pass<T: SparseIndex>(
+        csc: &mut Csc<T>,
+        nodes: &Vec<GateNode>,
+    ) where
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
@@ -341,19 +319,120 @@ mod passes {
         *csc = Csc::new(inputs_iter);
     }
 
-    // TODO: GUARD
-    // -> (is node constant, max active inputs)
-    fn constant_analysis_pass<T: SparseIndex>(
-        csc: &Csc<T>,
-        nodes: &Vec<GateNode>,
-    ) -> (Vec<bool>, Vec<usize>)
+    /// Normalize gatetype
+    /// (node, inputs) -> node, stable
+    /// ASSUME: max active == num inputs <- TODO: use constant analysis pass info here.
+    fn node_normalization_pass_simple<T: SparseIndex>(nodes: &mut Vec<GateNode>, csc: &Csc<T>)
     where
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
         Csc<T>: IndexMut<usize, Output = [T]>,
     {
-        todo!()
+        for (node, input_cardinality) in nodes.iter_mut().zip(csc.iter().map(|i| i.len())) {
+            use GateType::*;
+            node.kind = match input_cardinality {
+                0 => match node.kind {
+                    Latch | And | Or | Xor => Or,
+                    Nor | Nand | Xnor => Nor,
+                    Interface(s) => Interface(s),
+                    Cluster => Cluster,
+                },
+                1 => match node.kind {
+                    And | Or | Xor => Or,
+                    Nor | Nand | Xnor => Nor,
+                    Latch => Latch,
+                    Interface(s) => Interface(s),
+                    Cluster => Cluster,
+                },
+                _ => node.kind,
+            };
+        }
+    }
+
+    struct ConstantAnalysis {
+        is_constant: Vec<bool>,
+        max_active_inputs: Vec<usize>,
+    }
+    // TODO: GUARD
+    // -> (is node constant, max active inputs)
+    /// Calculate what gates are constants
+    /// O(updates + n) => O(n)
+    fn constant_analysis_pass<T: SparseIndex>(
+        csc: &Csc<T>,
+        csr: &Csr<T>,
+        nodes: &Vec<GateNode>,
+    ) -> ConstantAnalysis
+    where
+        <T as TryFrom<usize>>::Error: Debug,
+        <usize as TryFrom<T>>::Error: Debug,
+        usize: TryFrom<T>,
+        Csc<T>: IndexMut<usize, Output = [T]>,
+        Csr<T>: IndexMut<usize, Output = [T]>,
+    {
+        let mut active_set: Vec<usize> = (0..nodes.len()).collect();
+        let mut next_active_set: Vec<usize> = Vec::new();
+        let mut max_active_inputs: Vec<_> = (0..nodes.len()).map(|i| csc[i].len()).collect();
+        let mut is_constant: Vec<_> = (0..nodes.len()).map(|_| false).collect();
+
+        while active_set.len() > 0 {
+            for &i in &active_set {
+                if is_constant[i] {
+                    continue;
+                }
+                if GateType::constant_analysis(
+                    nodes[i].kind,
+                    nodes[i].initial_state,
+                    max_active_inputs[i],
+                    csc[i].len(),
+                ) {
+                    is_constant[i] = true;
+                    for out in csr[i].iter().map(|&i| usize::try_from(i).unwrap()) {
+                        max_active_inputs[out] -= 1;
+                        next_active_set.push(out);
+                    }
+                }
+            }
+            std::mem::swap(&mut active_set, &mut next_active_set);
+            next_active_set.clear();
+        }
+
+        ConstantAnalysis {
+            is_constant,
+            max_active_inputs,
+        }
+    }
+
+    fn node_normalization_pass<T: SparseIndex>(
+        nodes: &mut Vec<GateNode>,
+        constant: &ConstantAnalysis,
+    ) where
+        <T as TryFrom<usize>>::Error: Debug,
+        <usize as TryFrom<T>>::Error: Debug,
+        usize: TryFrom<T>,
+        Csc<T>: IndexMut<usize, Output = [T]>,
+    {
+        for ((node, &is_constant), &max_active_inputs) in nodes
+            .iter_mut()
+            .zip(constant.is_constant.iter())
+            .zip(constant.max_active_inputs.iter())
+        {
+            use GateType::*;
+            #[rustfmt::skip]
+            {
+                node.kind = match (
+                is_constant, max_active_inputs, node.kind,         node.initial_state) {
+                (_,          _,                 Cluster,           _                 ) => Cluster,                       
+                (_,          _,                 Interface(s),      _                 ) => Interface(s),                       
+                (true,       _,                 _,                 _                 ) => Or,                       
+                (_,          0 | 1,             And | Or | Xor,    _                 ) => Or,                       
+                (_,          0 | 1,             Nor | Nand | Xnor, _                 ) => Nor,                       
+                (_,          0,                 Latch,             false             ) => Or,                       
+                (_,          0,                 Latch,             true              ) => Nor,                       
+                _ => node.kind,                       
+                }
+            };
+        }
     }
 
     // TODO: OPTIM:

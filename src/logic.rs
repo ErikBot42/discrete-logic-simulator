@@ -75,8 +75,12 @@ impl GateType {
     }
 
     /// Is this gate always constantly off
-    fn constant_analysis(k: GateType, max_active: usize, inputs: usize) {
-        let rtype = RunTimeGateType::new(k);
+    fn constant_analysis(
+        k: GateType,
+        initial_state: bool,
+        max_active: usize,
+        inputs: usize,
+    ) -> bool {
         let acc0: AccType = Gate::calc_acc_i(inputs, k);
         let acc1: AccType = acc0.wrapping_add(AccType::try_from(max_active).unwrap());
         // extreme points for acc will always be [0, max_active] for and, or, nor, nand
@@ -85,12 +89,14 @@ impl GateType {
         // XorXnor => acc & 1 == 1,
         // Latch => state != ((acc & 1 == 1) && (acc_prev & 1 == 0)),
         // TODO: EXPAND MATCHING TO INCLUDE LATCH
-        match rtype {
-            RunTimeGateType::AndNor => acc0 != 0 && acc1 != 0,
-            RunTimeGateType::OrNand => acc0 == 0 && acc1 == 0,
-            RunTimeGateType::XorXnor => acc0 == 0 && acc1 == 0,
-            RunTimeGateType::Latch => false,
-        };
+        use GateType::*;
+        match k {
+            And | Nor => acc0 != 0 && acc1 != 0,
+            Or | Nand | Cluster => acc0 == 0 && acc1 == 0,
+            Xor | Xnor => acc0 == 0 && acc1 == 0,
+            Latch => !initial_state && acc0 == 0 && acc1 == 0,
+            Interface(_) => false,
+        }
     }
 }
 
