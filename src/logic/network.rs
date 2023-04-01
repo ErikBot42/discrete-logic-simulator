@@ -245,6 +245,8 @@ pub(crate) struct CsrGraph<T: SparseIndex> {
 use sparse::SparseIndex;
 pub(crate) use sparse::{Csc, Csr};
 mod passes {
+    use std::iter::once;
+
     use super::*;
     // https://faultlore.com/blah/oops-that-was-important/
     //
@@ -352,7 +354,7 @@ mod passes {
                             .filter(|&i| constant.is_constant[usize::try_from(i).unwrap()])
                             .peekable();
                         Left(if inputs.peek().is_none() && let Some(fallback) = fallback {
-                            Left(inputs.chain([fallback].into_iter()))
+                            Left(once(fallback))
                                 } else {Right(inputs)})
                     },
                     Xor | Xnor | Latch | Interface(_) | Or | Nand | Cluster => {
