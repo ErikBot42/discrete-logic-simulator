@@ -285,69 +285,83 @@ mod passes {
         assert_eq!(nodes.len(), table.len());
     }
 
-    /// TODO: combine with constant analysis pass?
-    /// Removes duplicate connections created from other passes, preserving gate behavior.
-    fn remove_duplicate_input_connections_pass<T: SparseIndex>(
-        csc: &mut Csc<T>,
-        nodes: &Vec<GateNode>,
-    ) where
-        <T as TryFrom<usize>>::Error: Debug,
-        <usize as TryFrom<T>>::Error: Debug,
-        usize: TryFrom<T>,
-        Csc<T>: IndexMut<usize, Output = [T]>,
-    {
-        csc.sort();
-        use either::Either::{Left, Right};
-        let inputs_iter = csc.iter().zip(nodes.iter()).map(|(slice, node)| {
-            let slice = slice.iter().cloned();
-            if node.kind.can_delete_single_identical_inputs() {
-                Left(Left(slice.dedup()))
-            } else if node.kind.can_delete_double_identical_inputs() {
-                Left(Right(slice.peekable().batching(|it| {
-                    let next = it.next();
-                    if next == it.peek().copied() {
-                        it.next();
-                        None
-                    } else {
-                        next
-                    }
-                })))
-            } else {
-                Right(slice)
-            }
-        });
-        *csc = Csc::new(inputs_iter);
-    }
-
-    /// Normalize gatetype
-    /// (node, inputs) -> node, stable
-    /// ASSUME: max active == num inputs <- TODO: use constant analysis pass info here.
-    fn node_normalization_pass_simple<T: SparseIndex>(nodes: &mut Vec<GateNode>, csc: &Csc<T>)
+    fn sort_connections_pass<T: SparseIndex>(csc: &mut Csc<T>)
     where
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
         Csc<T>: IndexMut<usize, Output = [T]>,
     {
-        for (node, input_cardinality) in nodes.iter_mut().zip(csc.iter().map(|i| i.len())) {
-            use GateType::*;
-            node.kind = match input_cardinality {
-                0 => match node.kind {
-                    Latch | And | Or | Xor => Or,
-                    Nor | Nand | Xnor => Nor,
-                    Interface(s) => Interface(s),
-                    Cluster => Cluster,
-                },
-                1 => match node.kind {
-                    And | Or | Xor => Or,
-                    Nor | Nand | Xnor => Nor,
-                    Latch => Latch,
-                    Interface(s) => Interface(s),
-                    Cluster => Cluster,
-                },
-                _ => node.kind,
-            };
-        }
+        csc.sort();
+    }
+
+    /// TODO: combine with constant analysis pass?
+    /// Removes duplicate connections created from other passes, preserving gate behavior.
+    ///
+    /// PRE: sorted connections yeild better result. will maintain input connection order.
+    fn remove_redundant_input_connections_pass<T: SparseIndex>(
+        csc: &Csc<T>,
+        nodes: &Vec<GateNode>,
+        constant: &ConstantAnalysis,
+    ) -> Csc<T>
+    where
+        <T as TryFrom<usize>>::Error: Debug,
+        <usize as TryFrom<T>>::Error: Debug,
+        usize: TryFrom<T>,
+        Csc<T>: IndexMut<usize, Output = [T]>,
+    {
+        use either::Either::{Left, Right};
+
+        let fallback_constant = constant
+            .is_constant
+            .iter()
+            .cloned()
+            .enumerate()
+            .find_map(|(i, c)| c.then_some(T::try_from(i).unwrap()));
+
+        let inputs_iter = csc // filter duplicates
+            .iter()
+            .zip(nodes.iter())
+            .map(|(slice, node)| {
+                let slice = slice.iter().cloned();
+                if node.kind.can_delete_single_identical_inputs() {
+                    Left(Left(slice.dedup()))
+                } else if node.kind.can_delete_double_identical_inputs() {
+                    Left(Right(slice.peekable().batching(|it| {
+                        let next = it.next();
+                        if next == it.peek().copied() {
+                            it.next();
+                            None
+                        } else {
+                            next
+                        }
+                    })))
+                } else {
+                    Right(slice)
+                }
+            })
+            .zip(nodes.iter()) // filter constant connections
+            .map(|(inputs, node)| {
+                use GateType::*;
+                match node.kind {
+                    And | Nor => {
+                        // need at least 1 connection
+                        let mut inputs = inputs.peekable();
+                        let fallback = fallback_constant.or(inputs.peek().cloned());
+                        let mut inputs = inputs
+                            .filter(|&i| constant.is_constant[usize::try_from(i).unwrap()])
+                            .peekable();
+                        Left(if inputs.peek().is_none() && let Some(fallback) = fallback {
+                            Left(inputs.chain([fallback].into_iter()))
+                                } else {Right(inputs)})
+                    },
+                    Xor | Xnor | Latch | Interface(_) | Or | Nand | Cluster => {
+                        // can remove all connections
+                        Right(inputs.filter(|&i| constant.is_constant[usize::try_from(i).unwrap()]))
+                    },
+                }
+            });
+        Csc::new(inputs_iter)
     }
 
     struct ConstantAnalysis {
@@ -418,20 +432,21 @@ mod passes {
             .zip(constant.max_active_inputs.iter())
         {
             use GateType::*;
-            #[rustfmt::skip]
-            {
-                node.kind = match (
-                is_constant, max_active_inputs, node.kind,         node.initial_state) {
-                (_,          _,                 Cluster,           _                 ) => Cluster,                       
-                (_,          _,                 Interface(s),      _                 ) => Interface(s),                       
-                (true,       _,                 _,                 _                 ) => Or,                       
-                (_,          0 | 1,             And | Or | Xor,    _                 ) => Or,                       
-                (_,          0 | 1,             Nor | Nand | Xnor, _                 ) => Nor,                       
-                (_,          0,                 Latch,             false             ) => Or,                       
-                (_,          0,                 Latch,             true              ) => Nor,                       
-                _ => node.kind,                       
-                }
-            };
+            node.kind = match (
+                is_constant,
+                max_active_inputs,
+                node.kind,
+                node.initial_state,
+            ) {
+                (_, _, Cluster, _) => Cluster,
+                (_, _, Interface(s), _) => Interface(s),
+                (true, _, _, _) => Or,
+                (_, 0 | 1, And | Or | Xor, _) => Or,
+                (_, 0 | 1, Nor | Nand | Xnor, _) => Nor,
+                (_, 0, Latch, false) => Or,
+                (_, 0, Latch, true) => Nor,
+                _ => node.kind,
+            }
         }
     }
 

@@ -48,10 +48,6 @@ pub(crate) enum GateType {
     Cluster, // equivalent to OR
 }
 impl GateType {
-    /// guaranteed to activate immediately
-    fn will_update_at_start(self) -> bool {
-        matches!(self, GateType::Nor | GateType::Nand | GateType::Xnor)
-    }
     /// can a pair of identical connections be removed without changing behaviour
     fn can_delete_double_identical_inputs(self) -> bool {
         match self {
