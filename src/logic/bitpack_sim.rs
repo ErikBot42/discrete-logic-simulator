@@ -326,6 +326,8 @@ impl LogicSim for BitPackSimInner {
             })
             .collect_vec();
 
+        assert_eq_len!(node_data, csr);
+
         let csr_indexes = csr.indexes;
         let csr_outputs = csr.outputs;
         let state: Vec<_> = (0..num_gates)
