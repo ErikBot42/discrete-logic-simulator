@@ -201,12 +201,12 @@ impl BitPackSimInner {
             }
         }
     }
-    fn init_state(&mut self, gates: &[Option<Gate>]) {
+    fn init_state(&mut self, gates: &[Option<(usize, GateNode)>]) {
         for (id, (cluster, state)) in gates
             .iter()
             .map(|g| {
                 g.as_ref()
-                    .map_or((false, false), |g| (g.kind.is_cluster(), g.initial_state))
+                    .map_or((false, false), |g| (g.1.kind.is_cluster(), g.1.initial_state))
             })
             .enumerate()
         {
@@ -311,19 +311,33 @@ impl LogicSim for BitPackSimInner {
                 .iter()
                 .map(|g| g.as_ref().map_or_else(Vec::new, |g| g.outputs.clone())),
         );
+        let node_data = gates
+            .iter()
+            .map(|g| {
+                g.as_ref().map(|g| {
+                    (
+                        g.inputs.len(),
+                        GateNode {
+                            kind: g.kind,
+                            initial_state: g.initial_state,
+                        },
+                    )
+                })
+            })
+            .collect_vec();
+
         let csr_indexes = csr.indexes;
         let csr_outputs = csr.outputs;
-        let state: Vec<_> = gates
-            .iter()
+        let state: Vec<_> = (0..num_gates)
             .map(|_| false)
             .array_chunks()
             .map(pack_bits)
             .collect();
         let parity = (0..num_groups).map(|_| 0).collect();
 
-        let kind: Vec<_> = gates
+        let kind: Vec<_> = node_data
             .iter()
-            .map(|g| g.as_ref().map_or(GateType::Cluster, |g| g.kind))
+            .map(|n| n.as_ref().map_or(GateType::Cluster, |n| n.1.kind))
             .collect();
 
         let group_run_type: Vec<RunTimeGateType> = kind
@@ -331,13 +345,13 @@ impl LogicSim for BitPackSimInner {
             .step_by(BITS)
             .map(|k| RunTimeGateType::new(*k))
             .collect();
-        let acc: Vec<_> = gates
+        let acc: Vec<_> = node_data
             .iter()
             .enumerate()
-            .map(|(i, g)| {
-                g.as_ref().map_or(
+            .map(|(i, n)| {
+                n.as_ref().map_or(
                     group_run_type[Self::calc_group_id(i)].acc_to_never_activate(),
-                    |g| g.acc() as BitAcc,
+                    |n| Gate::calc_acc_i(n.0, n.1.kind) as BitAcc,
                 )
             })
             .array_chunks()
@@ -345,7 +359,7 @@ impl LogicSim for BitPackSimInner {
             .collect();
 
         let (update_list, cluster_update_list, in_update_list) =
-            make_update_lists(&kind, num_groups, &gates);
+            make_update_lists(&kind, num_groups, num_gates);
 
         let (group_csr_indexes, group_num_outputs): (Vec<_>, Vec<_>) = (0..num_groups)
             .map(|i| i * BITS)
@@ -379,7 +393,7 @@ impl LogicSim for BitPackSimInner {
             soap,
         };
 
-        this.init_state(&gates);
+        this.init_state(&node_data);
 
         (translation_table, this)
     }
@@ -402,7 +416,7 @@ impl LogicSim for BitPackSimInner {
 fn make_update_lists(
     kind: &[GateType],
     num_groups: usize,
-    gates: &Vec<Option<Gate>>,
+    num_gates: usize,
 ) -> (UpdateList, UpdateList, Vec<bool>) {
     let update_list = UpdateList::collect_size(
         kind.iter()
@@ -420,7 +434,7 @@ fn make_update_lists(
             .filter_map(|(i, b)| b.then_some(i.try_into().unwrap())),
         num_groups,
     );
-    let mut in_update_list: Vec<_> = (0..gates.len()).map(|_| false).collect();
+    let mut in_update_list: Vec<_> = (0..num_gates).map(|_| false).collect();
     for id in update_list
         .iter()
         .chain(cluster_update_list.iter())
