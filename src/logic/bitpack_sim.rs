@@ -244,10 +244,7 @@ enum GateOrderingKey {
     Latch,
     Cluster,
 }
-fn bit_pack_nodes(
-    nodes: &Vec<GateNode>,
-    csr: &Csr<u32>,
-) -> (Vec<Option<usize>>, Vec<usize>, Vec<(usize, GateType)>) {
+fn bit_pack_nodes(nodes: &Vec<GateNode>, csr: &Csr<u32>) -> (Vec<Option<usize>>, Vec<usize>) {
     // bit packed -> prev id
     let mut table: Vec<Option<usize>> = Vec::new();
     let mut group_kinds: Vec<(usize, GateType)> = Vec::new();
@@ -285,7 +282,7 @@ fn bit_pack_nodes(
         }
     }
     let inv_table = inv_table.iter().map(|&i| i.unwrap()).collect_vec();
-    (table, inv_table, group_kinds)
+    (table, inv_table)
 }
 
 impl LogicSim for BitPackSimInner {
@@ -299,18 +296,10 @@ impl LogicSim for BitPackSimInner {
                 .into_iter()
                 .map(|i| i.into_iter().map(|i| i as u32)),
         );
-        let (bit_pack_table, bit_pack_inv_table, group_kinds) = bit_pack_nodes(&nodes, &csr);
+        let (bit_pack_table, bit_pack_inv_table) = bit_pack_nodes(&nodes, &csr);
         translation_table.iter_mut().for_each(|t| {
             *t = u32::try_from(bit_pack_inv_table[usize::try_from(*t).unwrap()]).unwrap()
         });
-
-        let outputs_iter = csr.iter().map(|i| i.into_iter().map(|&i| i as usize));
-
-        //let network = InitializedNetwork::from_cs_stuff(outputs_iter, nodes, translation_table);
-        //let network = network.prepare_for_bitpack_packing_no_type_overlap_equal_cardinality(BITS);
-        //let translation_table = network.translation_table;
-
-        //let gates = network.gates;
 
         let csc_pre_table = csr.as_csc();
 
@@ -323,31 +312,12 @@ impl LogicSim for BitPackSimInner {
                     )
                 })
                 .collect(),
-                bit_pack_table.len(),
+            bit_pack_table.len(),
         );
-        //let csr = Csr::new(
-        //    gates
-        //        .iter()
-        //        .map(|g| g.as_ref().map_or_else(Vec::new, |g| g.outputs.clone())),
-        //);
         let node_data = bit_pack_table
             .iter()
             .map(|i| i.map(|i| (csc_pre_table[i].len(), nodes[i].clone())))
             .collect_vec();
-        //let node_data = gates
-        //    .iter()
-        //    .map(|g| {
-        //        g.as_ref().map(|g| {
-        //            (
-        //                g.inputs.len(),
-        //                GateNode {
-        //                    kind: g.kind,
-        //                    initial_state: g.initial_state,
-        //                },
-        //            )
-        //        })
-        //    })
-        //    .collect_vec();
 
         let num_gates = node_data.len();
         let num_groups = num_gates / BITS;
