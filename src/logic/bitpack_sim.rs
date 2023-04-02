@@ -237,27 +237,32 @@ impl crate::logic::RenderSim for BitPackSimInner {
 
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
 enum GateOrderingKey {
-    Interface(u8),
+    Interface = 0,
     OrNand,
     AndNor,
     XorXnor,
     Latch,
     Cluster,
 }
+
+
+// TODO: distinct cardinality makes aligned interface impossible.
 fn bit_pack_nodes(nodes: &Vec<GateNode>, csr: &Csr<u32>) -> (Vec<Option<usize>>, Vec<usize>) {
     // bit packed -> prev id
     let mut table: Vec<Option<usize>> = Vec::new();
-    let mut group_kinds: Vec<(usize, GateType)> = Vec::new();
+    let mut group_kinds: Vec<(usize, GateOrderingKey)> = Vec::new();
     for (i, key) in nodes
         .iter()
-        .map(|n| /*match n.kind {
-            GateType::And | GateType::Nor => GateOrderingKey::AndNor,
-            GateType::Or | GateType::Nand => GateOrderingKey::OrNand,
-            GateType::Xor | GateType::Xnor => GateOrderingKey::XorXnor,
-            GateType::Latch => GateOrderingKey::Latch,
-            GateType::Interface(s) => GateOrderingKey::Interface(s.unwrap_or(u8::MAX)),
-            GateType::Cluster => GateOrderingKey::Cluster,
-        }*/ n.kind)
+        .map(|n| {
+            (match n.kind {
+                GateType::And | GateType::Nor => GateOrderingKey::AndNor,
+                GateType::Or | GateType::Nand => GateOrderingKey::OrNand,
+                GateType::Xor | GateType::Xnor => GateOrderingKey::XorXnor,
+                GateType::Latch => GateOrderingKey::Latch,
+                GateType::Interface(s) => GateOrderingKey::Interface,
+                GateType::Cluster => GateOrderingKey::Cluster,
+            })
+        })
         .enumerate()
         .sorted_by_key(|(i, key)| (*key, csr[*i].len()))
     {
