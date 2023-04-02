@@ -1100,7 +1100,7 @@ impl InitializedNetwork {
     /// Solving it perfectly is probably NP-hard.
     /// `cmp` has no restrictions.
     /// O(n^2), ~O(n) in practice
-    fn aligned_by_inner<F: Fn(&Gate, &Gate) -> bool>(
+    pub(crate) fn aligned_by_inner<F: Fn(&Gate, &Gate) -> bool>(
         mut gates: Vec<(usize, &Gate)>,
         elements: usize,
         cmp: F,

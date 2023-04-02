@@ -205,8 +205,9 @@ impl BitPackSimInner {
         for (id, (cluster, state)) in gates
             .iter()
             .map(|g| {
-                g.as_ref()
-                    .map_or((false, false), |g| (g.1.kind.is_cluster(), g.1.initial_state))
+                g.as_ref().map_or((false, false), |g| {
+                    (g.1.kind.is_cluster(), g.1.initial_state)
+                })
             })
             .enumerate()
         {
@@ -243,33 +244,35 @@ enum GateOrderingKey {
     Latch,
     Cluster,
 }
-fn bit_pack_nodes(nodes: &Vec<GateNode>) -> (Vec<Option<usize>>, Vec<usize>, Vec<GateOrderingKey>) {
+fn bit_pack_nodes(
+    nodes: &Vec<GateNode>,
+    csr: &Csr<u32>,
+) -> (Vec<Option<usize>>, Vec<usize>, Vec<(usize, GateType)>) {
     // bit packed -> prev id
     let mut table: Vec<Option<usize>> = Vec::new();
-    let mut group_kinds: Vec<GateOrderingKey> = Vec::new();
+    let mut group_kinds: Vec<(usize, GateType)> = Vec::new();
     for (i, key) in nodes
         .iter()
-        .map(|n| match n.kind {
+        .map(|n| /*match n.kind {
             GateType::And | GateType::Nor => GateOrderingKey::AndNor,
             GateType::Or | GateType::Nand => GateOrderingKey::OrNand,
             GateType::Xor | GateType::Xnor => GateOrderingKey::XorXnor,
             GateType::Latch => GateOrderingKey::Latch,
             GateType::Interface(s) => GateOrderingKey::Interface(s.unwrap_or(u8::MAX)),
             GateType::Cluster => GateOrderingKey::Cluster,
-        })
+        }*/ n.kind)
         .enumerate()
-        .sorted_by_key(|(_, key)| *key)
+        .sorted_by_key(|(i, key)| (*key, csr[*i].len()))
     {
-        if let Some(&k) = group_kinds.last() && k == key {
-            table.push(Some(i));
-        } else {
+        if table.len() % BITS == 0 {
+            group_kinds.push((csr[i].len(), key));
+        }
+        if let Some(&k) = group_kinds.last() && (k.1 != key || k.0 != csr[i].len()) {
             while table.len() % BITS != 0 {
                 table.push(None);
             }
         }
-        if table.len() % BITS == 0 {
-            group_kinds.push(key);
-        }
+        table.push(Some(i));
     }
     while table.len() % BITS != 0 {
         table.push(None);
@@ -277,7 +280,9 @@ fn bit_pack_nodes(nodes: &Vec<GateNode>) -> (Vec<Option<usize>>, Vec<usize>, Vec
     // prev id -> bit packed
     let mut inv_table = (0..nodes.len()).map(|_| None).collect_vec();
     for (i, &entry) in table.iter().enumerate() {
-        inv_table[i] = entry;
+        if let Some(entry) = entry {
+            inv_table[entry] = Some(i);
+        }
     }
     let inv_table = inv_table.iter().map(|&i| i.unwrap()).collect_vec();
     (table, inv_table, group_kinds)
@@ -289,20 +294,22 @@ impl LogicSim for BitPackSimInner {
         nodes: Vec<GateNode>,
         mut translation_table: Vec<u32>,
     ) -> (Vec<IndexType>, Self) {
-        //{
-        //    let (bit_pack_table, bit_pack_inv_table, group_kinds) = bit_pack_nodes(&nodes);
-        //    translation_table
-        //        .iter_mut()
-        //        .for_each(|t| *t = u32::try_from(bit_pack_inv_table[usize::try_from(*t).unwrap()]).unwrap());
-        //}
+        let csr = Csr::new(
+            outputs_iter
+                .into_iter()
+                .map(|i| i.into_iter().map(|i| i as u32)),
+        );
+        {
+            let (bit_pack_table, bit_pack_inv_table, group_kinds) = bit_pack_nodes(&nodes, &csr);
+            //translation_table.iter_mut().for_each(|t| {
+            //    *t = u32::try_from(bit_pack_inv_table[usize::try_from(*t).unwrap()]).unwrap()
+            //});
+        }
+        let outputs_iter = csr.iter().map(|i| i.into_iter().map(|&i| i as usize));
 
         let network = InitializedNetwork::from_cs_stuff(outputs_iter, nodes, translation_table);
         let network = network.prepare_for_bitpack_packing_no_type_overlap_equal_cardinality(BITS);
         let translation_table = network.translation_table;
-
-        let num_gates = network.gates.len();
-        assert_eq!(num_gates % BITS, 0);
-        let num_groups = num_gates / BITS;
 
         let gates = network.gates;
 
@@ -326,6 +333,9 @@ impl LogicSim for BitPackSimInner {
             })
             .collect_vec();
 
+        let num_gates = node_data.len();
+        let num_groups = num_gates / BITS;
+        assert_eq!(num_gates % BITS, 0);
         assert_eq_len!(node_data, csr);
 
         let csr_indexes = csr.indexes;
