@@ -107,6 +107,9 @@ mod sparse {
         pub(crate) fn len(&self) -> usize {
             self.indexes.len() - 1
         }
+        pub(crate) fn len_inner(&self) -> usize {
+            self.outputs.len()
+        }
         pub(crate) fn adjacency_iter(&self) -> impl Iterator<Item = (T, T)> + '_ {
             (0..self.len())
                 .map(|i| {
@@ -223,9 +226,9 @@ mod sparse {
     use std::mem::take;
 }
 #[derive(Hash, Clone, Eq, PartialEq)]
-pub(crate) struct GateNode {
-    kind: GateType, // add constant on/off nodes?
-    initial_state: bool,
+pub struct GateNode {
+    pub(crate) kind: GateType, // add constant on/off nodes?
+    pub(crate) initial_state: bool,
 }
 //struct GateNodeFinal {
 //    kind: GateType,
@@ -244,8 +247,9 @@ pub(crate) struct CsrGraph<T: SparseIndex> {
 }
 use sparse::SparseIndex;
 pub(crate) use sparse::{Csc, Csr};
-mod passes {
+pub(crate) mod passes {
     use std::iter::once;
+    use std::mem::replace;
 
     use super::*;
     // https://faultlore.com/blah/oops-that-was-important/
@@ -253,6 +257,36 @@ mod passes {
     // TODO: keep a "futures" csc that invalidates itself? put feature in Csr?
 
     /// NOTE: unsorted input and unsorted output
+    ///
+    /// CSC output not sorted
+
+    pub(crate) fn optimize<T: SparseIndex>(
+        csc: Csc<T>,
+        nodes: Vec<GateNode>,
+        table: Vec<T>,
+    ) -> (Csc<T>, Vec<GateNode>, Vec<T>)
+    where
+        <T as TryFrom<usize>>::Error: Debug,
+        <usize as TryFrom<T>>::Error: Debug,
+        usize: TryFrom<T>,
+        Csc<T>: IndexMut<usize, Output = [T]>,
+        Csr<T>: IndexMut<usize, Output = [T]>,
+    {
+        let (mut csc, mut nodes, mut table) = (csc, nodes, table);
+        let mut score = dbg!((csc.len(), csc.len_inner()));
+        while {
+            sort_connections_pass(&mut csc);
+            let constant = constant_analysis_pass(&csc, &csc.as_csr(), &nodes);
+            //node_normalization_pass(&mut nodes, &constant);
+            //remove_redundant_input_connections_pass(&mut csc, &nodes, &constant);
+            //node_merge_pass(&mut csc, &mut nodes, &mut table);
+            replace(&mut score, dbg!((csc.len(), csc.len_inner()))) != (csc.len(), csc.len_inner())
+        } {}
+        (csc, nodes, table)
+    }
+
+    /// PERF_PRE: CSC sorted
+    /// POST: CSC/nodes not sorted,
     fn node_merge_pass<T: SparseIndex>(
         csc: &mut Csc<T>,
         nodes: &mut Vec<GateNode>,
@@ -284,9 +318,10 @@ mod passes {
             csc.adjacency_iter().map(|(a, b)| (f(a), f(b))).collect(),
             nodes.len(),
         );
-        assert_eq!(nodes.len(), table.len());
+        //assert_eq!(nodes.len(), table.len());
     }
 
+    /// CSC output sorted
     fn sort_connections_pass<T: SparseIndex>(csc: &mut Csc<T>)
     where
         <T as TryFrom<usize>>::Error: Debug,
@@ -301,26 +336,18 @@ mod passes {
     /// Removes duplicate connections created from other passes, preserving gate behavior.
     ///
     /// PRE: sorted connections yeild better result. will maintain input connection order.
+    /// CSC input sorted => CSC output sorted
     fn remove_redundant_input_connections_pass<T: SparseIndex>(
-        csc: &Csc<T>,
+        csc: &mut Csc<T>,
         nodes: &Vec<GateNode>,
         constant: &ConstantAnalysis,
-    ) -> Csc<T>
-    where
+    ) where
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
         Csc<T>: IndexMut<usize, Output = [T]>,
     {
         use either::Either::{Left, Right};
-
-        let fallback_constant = constant
-            .is_constant
-            .iter()
-            .cloned()
-            .enumerate()
-            .find_map(|(i, c)| c.then_some(T::try_from(i).unwrap()));
-
         let inputs_iter = csc // filter duplicates
             .iter()
             .zip(nodes.iter())
@@ -349,7 +376,7 @@ mod passes {
                     And | Nor => {
                         // need at least 1 connection
                         let mut inputs = inputs.peekable();
-                        let fallback = fallback_constant.or(inputs.peek().cloned());
+                        let fallback = inputs.peek().cloned();
                         let mut inputs = inputs
                             .filter(|&i| constant.is_constant[usize::try_from(i).unwrap()])
                             .peekable();
@@ -363,7 +390,7 @@ mod passes {
                     },
                 }
             });
-        Csc::new(inputs_iter)
+        *csc = Csc::new(inputs_iter)
     }
 
     struct ConstantAnalysis {
@@ -419,6 +446,8 @@ mod passes {
         }
     }
 
+    /// TODO: is it better to normalize to xor to remove all inputs?
+    /// Modify nodes in place
     fn node_normalization_pass<T: SparseIndex>(
         nodes: &mut Vec<GateNode>,
         constant: &ConstantAnalysis,
@@ -530,6 +559,30 @@ pub struct InitializedNetwork {
     pub(crate) translation_table: Vec<IndexType>,
 }
 impl InitializedNetwork {
+    pub(crate) fn from_cs_stuff(
+        outputs: impl IntoIterator<Item = impl IntoIterator<Item = usize>>,
+        nodes: Vec<GateNode>,
+        table: Vec<IndexType>,
+    ) -> Self {
+        let csr = Csr::new(outputs);
+        let csc = csr.as_csc();
+
+        let gates = csr
+            .iter()
+            .zip(csc.iter())
+            .zip(nodes)
+            .map(|((outputs, inputs), node)| Gate {
+                inputs: inputs.iter().map(|&i| u32::try_from(i).unwrap()).collect(),
+                outputs: outputs.iter().map(|&i| u32::try_from(i).unwrap()).collect(),
+                kind: node.kind,
+                initial_state: node.initial_state,
+            })
+            .collect();
+        Self {
+            gates,
+            translation_table: table,
+        }
+    }
     fn create_from(network: EditableNetwork, optimize: bool) -> Self {
         assert_ne!(network.gates.len(), 0, "no gates where added.");
         let new_network = InitializedNetwork {
@@ -1242,7 +1295,8 @@ impl GateNetwork {
     /// Should not panic.
     #[must_use]
     pub(crate) fn compiled<T: crate::logic::LogicSim>(self, optimize: bool) -> (Vec<IndexType>, T) {
-        T::create(self.network.initialized(optimize))
+        //T::create(self.network.initialized(optimize))
+        panic!()
     }
 
     pub(crate) fn initialized(self, optimize: bool) -> InitializedNetwork {

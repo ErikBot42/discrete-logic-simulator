@@ -3,6 +3,9 @@
 // TODO: optimizations based on ignoring parts of network.
 
 use bytemuck::cast_slice_mut;
+use itertools::Itertools;
+
+use crate::logic::network::GateNode;
 
 use super::bitmanip::{
     bit_acc_pack, bit_get, bit_set, extract_acc_info_simd, pack_bits, wrapping_bit_get, BitAcc,
@@ -231,8 +234,69 @@ impl crate::logic::RenderSim for BitPackSimInner {
 //    // Clear and write state bitvec
 //    //fn get_state_in(&mut self, v: &mut Vec<u64>);
 
+#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
+enum GateOrderingKey {
+    Interface(u8),
+    OrNand,
+    AndNor,
+    XorXnor,
+    Latch,
+    Cluster,
+}
+fn bit_pack_nodes(nodes: &Vec<GateNode>) -> (Vec<Option<usize>>, Vec<usize>, Vec<GateOrderingKey>) {
+    // bit packed -> prev id
+    let mut table: Vec<Option<usize>> = Vec::new();
+    let mut group_kinds: Vec<GateOrderingKey> = Vec::new();
+    for (i, key) in nodes
+        .iter()
+        .map(|n| match n.kind {
+            GateType::And | GateType::Nor => GateOrderingKey::AndNor,
+            GateType::Or | GateType::Nand => GateOrderingKey::OrNand,
+            GateType::Xor | GateType::Xnor => GateOrderingKey::XorXnor,
+            GateType::Latch => GateOrderingKey::Latch,
+            GateType::Interface(s) => GateOrderingKey::Interface(s.unwrap_or(u8::MAX)),
+            GateType::Cluster => GateOrderingKey::Cluster,
+        })
+        .enumerate()
+        .sorted_by_key(|(_, key)| *key)
+    {
+        if let Some(&k) = group_kinds.last() && k == key {
+            table.push(Some(i));
+        } else {
+            while table.len() % BITS != 0 {
+                table.push(None);
+            }
+        }
+        if table.len() % BITS == 0 {
+            group_kinds.push(key);
+        }
+    }
+    while table.len() % BITS != 0 {
+        table.push(None);
+    }
+    // prev id -> bit packed
+    let mut inv_table = (0..nodes.len()).map(|_| None).collect_vec();
+    for (i, &entry) in table.iter().enumerate() {
+        inv_table[i] = entry;
+    }
+    let inv_table = inv_table.iter().map(|&i| i.unwrap()).collect_vec();
+    (table, inv_table, group_kinds)
+}
+
 impl LogicSim for BitPackSimInner {
-    fn create(network: InitializedNetwork) -> (Vec<IndexType>, Self) {
+    fn create(
+        outputs_iter: impl IntoIterator<Item = impl IntoIterator<Item = usize>>,
+        nodes: Vec<GateNode>,
+        mut translation_table: Vec<u32>,
+    ) -> (Vec<IndexType>, Self) {
+        //{
+        //    let (bit_pack_table, bit_pack_inv_table, group_kinds) = bit_pack_nodes(&nodes);
+        //    translation_table
+        //        .iter_mut()
+        //        .for_each(|t| *t = u32::try_from(bit_pack_inv_table[usize::try_from(*t).unwrap()]).unwrap());
+        //}
+
+        let network = InitializedNetwork::from_cs_stuff(outputs_iter, nodes, translation_table);
         let network = network.prepare_for_bitpack_packing_no_type_overlap_equal_cardinality(BITS);
         let translation_table = network.translation_table;
 

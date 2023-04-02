@@ -1,4 +1,5 @@
 //! Extra optimizations exploiting repeated updates without observation.
+/*
 use super::{AccType, Gate, GateType, IndexType, LogicSim, RunTimeGateType};
 use itertools::Itertools;
 use std::mem::{replace, take};
@@ -164,3 +165,4 @@ impl ReferenceBatchSim {
         update_list.clear();
     }
 }
+*/

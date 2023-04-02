@@ -83,7 +83,7 @@ pub(crate) mod explore_new {
     // stack search floodfill
     // of other has ID, connect, otherwise, noop
     use crate::blueprint::Trace;
-    use crate::logic::network::{Csr, GateNetwork};
+    use crate::logic::network::{Csr, GateNetwork, GateNode};
     use crate::logic::GateType;
     use either::Either::{Left, Right};
     use itertools::Itertools;
@@ -209,22 +209,46 @@ pub(crate) mod explore_new {
         T,
         Vec<Option<usize>>,
     ) {
-        let (csr, ids, trace_nodes) = parse(&plain.traces, plain.width, plain.height);
+        let (csr, ids, trace_nodes) = timed!(
+            parse(&plain.traces, plain.width, plain.height),
+            "Trace -> gate parse in {:?}"
+        );
         let csc = csr.as_csc();
 
-        let network = {
-            let mut network = GateNetwork::default();
-            for (i, &trace) in trace_nodes.iter().enumerate() {
-                let (gatetype, state) = to_gatetype_state(trace);
-                assert_eq!(i, network.add_vertex(gatetype, state));
-            }
-            for ((id, inputs), &trace) in csc.iter().enumerate().zip(trace_nodes.iter()) {
-                let inputs = inputs.to_vec();
-                network.add_inputs(to_gatetype_state(trace).0, id, inputs);
-            }
-            network
+        //let network = {
+        //    let mut network = GateNetwork::default();
+        //    for (i, &trace) in trace_nodes.iter().enumerate() {
+        //        let (gatetype, state) = to_gatetype_state(trace);
+        //        assert_eq!(i, network.add_vertex(gatetype, state));
+        //    }
+        //    for ((id, inputs), &trace) in csc.iter().enumerate().zip(trace_nodes.iter()) {
+        //        let inputs = inputs.to_vec();
+        //        network.add_inputs(to_gatetype_state(trace).0, id, inputs);
+        //    }
+        //    network
+        //};
+
+        //let (table, sim) = T::create(network.initialized(optimize));
+
+        let (table, sim) = {
+            let table = (0..trace_nodes.len()).collect_vec();
+            let nodes = trace_nodes
+                .iter()
+                .map(|&trace| {
+                    let (kind, initial_state) = to_gatetype_state(trace);
+                    GateNode {
+                        kind,
+                        initial_state,
+                    }
+                })
+                .collect_vec();
+
+            let (csc, nodes, table) = crate::logic::network::passes::optimize(csc, nodes, table);
+            let csr = csc.as_csr();
+            let table = table.into_iter().map(|i| i as u32).collect();
+
+            T::create(csr.iter().map(|i| i.iter().cloned()), nodes, table)
         };
-        let (table, sim) = T::create(network.initialized(optimize));
 
         let element_ids: Vec<_> = ids
             .iter()

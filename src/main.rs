@@ -7,7 +7,7 @@ use crossterm::terminal::{
 };
 use logic_simulator::blueprint::{VcbInput, VcbParser};
 use logic_simulator::logic::{
-    BatchSim, BitPackSim, LogicSim, ReferenceSim, RenderSim, UpdateStrategy,
+    /*BatchSim,*/ BitPackSim, LogicSim, ReferenceSim, RenderSim, UpdateStrategy,
 };
 use std::fs::read_to_string;
 use std::io::stdout;
@@ -124,7 +124,8 @@ fn main() {
             handle_board::<BitPackSim>(&args, parser_input);
         },
         UpdateStrategy::Batch => {
-            handle_board::<BatchSim>(&args, parser_input);
+            unimplemented!();
+            //handle_board::<BatchSim>(&args, parser_input);
         },
     }
 }

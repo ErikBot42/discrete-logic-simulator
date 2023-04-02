@@ -11,7 +11,6 @@
 #![feature(stdsimd)]
 #![feature(unchecked_math)]
 #![feature(allocator_api)]
-
 #![feature(build_hasher_simple_hash_one)]
 macro_rules! timed {
     ($block:expr, $print_str:expr) => {{
@@ -62,7 +61,56 @@ pub mod render;
 #[cfg(test)]
 mod tests {
     use crate::blueprint::{VcbBoard, VcbInput, VcbParser};
-    use crate::logic::{BitPackSim, LogicSim, ReferenceSim, BatchSim};
+    use crate::logic::{BitPackSim, LogicSim, ReferenceSim}; //, BatchSim};
+
+    fn prep_cases_closure<SIM: LogicSim>(
+        optimize: bool,
+    ) -> Vec<(&'static str, Box<dyn FnOnce() -> VcbBoard<SIM>>)> {
+        let cases: Vec<(&str, _)> = vec![
+            (
+                "gates",
+                VcbInput::BlueprintLegacy(
+                    include_str!("../test_files/gates.blueprint").to_string(),
+                ),
+            ),
+            (
+                "big_decoder",
+                VcbInput::BlueprintLegacy(
+                    include_str!("../test_files/big_decoder.blueprint").to_string(),
+                ),
+            ),
+            (
+                "intro",
+                VcbInput::BlueprintLegacy(
+                    include_str!("../test_files/intro.blueprint").to_string(),
+                ),
+            ),
+            (
+                "bcd_count",
+                VcbInput::BlueprintLegacy(
+                    include_str!("../test_files/bcd_count.blueprint").to_string(),
+                ),
+            ),
+            (
+                "xnor edge case",
+                VcbInput::Blueprint(
+                    include_str!("../test_files/xnor_edge_case.blueprint").to_string(),
+                ),
+            ),
+        ];
+        cases
+            .into_iter()
+            .map(|x| {
+                let optimize = optimize;
+                (
+                    x.0,
+                    Box::from(move || VcbParser::parse_compile::<SIM>(x.1, optimize).unwrap()) as _,
+                    //Box::new(|| ()),
+                )
+            })
+            //.collect::<Vec<(&str, Box<dyn Fn()>)>>();
+            .collect::<Vec<_>>()
+    }
 
     fn prep_cases<SIM: LogicSim>(optimize: bool) -> Vec<(&'static str, VcbBoard<SIM>)> {
         let cases: Vec<(&str, _)> = vec![
@@ -149,14 +197,19 @@ mod tests {
         optimized_other: bool,
         iterations: usize,
     ) {
-        let optimized_board = prep_cases::<Reference>(optimized);
-        let optimized_scalar = prep_cases::<Other>(optimized_other);
-        for ((name, mut optimized), (_, mut optimized_scalar)) in optimized_board
+        let optimized_board = prep_cases_closure::<Reference>(optimized);
+        let optimized_scalar = prep_cases_closure::<Other>(optimized_other);
+        for ((name, optimized), (_, optimized_scalar)) in optimized_board
             .into_iter()
             .zip(optimized_scalar.into_iter())
         {
             dbg!(name);
-            compare_boards_iter(&mut optimized, &mut optimized_scalar, iterations, name);
+            compare_boards_iter(
+                &mut (optimized()),
+                &mut (optimized_scalar()),
+                iterations,
+                name,
+            );
         }
     }
 
@@ -227,14 +280,14 @@ mod tests {
     fn bitpack_regression_test_optimized() {
         run_test::<ReferenceSim, BitPackSim>(true, 20);
     }
-    #[test]
-    fn batch_regression_test_unoptimized() {
-        run_test::<ReferenceSim, BatchSim>(false, 20);
-    }
-    #[test]
-    fn batch_regression_test_optimized() {
-        run_test::<ReferenceSim, BatchSim>(true, 20);
-    }
+    //#[test]
+    //fn batch_regression_test_unoptimized() {
+    //    run_test::<ReferenceSim, BatchSim>(false, 20);
+    //}
+    //#[test]
+    //fn batch_regression_test_optimized() {
+    //    run_test::<ReferenceSim, BatchSim>(true, 20);
+    //}
     //#[test]
     //fn simd_regression_test_unoptimized() {
     //    simd_test(false);

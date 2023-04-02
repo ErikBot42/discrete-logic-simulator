@@ -69,9 +69,9 @@ impl<T: LogicSim> VcbBoard<T> {
         self.width * self.height
     }
     fn new(plain: VcbPlainBoard, optimize: bool) -> Self {
-        let (height, width, element_ids_external, _translation_table, logic_sim, element_ids) =
+        let (height, width, element_ids_external, _translation_table, logic_sim, element_ids) = 
             explore::explore_new::construct_vcbboard_parts(&plain, optimize);
-            //construct_vcbboard_parts(&plain, optimize);
+        //construct_vcbboard_parts(&plain, optimize);
 
         VcbBoard {
             element_ids_internal: element_ids,

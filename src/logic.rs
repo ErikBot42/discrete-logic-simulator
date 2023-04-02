@@ -19,7 +19,7 @@ use strum_macros::EnumIter;
 //pub type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
 pub type ReferenceSim = reference_sim::ReferenceLogicSim;
 pub type BitPackSim = bitpack_sim::BitPackSimInner;
-pub type BatchSim = batch_sim::ReferenceBatchSim;
+//pub type BatchSim = batch_sim::ReferenceBatchSim;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, PartialOrd, Ord, Default)]
 /// A = active inputs
@@ -161,6 +161,8 @@ type UpdateList = crate::raw_list::RawList<IndexType>;
 
 type GateKey = (GateType, Vec<IndexType>, bool);
 
+use network::GateNode;
+
 pub trait LogicSim {
     // ===============================================
     //
@@ -168,9 +170,17 @@ pub trait LogicSim {
     //
     // ==============================================
 
+    // outputs: impl Iterator<Item = impl Iterator<Item = usize>>
+    // nodes: impl Iterator<Item = impl Iterator<Item = usize>>
+
     /// Create `LogicSim` struct from optimized network and a id translation table to convert from
     /// external gate ids to internal gate ids.
-    fn create(network: InitializedNetwork) -> (Vec<IndexType>, Self);
+    //fn create(network: InitializedNetwork) -> (Vec<IndexType>, Self);
+    fn create(
+        outputs: impl IntoIterator<Item = impl IntoIterator<Item = usize>>,
+        nodes: Vec<GateNode>,
+        table: Vec<IndexType>,
+    ) -> (Vec<IndexType>, Self);
 
     /// Get state from *internal* id
     fn get_state_internal(&self, gate_id: usize) -> bool;

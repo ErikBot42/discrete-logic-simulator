@@ -1,6 +1,7 @@
 //! Reference implementation for logic simulation.
 //! As simple as possible, and therefore slow.
 use super::{AccType, Gate, IndexType, LogicSim, RunTimeGateType};
+use crate::logic::InitializedNetwork;
 use itertools::Itertools;
 #[derive(Clone)]
 pub struct ReferenceLogicSim {
@@ -15,22 +16,37 @@ pub struct ReferenceLogicSim {
 }
 impl crate::logic::RenderSim for ReferenceLogicSim {}
 impl LogicSim for ReferenceLogicSim {
-    fn create(network: super::network::InitializedNetwork) -> (Vec<IndexType>, Self) {
-        let gates = network.gates;
-        let translation_table = network.translation_table;
-        let (cluster_update_list, gate_update_list) =
-            gates.iter().enumerate().partition_map(|(i, g)| {
-                if g.kind.is_cluster() {
+    fn create(
+        outputs_iter: impl IntoIterator<Item = impl IntoIterator<Item = usize>>,
+        nodes: Vec<crate::logic::network::GateNode>,
+        translation_table: Vec<u32>,
+    ) -> (Vec<IndexType>, Self) {
+        let csr = crate::logic::network::Csr::new(outputs_iter);
+        let csc = csr.as_csc();
+        let (cluster_update_list, gate_update_list): (Vec<_>, Vec<_>) =
+            nodes.iter().enumerate().partition_map(|(i, n)| {
+                if n.kind.is_cluster() {
                     itertools::Either::Left(i)
                 } else {
                     itertools::Either::Right(i)
                 }
             });
-        let (in_update_list, state, kind, acc, outputs): (Vec<_>, Vec<_>, Vec<_>, Vec<_>, Vec<_>) =
-            gates
-                .into_iter()
-                .map(|g| (true, g.initial_state, g.kind, g.calc_acc(), g.outputs))
-                .multiunzip();
+
+        let (in_update_list, state, kind, acc): (Vec<_>, Vec<_>, Vec<_>, Vec<_>) = nodes
+            .into_iter()
+            .zip(csc.iter().map(|c| c.len()))
+            .map(|(node, inputs)| {
+                (
+                    true,
+                    node.initial_state,
+                    node.kind,
+                    Gate::calc_acc_i(inputs, node.kind),
+                )
+            })
+            .multiunzip();
+
+        let outputs = csr.iter().map(|i| i.iter().map(|&i| i as IndexType).collect_vec()).collect_vec();
+
         let mut this = Self {
             update_list: gate_update_list,
             cluster_update_list,
