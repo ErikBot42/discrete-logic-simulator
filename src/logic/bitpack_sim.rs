@@ -35,7 +35,7 @@ pub struct BitPackSimInner {
     update_list: UpdateList,
     cluster_update_list: UpdateList,
     in_update_list: Vec<bool>,
-    soap: Vec<Soap>,
+    //soap: Vec<Soap>,
 }
 
 impl BitPackSimInner {
@@ -100,16 +100,18 @@ impl BitPackSimInner {
 
             if changed != 0 {
                 *state_mut = new_state;
-                let soap = *unsafe { self.soap.get_unchecked(group_id) };
+                //let soap = *unsafe { self.soap.get_unchecked(group_id) };
                 Self::propagate_acc(
+                    group_id,
                     changed,
                     new_state,
                     &self.csr_outputs,
+                    &self.csr_indexes,
                     cast_slice_mut(&mut self.acc),
                     &mut self.in_update_list,
                     next_update_list,
-                    soap.base_offset,
-                    soap.num_outputs,
+                    //soap.base_offset,
+                    //soap.num_outputs,
                 );
             }
         }
@@ -148,26 +150,31 @@ impl BitPackSimInner {
     /// Assumes invalid gates never activate and that #outputs is constant within a group
     #[inline(always)]
     fn propagate_acc(
+        group_id: usize,
         mut changed: BitInt,
         new_state: BitInt,
         csr_outputs: &[IndexType],
+        csr_indexes: &[IndexType],
         acc: &mut [u8],
         in_update_list: &mut [bool],
         next_update_list: &mut UpdateList,
-        base_offset: IndexType,
-        num_outputs: u16,
+        //base_offset: IndexType,
+        //num_outputs: u16,
     ) {
-        let base_offset = base_offset as u32;
-        let num_outputs = num_outputs as u32;
+        //let base_offset = base_offset as u32;
+        //let num_outputs = num_outputs as u32;
 
-        if num_outputs == 0 {
-            return;
-        }
+        //if num_outputs == 0 {
+        //    return;
+        //}
         while changed != 0 {
             let i: u32 = changed.trailing_zeros();
 
-            let outputs_start = base_offset + (i * num_outputs);
-            let outputs_end = outputs_start + num_outputs;
+            //let outputs_start = base_offset + (i * num_outputs);
+            //let outputs_end = outputs_start + num_outputs;
+            let gate_id = group_id * BITS + i as usize;
+            let outputs_start = *unsafe { csr_indexes.get_unchecked(gate_id) };
+            let outputs_end = *unsafe { csr_indexes.get_unchecked(gate_id + 1) };
 
             changed &= !(1 << i); // ANY
 
@@ -245,7 +252,6 @@ enum GateOrderingKey {
     Cluster,
 }
 
-
 // TODO: distinct cardinality makes aligned interface impossible.
 fn bit_pack_nodes(nodes: &Vec<GateNode>, csr: &Csr<u32>) -> (Vec<Option<usize>>, Vec<usize>) {
     // bit packed -> prev id
@@ -254,22 +260,22 @@ fn bit_pack_nodes(nodes: &Vec<GateNode>, csr: &Csr<u32>) -> (Vec<Option<usize>>,
     for (i, key) in nodes
         .iter()
         .map(|n| {
-            (match n.kind {
+            match n.kind {
                 GateType::And | GateType::Nor => GateOrderingKey::AndNor,
                 GateType::Or | GateType::Nand => GateOrderingKey::OrNand,
                 GateType::Xor | GateType::Xnor => GateOrderingKey::XorXnor,
                 GateType::Latch => GateOrderingKey::Latch,
                 GateType::Interface(s) => GateOrderingKey::Interface,
                 GateType::Cluster => GateOrderingKey::Cluster,
-            })
+            }
         })
         .enumerate()
-        .sorted_by_key(|(i, key)| (*key, csr[*i].len()))
+        .sorted_by_key(|(i, key)| (*key, 0*csr[*i].len()))
     {
         if table.len() % BITS == 0 {
-            group_kinds.push((csr[i].len(), key));
+            group_kinds.push((0*csr[i].len(), key));
         }
-        if let Some(&k) = group_kinds.last() && (k.1 != key || k.0 != csr[i].len()) {
+        if let Some(&k) = group_kinds.last() && (k.1 != key /*|| k.0 != csr[i].len()*/) {
             while table.len() % BITS != 0 {
                 table.push(None);
             }
@@ -364,24 +370,24 @@ impl LogicSim for BitPackSimInner {
         let (update_list, cluster_update_list, in_update_list) =
             make_update_lists(&kind, num_groups, num_gates);
 
-        let (group_csr_indexes, group_num_outputs): (Vec<_>, Vec<_>) = (0..num_groups)
-            .map(|i| i * BITS)
-            .map(|i| {
-                (
-                    csr_indexes[i],
-                    u16::try_from(csr_indexes[i + 1] - csr_indexes[i]).unwrap(),
-                )
-            })
-            .unzip();
+        //let (group_csr_indexes, group_num_outputs): (Vec<_>, Vec<_>) = (0..num_groups)
+        //    .map(|i| i * BITS)
+        //    .map(|i| {
+        //        (
+        //            csr_indexes[i],
+        //            u16::try_from(csr_indexes[i + 1] - csr_indexes[i]).unwrap(),
+        //        )
+        //    })
+        //    .unzip();
 
-        let soap = group_csr_indexes
-            .iter()
-            .zip(group_num_outputs.iter())
-            .map(|(&base_offset, &num_outputs)| Soap {
-                base_offset,
-                num_outputs,
-            })
-            .collect();
+        //let soap = group_csr_indexes
+        //    .iter()
+        //    .zip(group_num_outputs.iter())
+        //    .map(|(&base_offset, &num_outputs)| Soap {
+        //        base_offset,
+        //        num_outputs,
+        //    })
+        //    .collect();
 
         let mut this = Self {
             acc,
@@ -393,7 +399,7 @@ impl LogicSim for BitPackSimInner {
             update_list,
             cluster_update_list,
             in_update_list,
-            soap,
+            //soap,
         };
 
         this.init_state(&node_data);

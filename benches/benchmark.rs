@@ -55,8 +55,8 @@ fn bench_pre_parsed<T: LogicSim>(
     pre_parsed: &mut Vec<(&str, VcbBoard<T>)>,
 ) {
     let mut c_run = c.benchmark_group(group_name);
-    c_run.measurement_time(std::time::Duration::from_secs(30));
-    c_run.warm_up_time(std::time::Duration::from_secs(5));
+    //c_run.measurement_time(std::time::Duration::from_secs(30));
+    //c_run.warm_up_time(std::time::Duration::from_secs(5));
     for pre in pre_parsed.iter_mut() {
         c_run.bench_function(pre.0, |b| b.iter(|| pre.1.update()));
     }
@@ -69,7 +69,7 @@ fn bench_parsing<T: LogicSim>(
     input: &[(&'static str, VcbInput)],
 ) {
     let mut c_run = c.benchmark_group(group_name);
-    c_run.sample_size(10);
+    //c_run.sample_size(10);
     for (name, data) in input {
         c_run.bench_function(*name, |b| {
             b.iter(|| {
@@ -90,7 +90,7 @@ fn criterion_benchmark_parsing(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    //criterion_benchmark_runtime,
-    criterion_benchmark_parsing
+    criterion_benchmark_runtime,
+    //criterion_benchmark_parsing
 );
 criterion_main!(benches);
