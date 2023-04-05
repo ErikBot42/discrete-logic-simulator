@@ -277,11 +277,11 @@ pub(crate) mod passes {
 
         while {
             {
-                sort_connections_pass(&mut csc);
                 let constant = constant_analysis_pass(&csc, &csc.as_csr(), &nodes);
-                //node_normalization_pass(&mut nodes, &constant);
+                node_normalization_pass(&mut nodes, &constant);
+                sort_connections_pass(&mut csc);
                 //remove_redundant_input_connections_pass(&mut csc, &nodes, &constant);
-                //node_merge_pass(&mut csc, &mut nodes, &mut table);
+                node_merge_pass(&mut csc, &mut nodes, &mut table);
             }
             replace(&mut score, dbg!((csc.len(), csc.len_inner()))) != (csc.len(), csc.len_inner())
         } {}
@@ -300,19 +300,28 @@ pub(crate) mod passes {
         usize: TryFrom<T>,
         Csc<T>: IndexMut<usize, Output = [T]>,
     {
-        csc.sort(); // normalize inputs
+        // (node, inputs) -> new_id
         let mut map: HashMap<(&GateNode, &[T]), usize> = HashMap::new(); // TODO: faster hashmap
-        let mut table = Vec::new();
-        let mut new_nodes = Vec::new();
-        for (node, inputs) in nodes.iter().zip(csc.iter()) {
-            table.push(if let Some(id) = map.get(&(node, inputs)) {
-                *id
+
+        // id -> new_id
+        // |table| = max(id) + 1
+        let mut table: Vec<usize> = Vec::new();
+
+        // new_id -> node
+        // |new_nodes| = max(new_id) + 1
+        let mut new_nodes: Vec<GateNode> = Vec::new();
+
+        for (node, inputs) in nodes.iter().zip(csc.iter()) { // TODO: into_iter
+            let new_id;
+            if let Some(id) = map.get(&(node, inputs)) {
+                new_id = *id
             } else {
-                let id = table.len();
+                let id = new_nodes.len();
                 map.insert((node, inputs), id);
                 new_nodes.push(node.clone());
-                id
-            })
+                new_id = id
+            };
+            table.push(new_id);
         }
         let f = |a: T| table[usize::try_from(a).unwrap()].try_into().unwrap();
         translation_table.iter_mut().for_each(|t| *t = f(*t));
@@ -465,7 +474,7 @@ pub(crate) mod passes {
             .zip(constant.max_active_inputs.iter())
         {
             use GateType::*;
-            node.kind = match (
+            let new_kind = match (
                 is_constant,
                 max_active_inputs,
                 node.kind,
@@ -479,7 +488,15 @@ pub(crate) mod passes {
                 (_, 0, Latch, false) => Or,
                 (_, 0, Latch, true) => Nor,
                 _ => node.kind,
+            };
+            if new_kind != node.kind && node.kind != Or && node.kind != Nor {
+                println!(
+                    "{max_active_inputs} {is_constant} {:?} -> {new_kind:?}",
+                    node.kind
+                );
             }
+
+            node.kind = new_kind
         }
     }
 

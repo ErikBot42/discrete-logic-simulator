@@ -70,7 +70,7 @@ impl GateType {
         matches!(self, GateType::Cluster)
     }
 
-    /// Is this gate always constantly off
+    /// Is this gate always off (constant)
     fn constant_analysis(
         k: GateType,
         initial_state: bool,
