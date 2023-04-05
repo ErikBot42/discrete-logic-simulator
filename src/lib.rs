@@ -40,18 +40,6 @@ macro_rules! assert_eq_len {
         assert_eq!($first.len(), $second.len());
     };
 }
-//macro_rules! assert_assume {
-//    ($statement:expr) => {
-//        #[inline(always)]
-//        unsafe fn foo() {}
-//        foo();
-//
-//        #[cfg(debug_assertions)]
-//        assert!($statement);
-//        #[cfg(not(debug_assertions))]
-//        std::intrinsics::assume($statement);
-//    };
-//}
 
 pub mod blueprint;
 pub mod logic;
@@ -59,7 +47,48 @@ pub mod raw_list;
 pub mod render;
 
 #[cfg(test)]
+macro_rules! gen_logic_tests {
+    () => {
+        gen_logic_tests!(
+            intro,
+            VcbInput::BlueprintLegacy(include_str!("../test_files/intro.blueprint").to_string()),
+            "KLUv/WAAY50BAOgAAIAKAKgAEBEAgAoACAIAcAAAAACAAwAAAAAcAAcAWeLA2oEXoD5ABZABCAyS8aEAFg==",
+            0, 100);
+        gen_logic_tests!(
+            basic_gate,
+            VcbInput::BlueprintLegacy(include_str!("../test_files/gates.blueprint").to_string()),
+            "KLUv/WBAANUBAEQCAAARAQAAAKiACgAgIhVQAQAAAEQEAAAAoAIqAAAAgIhUQAUACAD1IVCAI5IS+iU8iKESMBhnAFg=",
+            0, 5);
+    };
+    ($test_case_name:ident, $input:expr, $expect:expr, $pre_iter:expr, $iter:expr) => {
+        gen_logic_tests!(
+            $test_case_name, $input, $expect, $pre_iter, $iter,
+            [ReferenceSim, reference_sim],
+            [BitPackSim, bit_pack]
+        );
+    };
+    ($name:ident, $input:expr, $expect:expr, $pre_iter:expr, $iter:expr, [$stype:ty, $sname:ident], $([$stypes:ty, $snames:ident]), +) => {
+        gen_logic_tests!($name, $input, $expect, $pre_iter, $iter, [$stype, $sname]);
+        gen_logic_tests!($name, $input, $expect, $pre_iter, $iter, $([$stypes, $snames]), +);
+    };
+    ($test_case_name:ident, $input:expr, $expect:expr, $pre_iter:expr, $iter:expr, [$sim_type:ty, $sim_name:ident]) => {
+        gen_logic_tests!(true, optimized, $test_case_name, $input, $expect, $pre_iter, $iter, $sim_type, $sim_name);
+        gen_logic_tests!(false, unoptimized, $test_case_name, $input, $expect, $pre_iter, $iter, $sim_type, $sim_name);
+    };
+    ( $optim:expr, $optim_str:ident, $test_case_name:ident, $input:expr, $expect:expr, $pre_iter:expr, $iter:expr, $sim_type:ty, $sim_name:ident) => {
+        paste::paste! {
+            #[test]
+            fn [<$sim_name _ test _ $test_case_name _ $optim_str>]() {
+                do_test::<$sim_type>(true, $input, $expect.to_string(), $pre_iter, $iter);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
+    gen_logic_tests!();
+
     use crate::blueprint::{VcbBoard, VcbInput, VcbParser};
     use crate::logic::{BitPackSim, LogicSim, ReferenceSim}; //, BatchSim};
 
@@ -105,10 +134,8 @@ mod tests {
                 (
                     x.0,
                     Box::from(move || VcbParser::parse_compile::<SIM>(x.1, optimize).unwrap()) as _,
-                    //Box::new(|| ()),
                 )
             })
-            //.collect::<Vec<(&str, Box<dyn Fn()>)>>();
             .collect::<Vec<_>>()
     }
 
@@ -301,26 +328,42 @@ mod tests {
     //fn basic_gate_test_scalar() {
     //    generic_basic_gate_test_w::<ScalarSim>();
     //}
-    //#[test]
-    //fn basic_gate_test_reference() {
-    //    generic_basic_gate_test_w::<ReferenceSim>();
-    //}
+    #[test]
+    fn basic_gate_test_reference() {
+        generic_basic_gate_test_w::<ReferenceSim>();
+    }
     //#[test]
     //fn basic_gate_test_simd() {
     //    generic_basic_gate_test_w::<SimdSim>();
     //}
-    //#[test]
-    //fn basic_gate_test_bitpack() {
-    //    generic_basic_gate_test_w::<BitPackSim>();
-    //}
+    #[test]
+    fn basic_gate_test_bitpack() {
+        generic_basic_gate_test_w::<BitPackSim>();
+    }
     fn generic_basic_gate_test_w<SIM: LogicSim>() {
-        basic_gate_test::<SIM>(false, false);
-        basic_gate_test::<SIM>(false, true);
-        basic_gate_test::<SIM>(true, false);
-        basic_gate_test::<SIM>(true, true);
+        basic_gate_test::<SIM>(false);
+        basic_gate_test::<SIM>(true);
+    }
+    fn basic_gate_test<SIM: LogicSim>(optimize: bool) {
+        let mut board: VcbBoard<SIM> = VcbParser::parse_compile(
+            VcbInput::BlueprintLegacy(include_str!("../test_files/gates.blueprint").to_string()),
+            optimize,
+        )
+        .unwrap();
+        assert_eq!(board.encode_state_base64(0, 5), "KLUv/WBAANUBAEQCAAARAQAAAKiACgAgIhVQAQAAAEQEAAAAoAIqAAAAgIhUQAUACAD1IVCAI5IS+iU8iKESMBhnAFg=");
+    }
+    pub(crate) fn do_test<SIM: LogicSim>(
+        optimize: bool,
+        input: VcbInput,
+        expected: String,
+        pre_iter: usize,
+        iter: usize,
+    ) {
+        let mut board: VcbBoard<SIM> = VcbParser::parse_compile(input, optimize).unwrap();
+        assert_eq!(board.encode_state_base64(pre_iter, iter), expected);
     }
 
-    fn basic_gate_test<SIM: LogicSim>(optimize: bool, add_all: bool) {
+    /*fn basic_gate_test<SIM: LogicSim>(optimize: bool, add_all: bool) {
         dbg!(optimize, add_all);
         //const STRATEGY: u8 = UpdateStrategy::Reference as u8;
         let mut board: VcbBoard<SIM> = VcbParser::parse_compile(
@@ -449,5 +492,5 @@ mod tests {
             .map(|x| *x != 0)
             .collect::<Vec<bool>>()
         );
-    }
+    }*/
 }

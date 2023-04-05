@@ -242,40 +242,72 @@ impl crate::logic::RenderSim for BitPackSimInner {
 //    // Clear and write state bitvec
 //    //fn get_state_in(&mut self, v: &mut Vec<u64>);
 
-#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
+// Has correct *ordering* for gates
+#[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 enum GateOrderingKey {
-    Interface = 0,
+    Interface(u8), // all interfaces first, in same group, in order.
+    Latch,         // needs to be next to interface for merging.
     OrNand,
     AndNor,
     XorXnor,
-    Latch,
     Cluster,
+}
+impl TryFrom<GateType> for GateOrderingKey {
+    type Error = anyhow::Error;
+    fn try_from(g: GateType) -> anyhow::Result<Self> {
+        use GateOrderingKey::*;
+        Ok(match g {
+            GateType::And | GateType::Nor => AndNor,
+            GateType::Or | GateType::Nand => OrNand,
+            GateType::Xor | GateType::Xnor => XorXnor,
+            GateType::Latch => Latch,
+            GateType::Interface(s) => s
+                .map(|s| Interface(s))
+                .ok_or_else(|| anyhow::anyhow!("Interface with None slot"))?,
+            GateType::Cluster => Cluster,
+        })
+    }
+}
+
+// Has correct pack condition for gates
+#[derive(PartialEq, Eq, Copy, Clone)]
+enum GatePackingKey {
+    LatchInterface,
+    OrNand,
+    AndNor,
+    XorXnor,
+    Cluster, // maintain bipartite property
+}
+impl From<GateOrderingKey> for GatePackingKey {
+    fn from(g: GateOrderingKey) -> Self {
+        use GatePackingKey::*;
+        match g {
+            GateOrderingKey::Interface(_) => LatchInterface,
+            GateOrderingKey::Latch => LatchInterface,
+            GateOrderingKey::OrNand => OrNand,
+            GateOrderingKey::AndNor => AndNor,
+            GateOrderingKey::XorXnor => XorXnor,
+            GateOrderingKey::Cluster => Cluster,
+        }
+    }
 }
 
 // TODO: distinct cardinality makes aligned interface impossible.
-fn bit_pack_nodes(nodes: &Vec<GateNode>, csr: &Csr<u32>) -> (Vec<Option<usize>>, Vec<usize>) {
+fn bit_pack_nodes(nodes: &Vec<GateNode>) -> (Vec<Option<usize>>, Vec<usize>) {
     // bit packed -> prev id
     let mut table: Vec<Option<usize>> = Vec::new();
-    let mut group_kinds: Vec<(usize, GateOrderingKey)> = Vec::new();
+    let mut group_kinds: Vec<GatePackingKey> = Vec::new();
     for (i, key) in nodes
         .iter()
-        .map(|n| {
-            match n.kind {
-                GateType::And | GateType::Nor => GateOrderingKey::AndNor,
-                GateType::Or | GateType::Nand => GateOrderingKey::OrNand,
-                GateType::Xor | GateType::Xnor => GateOrderingKey::XorXnor,
-                GateType::Latch => GateOrderingKey::Latch,
-                GateType::Interface(s) => GateOrderingKey::Interface,
-                GateType::Cluster => GateOrderingKey::Cluster,
-            }
-        })
+        .map(|n| GateOrderingKey::try_from(n.kind).unwrap())
         .enumerate()
-        .sorted_by_key(|(i, key)| (*key, 0*csr[*i].len()))
+        .sorted_by_key(|(_, ordkey)| *ordkey)
+        .map(|(i, ordkey)| (i, GatePackingKey::from(ordkey)))
     {
         if table.len() % BITS == 0 {
-            group_kinds.push((0*csr[i].len(), key));
+            group_kinds.push(key);
         }
-        if let Some(&k) = group_kinds.last() && (k.1 != key /*|| k.0 != csr[i].len()*/) {
+        if let Some(&k) = group_kinds.last() && (k != key) {
             while table.len() % BITS != 0 {
                 table.push(None);
             }
@@ -307,7 +339,7 @@ impl LogicSim for BitPackSimInner {
                 .into_iter()
                 .map(|i| i.into_iter().map(|i| i as u32)),
         );
-        let (bit_pack_table, bit_pack_inv_table) = bit_pack_nodes(&nodes, &csr);
+        let (bit_pack_table, bit_pack_inv_table) = bit_pack_nodes(&nodes);
         translation_table.iter_mut().for_each(|t| {
             *t = u32::try_from(bit_pack_inv_table[usize::try_from(*t).unwrap()]).unwrap()
         });

@@ -38,6 +38,8 @@ pub enum RunMode {
     Gif,
     /// Only parse board
     Parse,
+    /// Print state of board in binary
+    PrintBinary,
 }
 
 #[derive(Parser, Debug)]
@@ -213,6 +215,7 @@ fn handle_board<T: LogicSim + RenderSim + Clone + Send + 'static>(
             .unwrap();
         },
         RunMode::Bench => run_bench(args, board),
+        RunMode::PrintBinary => board.print_binary(),
     }
     println!("Exiting...");
 }

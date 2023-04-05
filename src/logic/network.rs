@@ -274,12 +274,15 @@ pub(crate) mod passes {
     {
         let (mut csc, mut nodes, mut table) = (csc, nodes, table);
         let mut score = dbg!((csc.len(), csc.len_inner()));
+
         while {
-            sort_connections_pass(&mut csc);
-            let constant = constant_analysis_pass(&csc, &csc.as_csr(), &nodes);
-            //node_normalization_pass(&mut nodes, &constant);
-            //remove_redundant_input_connections_pass(&mut csc, &nodes, &constant);
-            //node_merge_pass(&mut csc, &mut nodes, &mut table);
+            {
+                sort_connections_pass(&mut csc);
+                let constant = constant_analysis_pass(&csc, &csc.as_csr(), &nodes);
+                //node_normalization_pass(&mut nodes, &constant);
+                //remove_redundant_input_connections_pass(&mut csc, &nodes, &constant);
+                //node_merge_pass(&mut csc, &mut nodes, &mut table);
+            }
             replace(&mut score, dbg!((csc.len(), csc.len_inner()))) != (csc.len(), csc.len_inner())
         } {}
         (csc, nodes, table)
@@ -446,7 +449,6 @@ pub(crate) mod passes {
         }
     }
 
-    /// TODO: is it better to normalize to xor to remove all inputs?
     /// Modify nodes in place
     fn node_normalization_pass<T: SparseIndex>(
         nodes: &mut Vec<GateNode>,

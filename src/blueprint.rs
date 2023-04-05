@@ -69,7 +69,7 @@ impl<T: LogicSim> VcbBoard<T> {
         self.width * self.height
     }
     fn new(plain: VcbPlainBoard, optimize: bool) -> Self {
-        let (height, width, element_ids_external, _translation_table, logic_sim, element_ids) = 
+        let (height, width, element_ids_external, _translation_table, logic_sim, element_ids) =
             explore::explore_new::construct_vcbboard_parts(&plain, optimize);
         //construct_vcbboard_parts(&plain, optimize);
 
@@ -137,7 +137,7 @@ impl<T: LogicSim> VcbBoard<T> {
     /// For regression testing
     /// Get state for every pixel
     #[must_use]
-    #[cfg(test)]
+    //#[cfg(test)]
     pub fn make_state_vec(&self) -> Vec<bool> {
         (0..self.traces.len())
             .map(|i| self.get_state_element(i))
@@ -420,6 +420,31 @@ impl<T: LogicSim> VcbBoard<T> {
         gif_encoder.encode_frames(frames).unwrap();
 
         println!("Gif stored at: {path:?}");
+    }
+    pub fn print_binary(&mut self) {
+        let pre_iterations = 0;
+        let iterations = 100;
+        println!(
+            "\"{}\" ({pre_iterations} {iterations})",
+            self.encode_state_base64(pre_iterations, iterations)
+        );
+    }
+    pub(crate) fn encode_state_base64(
+        &mut self,
+        pre_iterations: usize,
+        iterations: usize,
+    ) -> String {
+        self.update_i(pre_iterations);
+        let mut states = Vec::new();
+        for _ in 0..iterations {
+            states.extend(
+                self.make_state_vec()
+                    .into_iter()
+                    .array_chunks()
+                    .map(crate::logic::bitmanip::pack_bits),
+            );
+        }
+        base64::encode(zstd::bulk::compress(bytemuck::cast_slice(&states), 0).unwrap())
     }
 }
 
