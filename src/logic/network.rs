@@ -301,7 +301,7 @@ pub(crate) mod passes {
                 node_normalization_pass(&mut nodes, &constant);
                 sort_connections_pass(&mut csc);
                 // remove_redundant_input_connections_pass(&mut csc, &nodes, &constant);
-                // node_merge_pass(&mut csc, &mut nodes, &mut table);
+                node_merge_pass(&mut csc, &mut nodes, &mut table);
             }
             replace(&mut score, dbg!((csc.len(), csc.len_inner()))) != (csc.len(), csc.len_inner())
         } {}
