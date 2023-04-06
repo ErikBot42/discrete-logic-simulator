@@ -243,7 +243,11 @@ pub(crate) mod explore_new {
                 })
                 .collect_vec();
 
-            let (csc, nodes, table) = crate::logic::network::passes::optimize(csc, nodes, table);
+            let (csc, nodes, table) = if optimize {
+                crate::logic::network::passes::optimize(csc, nodes, table)
+            } else {
+                (csc, nodes, table)
+            };
             let csr = csc.as_csr();
             let table = table.into_iter().map(|i| i as u32).collect();
 
@@ -392,7 +396,7 @@ pub(crate) mod explore_new {
         let trace_nodes: Vec<_> = (0..num_ids_after_merge)
             .map(|i| trace_nodes[table_inv[i].unwrap()])
             .collect();
-        let csr = Csr::from_adjacency(connect_state.connections, num_ids_after_merge);
+        let csr = Csr::from_adjacency_deduplicate(connect_state.connections, num_ids_after_merge);
         assert_eq!(csr.len(), trace_nodes.len());
         csr.adjacency_iter()
             .for_each(|(a, b)| (validate_connection(trace_nodes[a], trace_nodes[b])));

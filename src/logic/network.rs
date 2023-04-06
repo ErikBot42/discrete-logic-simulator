@@ -86,7 +86,7 @@ mod sparse {
     {
         /// Returns the raw swap csr csc of this [`Sparse<T, CSR>`].
         fn raw_swap_csr_csc(&self) -> Sparse<T, CSR> {
-            Self::from_adjacency(
+            Self::from_adjacency_deduplicate(
                 self.adjacency_iter().map(|(from, to)| (to, from)).collect(),
                 self.len(),
             )
@@ -117,11 +117,13 @@ mod sparse {
                 })
                 .flatten()
         }
-        pub(crate) fn from_adjacency(mut adjacency: Vec<(T, T)>, len: usize) -> Self {
+        fn from_sorted_adjacency_iter(
+            adjacency_iter: impl IntoIterator<Item = (T, T)>,
+            len: usize,
+        ) -> Self {
             use either::Either::{Left, Right};
             use std::mem::replace;
-            adjacency.sort();
-            let outputs_grouped = adjacency.into_iter().dedup().group_by(|a| a.0);
+            let outputs_grouped = adjacency_iter.into_iter().group_by(|a| a.0);
             let mut outputs_iter = outputs_grouped
                 .into_iter()
                 .map(|(from, outputs)| (from, outputs.map(|(_, output)| output)));
@@ -136,6 +138,14 @@ mod sparse {
                     }
                 });
             Self::new(outputs_iter)
+        }
+        pub(crate) fn from_adjacency_deduplicate(mut adjacency: Vec<(T, T)>, len: usize) -> Self {
+            adjacency.sort();
+            Self::from_sorted_adjacency_iter(adjacency.into_iter().dedup(), len)
+        }
+        pub(crate) fn from_adjacency(mut adjacency: Vec<(T, T)>, len: usize) -> Self {
+            adjacency.sort();
+            Self::from_sorted_adjacency_iter(adjacency.into_iter(), len)
         }
         pub(crate) fn iter(&self) -> impl Iterator<Item = &[T]> {
             (0..self.len()).map(|i| &self[i])
@@ -275,13 +285,21 @@ pub(crate) mod passes {
         let (mut csc, mut nodes, mut table) = (csc, nodes, table);
         let mut score = dbg!((csc.len(), csc.len_inner()));
 
+        //for i in csc.iter_mut() {
+        //    for j in i.iter_mut() {
+        //        *j = T::try_from(0).unwrap();
+        //    }
+        //}
+
+        csc = Csc::from_adjacency_deduplicate(csc.adjacency_iter().collect(), nodes.len());
+
         while {
             {
                 let constant = constant_analysis_pass(&csc, &csc.as_csr(), &nodes);
                 node_normalization_pass(&mut nodes, &constant);
                 sort_connections_pass(&mut csc);
-                //remove_redundant_input_connections_pass(&mut csc, &nodes, &constant);
-                node_merge_pass(&mut csc, &mut nodes, &mut table);
+                // remove_redundant_input_connections_pass(&mut csc, &nodes, &constant);
+                // node_merge_pass(&mut csc, &mut nodes, &mut table);
             }
             replace(&mut score, dbg!((csc.len(), csc.len_inner()))) != (csc.len(), csc.len_inner())
         } {}
@@ -305,13 +323,14 @@ pub(crate) mod passes {
 
         // id -> new_id
         // |table| = max(id) + 1
-        let mut table: Vec<usize> = Vec::new();
+        let mut table: Vec<usize> = Vec::new(); // with capacity
 
         // new_id -> node
         // |new_nodes| = max(new_id) + 1
-        let mut new_nodes: Vec<GateNode> = Vec::new();
+        let mut new_nodes: Vec<GateNode> = Vec::new(); // with capacity
 
-        for (node, inputs) in nodes.iter().zip(csc.iter()) { // TODO: into_iter
+        for (node, inputs) in nodes.iter().zip(csc.iter()) {
+            // TODO: into_iter
             let new_id;
             if let Some(id) = map.get(&(node, inputs)) {
                 new_id = *id
@@ -323,13 +342,15 @@ pub(crate) mod passes {
             };
             table.push(new_id);
         }
+        // id -> new_id
         let f = |a: T| table[usize::try_from(a).unwrap()].try_into().unwrap();
         translation_table.iter_mut().for_each(|t| *t = f(*t));
-        *nodes = new_nodes;
-        *csc = Csc::from_adjacency(
+        let new_csc = Csc::from_adjacency_deduplicate(
             csc.adjacency_iter().map(|(a, b)| (f(a), f(b))).collect(),
-            nodes.len(),
+            new_nodes.len(),
         );
+        *nodes = new_nodes;
+        *csc = new_csc;
         //assert_eq!(nodes.len(), table.len());
     }
 
@@ -429,6 +450,11 @@ pub(crate) mod passes {
         let mut next_active_set: Vec<usize> = Vec::new();
         let mut max_active_inputs: Vec<_> = (0..nodes.len()).map(|i| csc[i].len()).collect();
         let mut is_constant: Vec<_> = (0..nodes.len()).map(|_| false).collect();
+
+        return ConstantAnalysis {
+            is_constant,
+            max_active_inputs,
+        };
 
         while active_set.len() > 0 {
             for &i in &active_set {
@@ -627,13 +653,12 @@ impl InitializedNetwork {
     ) {
         let mut explored: Vec<_> = (0..old_gates.len()).map(|_| false).collect();
         for (old_gate_id, old_gate) in old_gates.iter().enumerate() {
-            let new_id = old_to_new_id[old_gate_id];
-            let new_id_u = new_id as usize;
-            if explored[new_id_u] {
+            let new_id = old_to_new_id[old_gate_id] as usize;
+            if explored[new_id] {
                 continue;
             }
-            explored[new_id_u] = true;
-            let new_gate: &mut Gate = &mut new_gates[new_id_u];
+            explored[new_id] = true;
+            let new_gate: &mut Gate = &mut new_gates[new_id];
             let new_inputs: &mut Vec<IndexType> = &mut old_gate
                 .inputs
                 .clone()

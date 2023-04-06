@@ -208,8 +208,8 @@ impl BitPackSimInner {
             }
         }
     }
-    fn init_state(&mut self, gates: &[Option<(usize, GateNode)>]) {
-        for (id, (cluster, state)) in gates
+    fn init_state(&mut self, nodes: &[Option<(usize, GateNode)>]) {
+        for (id, (cluster, state)) in nodes
             .iter()
             .map(|g| {
                 g.as_ref().map_or((false, false), |g| {
@@ -346,7 +346,7 @@ impl LogicSim for BitPackSimInner {
 
         let csc_pre_table = csr.as_csc();
 
-        let csr: Csr<u32> = Csr::from_adjacency(
+        let csr: Csr<u32> = Csr::from_adjacency_deduplicate(
             csr.adjacency_iter()
                 .map(|(a, b)| {
                     (

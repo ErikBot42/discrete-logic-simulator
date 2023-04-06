@@ -423,7 +423,7 @@ impl<T: LogicSim> VcbBoard<T> {
     }
     pub fn print_binary(&mut self) {
         let pre_iterations = 0;
-        let iterations = 100;
+        let iterations = 50;
         println!(
             "\"{}\" ({pre_iterations} {iterations})",
             self.encode_state_base64(pre_iterations, iterations)
@@ -443,6 +443,7 @@ impl<T: LogicSim> VcbBoard<T> {
                     .array_chunks()
                     .map(crate::logic::bitmanip::pack_bits),
             );
+            self.update();
         }
         base64::encode(zstd::bulk::compress(bytemuck::cast_slice(&states), 0).unwrap())
     }

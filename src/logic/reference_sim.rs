@@ -60,7 +60,8 @@ impl LogicSim for ReferenceLogicSim {
         for (state, outputs) in this.state.iter().zip(this.outputs.iter()) {
             if *state {
                 for i in outputs {
-                    let acc = &mut this.acc[*i as usize];
+                    let i = *i as usize;
+                    let acc = &mut this.acc[i];
                     *acc = acc.wrapping_add(1);
                 }
             }

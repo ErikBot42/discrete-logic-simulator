@@ -135,6 +135,8 @@ impl RenderSimController {
             loop {
                 let mut tick_counter = 0;
                 let max_ticks = 1;
+
+                //TODO: replace with task mpsc
                 while interrupt.load(Ordering::Acquire) == generation {
                     if tick_counter < max_ticks {
                         sim.rupdate();
@@ -805,6 +807,7 @@ impl State {
                 self.keystates.reverse = false;
             }
         } else {
+            self.state_history.clear();
             self.state_history.push(mem::take(&mut self.bit_state));
             self.sim_controller.get_state_in(&mut self.bit_state);
         }
