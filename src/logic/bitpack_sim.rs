@@ -346,7 +346,7 @@ impl LogicSim for BitPackSimInner {
 
         let csc_pre_table = csr.as_csc();
 
-        let csr: Csr<u32> = Csr::from_adjacency_deduplicate(
+        let csr: Csr<u32> = Csr::from_adjacency(
             csr.adjacency_iter()
                 .map(|(a, b)| {
                     (

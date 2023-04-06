@@ -86,7 +86,7 @@ mod sparse {
     {
         /// Returns the raw swap csr csc of this [`Sparse<T, CSR>`].
         fn raw_swap_csr_csc(&self) -> Sparse<T, CSR> {
-            Self::from_adjacency_deduplicate(
+            Self::from_adjacency(
                 self.adjacency_iter().map(|(from, to)| (to, from)).collect(),
                 self.len(),
             )
@@ -265,6 +265,8 @@ pub(crate) mod passes {
     // https://faultlore.com/blah/oops-that-was-important/
     //
     // TODO: keep a "futures" csc that invalidates itself? put feature in Csr?
+    //
+    // TODO: resuse all allocations
 
     /// NOTE: unsorted input and unsorted output
     ///
@@ -291,7 +293,7 @@ pub(crate) mod passes {
         //    }
         //}
 
-        csc = Csc::from_adjacency_deduplicate(csc.adjacency_iter().collect(), nodes.len());
+        //csc = Csc::from_adjacency(csc.adjacency_iter().collect(), nodes.len());
 
         while {
             {
@@ -308,6 +310,7 @@ pub(crate) mod passes {
 
     /// PERF_PRE: CSC sorted
     /// POST: CSC/nodes not sorted,
+    /// TODO: dedup connections immediately
     fn node_merge_pass<T: SparseIndex>(
         csc: &mut Csc<T>,
         nodes: &mut Vec<GateNode>,
@@ -345,7 +348,7 @@ pub(crate) mod passes {
         // id -> new_id
         let f = |a: T| table[usize::try_from(a).unwrap()].try_into().unwrap();
         translation_table.iter_mut().for_each(|t| *t = f(*t));
-        let new_csc = Csc::from_adjacency_deduplicate(
+        let new_csc = Csc::from_adjacency(
             csc.adjacency_iter().map(|(a, b)| (f(a), f(b))).collect(),
             new_nodes.len(),
         );
