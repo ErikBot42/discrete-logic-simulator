@@ -1,7 +1,7 @@
 //! Reference implementation for logic simulation.
 //! As simple as possible, and therefore slow.
 use super::{AccType, Gate, IndexType, LogicSim, RunTimeGateType};
-use crate::logic::InitializedNetwork;
+use crate::logic::Csr;
 use itertools::Itertools;
 #[derive(Clone)]
 pub struct ReferenceLogicSim {
@@ -17,11 +17,12 @@ pub struct ReferenceLogicSim {
 impl crate::logic::RenderSim for ReferenceLogicSim {}
 impl LogicSim for ReferenceLogicSim {
     fn create(
-        outputs_iter: impl IntoIterator<Item = impl IntoIterator<Item = usize>>,
+        //outputs_iter: impl IntoIterator<Item = impl IntoIterator<Item = usize>>,
+        csr: Csr<u32>,
         nodes: Vec<crate::logic::network::GateNode>,
         translation_table: Vec<u32>,
     ) -> (Vec<IndexType>, Self) {
-        let csr = crate::logic::network::Csr::new(outputs_iter);
+        //let csr = crate::logic::network::Csr::new(outputs_iter);
         let csc = csr.as_csc();
         let (cluster_update_list, gate_update_list): (Vec<_>, Vec<_>) =
             nodes.iter().enumerate().partition_map(|(i, n)| {

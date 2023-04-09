@@ -27,27 +27,46 @@ fn reorder_by_indices_with<F: FnMut(usize, usize)>(mut swap_indices: F, mut indi
     }
 }
 mod sparse {
+
+    /// Cast following the `Self` as `T` semantics (truncating/zero/sign extending)
     use itertools::Itertools;
     use std::convert::TryFrom;
     use std::fmt::Debug;
     use std::hash::Hash;
     use std::ops::{Index, IndexMut};
 
-    pub(crate) trait SparseIndex:
+    pub trait SparseIndex:
         Copy + Default + Hash + Ord + Debug + 'static + TryInto<usize> + TryFrom<usize>
     {
+        fn new(x: usize) -> Self;
+        fn index(self) -> usize;
     }
-    impl<T> SparseIndex for T where
-        T: Copy + Default + Hash + Ord + Debug + 'static + TryInto<usize> + TryFrom<usize>
-    {
+    macro_rules! sparse_index_impl {
+        ($a:ty) => {
+            impl SparseIndex for $a {
+                fn new(x: usize) -> Self {
+                    x as Self
+                }
+                fn index(self) -> usize {
+                    self as usize
+                }
+            }
+        };
     }
+    sparse_index_impl!(usize);
+    //sparse_index_impl!(u64);
+    sparse_index_impl!(u32);
+    //sparse_index_impl!(u16);
+    //sparse_index_impl!(u8);
+    fn foo() {}
+
     /// Compressed Sparse Column, "list of inputs"
     pub(crate) type Csc<T> = Sparse<T, false>;
     /// Compressed Sparse Row, "list of outputs"
     pub(crate) type Csr<T> = Sparse<T, true>;
 
-    #[derive(Clone)]
-    pub(crate) struct Sparse<T: SparseIndex, const CSR: bool> {
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Sparse<T: SparseIndex, const CSR: bool> {
         pub(crate) indexes: Vec<T>,
         pub(crate) outputs: Vec<T>,
     }
@@ -85,7 +104,7 @@ mod sparse {
         Sparse<T, CSR>: IndexMut<usize, Output = [T]>,
     {
         /// Returns the raw swap csr csc of this [`Sparse<T, CSR>`].
-        fn raw_swap_csr_csc(&self) -> Sparse<T, CSR> {
+        pub(crate) fn raw_swap_csr_csc(&self) -> Sparse<T, CSR> {
             Self::from_adjacency(
                 self.adjacency_iter().map(|(from, to)| (to, from)).collect(),
                 self.len(),
@@ -100,7 +119,7 @@ mod sparse {
             }
             this
         }
-        fn push(&mut self, new_outputs: impl IntoIterator<Item = T>) {
+        pub(crate) fn push(&mut self, new_outputs: impl IntoIterator<Item = T>) {
             self.outputs.extend(new_outputs);
             self.indexes.push(self.outputs.len().try_into().unwrap());
         }
@@ -112,9 +131,7 @@ mod sparse {
         }
         pub(crate) fn adjacency_iter(&self) -> impl Iterator<Item = (T, T)> + '_ {
             (0..self.len())
-                .map(|i| {
-                    std::iter::repeat(i.try_into().unwrap()).zip(self.index(i).iter().cloned())
-                })
+                .map(|i| std::iter::repeat(T::new(i)).zip(self.index(i).iter().cloned()))
                 .flatten()
         }
         fn from_sorted_adjacency_iter(
@@ -130,11 +147,11 @@ mod sparse {
 
             let mut curr_output = outputs_iter.next();
             let outputs_iter = (0..len).map(|id| {
-                    if (curr_output.as_ref().map(|(from, _)| id == usize::try_from(*from).unwrap()) == Some(true)) &&
+                    if (curr_output.as_ref().map(|(from, _)| id == T::index(*from)) == Some(true)) &&
                         let Some(iter) = replace(&mut curr_output, outputs_iter.next()).map(|a| a.1) {
                         Left(iter)
                     } else {
-                        Right([T::try_from(0_usize).unwrap(); 0].into_iter())
+                        Right([T::new(0_usize); 0].into_iter())
                     }
                 });
             Self::new(outputs_iter)
@@ -162,6 +179,11 @@ mod sparse {
         /// Sort slices in [`Sparse<T, CSR>`].
         pub(crate) fn sort(&mut self) {
             self.iter_mut().for_each(|inputs| inputs.sort());
+        }
+        pub(crate) fn clear(&mut self) {
+            self.indexes.clear();
+            self.indexes.push(0_usize.try_into().unwrap());
+            self.outputs.clear();
         }
     }
     impl<T: SparseIndex, const CSR: bool> Index<usize> for Sparse<T, CSR>
@@ -214,8 +236,8 @@ mod sparse {
             if slice.is_empty() {
                 return None;
             }
-            let size = usize::try_from(self.indexes[self.current + 1]).unwrap()
-                - usize::try_from(self.indexes[self.current]).unwrap();
+            let size =
+                (self.indexes[self.current + 1]).index() - (self.indexes[self.current]).index();
             self.current += 1;
 
             let (l, r) = slice.split_at_mut(size);
@@ -235,7 +257,8 @@ mod sparse {
 
     use std::mem::take;
 }
-#[derive(Hash, Clone, Eq, PartialEq)]
+// TODO: compressed representation, maybe a to/from?
+#[derive(Hash, Clone, Eq, PartialEq, Debug)]
 pub struct GateNode {
     pub(crate) kind: GateType, // add constant on/off nodes?
     pub(crate) initial_state: bool,
@@ -259,14 +282,14 @@ use sparse::SparseIndex;
 pub(crate) use sparse::{Csc, Csr};
 pub(crate) mod passes {
     use std::iter::once;
-    use std::mem::replace;
+    use std::mem::{replace, swap};
 
     use super::*;
     // https://faultlore.com/blah/oops-that-was-important/
     //
     // TODO: keep a "futures" csc that invalidates itself? put feature in Csr?
     //
-    // TODO: resuse all allocations
+    // TODO: resuse ALL allocations
 
     /// NOTE: unsorted input and unsorted output
     ///
@@ -286,6 +309,7 @@ pub(crate) mod passes {
     {
         let (mut csc, mut nodes, mut table) = (csc, nodes, table);
         let mut score = dbg!((csc.len(), csc.len_inner()));
+        let initial_score = score;
 
         //for i in csc.iter_mut() {
         //    for j in i.iter_mut() {
@@ -295,22 +319,64 @@ pub(crate) mod passes {
 
         //csc = Csc::from_adjacency(csc.adjacency_iter().collect(), nodes.len());
 
+        //(330803, 444881);
+        //(306426, 440066);
+        //(286864, 420504);
+        //(286864, 420504);
+        //
+        //(242914,346756,)
+
+        //sort_connections_pass(&mut csc); // TODO: is this beneficial?
+        // 3.637530266s
+
+        let num_nodes_estimate: usize = nodes.len();
+
+        let mut constant_analysis = ConstantAnalysis {
+            is_constant: Vec::with_capacity(num_nodes_estimate),
+            max_active_inputs: Vec::with_capacity(num_nodes_estimate),
+        };
+        let mut scratch_vec_usize1 = Vec::with_capacity(num_nodes_estimate);
+        let mut scratch_vec_usize2 = Vec::with_capacity(num_nodes_estimate);
+
+        let mut iterations = 0;
         while {
             {
-                let constant = constant_analysis_pass(&csc, &csc.as_csr(), &nodes);
-                node_normalization_pass(&mut nodes, &constant);
-                sort_connections_pass(&mut csc);
-                // remove_redundant_input_connections_pass(&mut csc, &nodes, &constant);
+                constant_analysis_pass(
+                    &csc,
+                    &csc.as_csr(),
+                    &nodes,
+                    &mut constant_analysis,
+                    &mut scratch_vec_usize1,
+                    &mut scratch_vec_usize2,
+                );
+                node_normalization_and_connection_removal_pass(
+                    &mut nodes,
+                    &constant_analysis,
+                    &mut csc,
+                );
+                //remove_redundant_input_connections_pass(&mut csc, &nodes, &constant);
                 node_merge_pass(&mut csc, &mut nodes, &mut table);
+                //KLUv/SAAAQAA
+                iterations += 1;
             }
             replace(&mut score, dbg!((csc.len(), csc.len_inner()))) != (csc.len(), csc.len_inner())
         } {}
+
+        let final_score = score;
+        println!(
+            "score:\n    nodes: {:?}\n    connections: {:?}\n    iterations: {iterations}\n    T: {}",
+            final_score.0 as f64 / initial_score.0 as f64,
+            final_score.1 as f64 / initial_score.1 as f64,
+            std::any::type_name::<T>()
+        );
+
         (csc, nodes, table)
     }
 
     /// PERF_PRE: CSC sorted
     /// POST: CSC/nodes not sorted,
     /// TODO: dedup connections immediately
+    /// TODO: pack directly into csc
     fn node_merge_pass<T: SparseIndex>(
         csc: &mut Csc<T>,
         nodes: &mut Vec<GateNode>,
@@ -321,39 +387,70 @@ pub(crate) mod passes {
         usize: TryFrom<T>,
         Csc<T>: IndexMut<usize, Output = [T]>,
     {
+        let num_nodes_estimate = nodes.len();
+
         // (node, inputs) -> new_id
-        let mut map: HashMap<(&GateNode, &[T]), usize> = HashMap::new(); // TODO: faster hashmap
+        // TODO: faster hashmap
+
+        //let mut map: HashMap<(&GateNode, &[T]), usize> = HashMap::with_capacity(num_nodes_estimate);
+        let mut map: ahash::AHashMap<(&GateNode, &[T]), usize> =
+            ahash::AHashMap::with_capacity(num_nodes_estimate);
+        //let mut map: rustc_hash::FxHashMap<(&GateNode, &[T]), usize> =
+        //    rustc_hash::FxHashMap::default();
+        //let hasher = std::hash::BuildHasherDefault::<rustc_hash::FxHasher>::default();
+        //let mut map: HashMap<(&GateNode, &[T]), usize, std::hash::BuildHasherDefault<rustc_hash::FxHasher>> =
+        //    //rustc_hash::FxHashMap::default();
+        //    rustc_hash::FxHashMap::with_capacity_and_hasher(num_nodes_estimate, hasher);
 
         // id -> new_id
         // |table| = max(id) + 1
-        let mut table: Vec<usize> = Vec::new(); // with capacity
+        let mut table: Vec<usize> = Vec::with_capacity(num_nodes_estimate); // TODO with capacity
 
         // new_id -> node
         // |new_nodes| = max(new_id) + 1
-        let mut new_nodes: Vec<GateNode> = Vec::new(); // with capacity
+        let mut new_nodes: Vec<GateNode> = Vec::with_capacity(num_nodes_estimate); // TODO with capacity
 
-        for (node, inputs) in nodes.iter().zip(csc.iter()) {
+        // adjacency list
+        let mut connections: Vec<(T, T)> = Vec::with_capacity(csc.len_inner()); // TODO with capacity
+
+        let mut next_csc: Csc<T> = Csc::default();
+
+        for (old_id, (node, inputs)) in nodes.iter().zip(csc.iter()).enumerate() {
             // TODO: into_iter
-            let new_id;
-            if let Some(id) = map.get(&(node, inputs)) {
-                new_id = *id
+
+            let new_id = if let Some(existing_id) = map.get(&(node, inputs)) {
+                *existing_id
             } else {
-                let id = new_nodes.len();
-                map.insert((node, inputs), id);
+                let next_id = new_nodes.len();
+                map.insert((node, inputs), next_id);
                 new_nodes.push(node.clone());
-                new_id = id
+
+                //TODO: push csc directly?
+
+                next_csc.push(csc[old_id].into_iter().cloned());
+
+                //connections.extend(
+                //    repeat(T::try_from(old_id).unwrap()).zip(csc[old_id].into_iter().cloned()),
+                //);
+                next_id
             };
             table.push(new_id);
         }
         // id -> new_id
         let f = |a: T| table[usize::try_from(a).unwrap()].try_into().unwrap();
+
+        next_csc.iter_inner_mut().for_each(|t| *t = f(*t));
+        next_csc.iter_mut().for_each(|t| t.sort());
+
         translation_table.iter_mut().for_each(|t| *t = f(*t));
-        let new_csc = Csc::from_adjacency(
-            csc.adjacency_iter().map(|(a, b)| (f(a), f(b))).collect(),
-            new_nodes.len(),
-        );
+        //connections
+        //    .iter_mut()
+        //    .for_each(|(a, b)| (*a, *b) = (f(*a), f(*b)));
+        //let new_csc = Csc::from_adjacency(connections, new_nodes.len());
+        //assert_eq!(new_csc, next_csc);
         *nodes = new_nodes;
-        *csc = new_csc;
+        //*csc = new_csc;
+        *csc = next_csc;
         //assert_eq!(nodes.len(), table.len());
     }
 
@@ -414,15 +511,18 @@ pub(crate) mod passes {
                         let mut inputs = inputs.peekable();
                         let fallback = inputs.peek().cloned();
                         let mut inputs = inputs
-                            .filter(|&i| constant.is_constant[usize::try_from(i).unwrap()])
+                            .filter(|&i| !constant.is_constant[usize::try_from(i).unwrap()])
                             .peekable();
-                        Left(if inputs.peek().is_none() && let Some(fallback) = fallback {
-                            Left(once(fallback))
-                                } else {Right(inputs)})
+                        Left(
+                            if inputs.peek().is_none() && let Some(fallback) = fallback {
+                                Left(once(fallback))
+                            } else {
+                                Right(inputs)
+                            })
                     },
                     Xor | Xnor | Latch | Interface(_) | Or | Nand | Cluster => {
                         // can remove all connections
-                        Right(inputs.filter(|&i| constant.is_constant[usize::try_from(i).unwrap()]))
+                        Right(inputs.filter(|&i| !constant.is_constant[usize::try_from(i).unwrap()]))
                     },
                 }
             });
@@ -437,11 +537,16 @@ pub(crate) mod passes {
     // -> (is node constant, max active inputs)
     /// Calculate what gates are constants
     /// O(updates + n) => O(n)
+    /// NO ALLOCATION (IN THEORY)
     fn constant_analysis_pass<T: SparseIndex>(
         csc: &Csc<T>,
         csr: &Csr<T>,
         nodes: &Vec<GateNode>,
-    ) -> ConstantAnalysis
+        constant: &mut ConstantAnalysis,
+        scratch_vec_usize1: &mut Vec<usize>,
+        scratch_vec_usize2: &mut Vec<usize>,
+    )
+    //-> ConstantAnalysis
     where
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
@@ -449,84 +554,145 @@ pub(crate) mod passes {
         Csc<T>: IndexMut<usize, Output = [T]>,
         Csr<T>: IndexMut<usize, Output = [T]>,
     {
-        let mut active_set: Vec<usize> = (0..nodes.len()).collect();
-        let mut next_active_set: Vec<usize> = Vec::new();
-        let mut max_active_inputs: Vec<_> = (0..nodes.len()).map(|i| csc[i].len()).collect();
-        let mut is_constant: Vec<_> = (0..nodes.len()).map(|_| false).collect();
+        let max_active_inputs = &mut constant.max_active_inputs;
+        max_active_inputs.clear();
+        max_active_inputs.extend((0..nodes.len()).map(|i| csc[i].len()));
+        //let mut max_active_inputs: Vec<_> = (0..nodes.len()).map(|i| csc[i].len()).collect();
+        let is_constant = &mut constant.is_constant;
+        is_constant.clear();
+        is_constant.extend((0..nodes.len()).map(|_| false));
+        //let mut is_constant: Vec<_> = (0..nodes.len()).map(|_| false).collect();
 
-        return ConstantAnalysis {
-            is_constant,
-            max_active_inputs,
-        };
+        let active_set = scratch_vec_usize1;
+        active_set.clear();
+        active_set.extend(0..nodes.len());
+        //let mut active_set: Vec<usize> = (0..nodes.len()).collect();
+        let next_active_set = scratch_vec_usize2;
+        next_active_set.clear();
+        //let mut next_active_set: Vec<usize> = Vec::new();
 
         while active_set.len() > 0 {
-            for &i in &active_set {
+            for &i in active_set.iter() {
                 if is_constant[i] {
                     continue;
-                }
-                if GateType::constant_analysis(
-                    nodes[i].kind,
-                    nodes[i].initial_state,
-                    max_active_inputs[i],
-                    csc[i].len(),
-                ) {
-                    is_constant[i] = true;
-                    for out in csr[i].iter().map(|&i| usize::try_from(i).unwrap()) {
-                        max_active_inputs[out] -= 1;
-                        next_active_set.push(out);
+                } else {
+                    if GateType::constant_analysis(
+                        nodes[i].kind,
+                        nodes[i].initial_state,
+                        max_active_inputs[i],
+                        csc[i].len(),
+                    ) {
+                        is_constant[i] = true;
+                        for out in csr[i].iter().map(|&i| usize::try_from(i).unwrap()) {
+                            max_active_inputs[out] -= 1;
+                            next_active_set.push(out);
+                        }
                     }
                 }
             }
-            std::mem::swap(&mut active_set, &mut next_active_set);
+            swap(active_set, next_active_set);
             next_active_set.clear();
         }
 
-        ConstantAnalysis {
-            is_constant,
-            max_active_inputs,
-        }
+        //ConstantAnalysis {
+        //    is_constant,
+        //    max_active_inputs,
+        //}
     }
 
-    /// Modify nodes in place
-    fn node_normalization_pass<T: SparseIndex>(
+    /// Modify nodes in place, remove connections
+    fn node_normalization_and_connection_removal_pass<T: SparseIndex>(
         nodes: &mut Vec<GateNode>,
         constant: &ConstantAnalysis,
+        csc: &mut Csc<T>,
     ) where
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
         Csc<T>: IndexMut<usize, Output = [T]>,
     {
-        for ((node, &is_constant), &max_active_inputs) in nodes
+        let mut new_csc: Csc<T> = Csc::default();
+        for (((node, &is_constant), &max_active_inputs), input_connections) in nodes
             .iter_mut()
             .zip(constant.is_constant.iter())
             .zip(constant.max_active_inputs.iter())
+            .zip(csc.iter())
         {
-            use GateType::*;
-            let new_kind = match (
-                is_constant,
-                max_active_inputs,
-                node.kind,
-                node.initial_state,
-            ) {
-                (_, _, Cluster, _) => Cluster,
-                (_, _, Interface(s), _) => Interface(s),
-                (true, _, _, _) => Or,
-                (_, 0 | 1, And | Or | Xor, _) => Or,
-                (_, 0 | 1, Nor | Nand | Xnor, _) => Nor,
-                (_, 0, Latch, false) => Or,
-                (_, 0, Latch, true) => Nor,
-                _ => node.kind,
+            //let new_kind = match (
+            //    is_constant,
+            //    max_active_inputs,
+            //    node.kind,
+            //    node.initial_state,
+            //) {
+            //    (_, _, Cluster, _) => Cluster,
+            //    (_, _, Interface(s), _) => Interface(s),
+            //    (true, 0, _, _) => Or,
+            //    //(true, 1, _, _) => Or,
+            //    //(_, 0 | 1, And | Or | Xor, _) => Or,
+            //    //(_, 0 | 1, Or | Xor, _) => Or,
+            //    //(_, 0 | 1, Nor | Nand | Xnor, _) => Nor,
+            //    //(_, 0, Latch, false) => Or,
+            //    //(_, 0, Latch, true) => Nor,
+            //    _ => node.kind,
+            //};
+
+            // connections to retain:
+
+            const NONE: u32 = 0;
+            const VARIABLE: u32 = 1;
+            const ALL: u32 = 2;
+
+            const BUFFER: GateType = Or;
+            const INVERTER: GateType = Nor;
+
+            use GateType::{And, Cluster, Interface, Latch, Nand, Nor, Or, Xnor, Xor};
+            let is_constant = is_constant;
+            let max_active_inputs = max_active_inputs;
+            let kind = node.kind;
+            let state = node.initial_state;
+            let inputs = input_connections.len();
+            let (connection_action, new_kind) = match kind {
+                Cluster => (VARIABLE, Cluster),
+                Interface(s) => (VARIABLE, Interface(s)),
+                Latch if max_active_inputs == 0 && !state => (NONE, BUFFER),
+                Latch if max_active_inputs == 0 && state => (NONE, INVERTER),
+                Latch => (VARIABLE, Latch),
+                _ if is_constant => (NONE, BUFFER),
+                Or | Xor | Nand if inputs == 0 => (NONE, BUFFER),
+                Nor | Xnor | And if inputs == 0 => (NONE, INVERTER),
+                Or | Xor if max_active_inputs == 1 => (VARIABLE, BUFFER),
+                Nor | Xnor if max_active_inputs == 1 => (VARIABLE, INVERTER),
+                Or | Xor | Xnor | Nor => (VARIABLE, kind),
+                And if max_active_inputs < inputs => (NONE, BUFFER),
+                Nand if max_active_inputs < inputs => (NONE, INVERTER),
+                And if max_active_inputs == 1 && inputs == 1 => (VARIABLE, BUFFER),
+                Nand if max_active_inputs == 1 && inputs == 1 => (VARIABLE, INVERTER),
+                _ => (ALL, kind),
             };
-            if new_kind != node.kind && node.kind != Or && node.kind != Nor {
-                println!(
-                    "{max_active_inputs} {is_constant} {:?} -> {new_kind:?}",
-                    node.kind
-                );
+
+            //if new_kind != node.kind {
+            //    println!(
+            //        "{max_active_inputs}/{inputs},{} {:?} {:?} -> {new_kind:?}",
+            //        if is_constant {" constant,"} else {""},
+            //        if state {"(ON)"} else {"(OFF)"},
+            //        node.kind
+            //    );
+            //}
+            let inputs = input_connections;
+            match connection_action {
+                NONE => new_csc.push([]),
+                VARIABLE => new_csc.push(
+                    inputs
+                        .iter()
+                        .cloned()
+                        .filter(|&i| !constant.is_constant[usize::try_from(i).unwrap()]),
+                ),
+                ALL | _ => new_csc.push(inputs.iter().cloned()),
             }
 
             node.kind = new_kind
         }
+        std::mem::swap(csc, &mut new_csc);
     }
 
     // TODO: OPTIM:

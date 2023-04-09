@@ -270,7 +270,7 @@ impl TryFrom<GateType> for GateOrderingKey {
 }
 
 // Has correct pack condition for gates
-#[derive(PartialEq, Eq, Copy, Clone)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug)]
 enum GatePackingKey {
     LatchInterface,
     OrNand,
@@ -296,6 +296,7 @@ impl From<GateOrderingKey> for GatePackingKey {
 fn bit_pack_nodes(nodes: &Vec<GateNode>) -> (Vec<Option<usize>>, Vec<usize>) {
     // bit packed -> prev id
     let mut table: Vec<Option<usize>> = Vec::new();
+    let mut inv_table = (0..nodes.len()).map(|_| usize::MAX).collect_vec();
     let mut group_kinds: Vec<GatePackingKey> = Vec::new();
     for (i, key) in nodes
         .iter()
@@ -304,41 +305,41 @@ fn bit_pack_nodes(nodes: &Vec<GateNode>) -> (Vec<Option<usize>>, Vec<usize>) {
         .sorted_by_key(|(_, ordkey)| *ordkey)
         .map(|(i, ordkey)| (i, GatePackingKey::from(ordkey)))
     {
+        //dbg!((i, key));
         if table.len() % BITS == 0 {
             group_kinds.push(key);
-        }
-        if let Some(&k) = group_kinds.last() && (k != key) {
-            while table.len() % BITS != 0 {
-                table.push(None);
+        } else {
+            if let Some(&last_key) = group_kinds.last() {
+                if last_key != key {
+                    // need to skip to next alignment
+                    while table.len() % BITS != 0 {
+                        table.push(None);
+                    }
+                    group_kinds.push(key);
+                }
             }
         }
+        inv_table[i] = table.len();
         table.push(Some(i));
     }
     while table.len() % BITS != 0 {
         table.push(None);
     }
-    // prev id -> bit packed
-    let mut inv_table = (0..nodes.len()).map(|_| None).collect_vec();
-    for (i, &entry) in table.iter().enumerate() {
-        if let Some(entry) = entry {
-            inv_table[entry] = Some(i);
-        }
-    }
-    let inv_table = inv_table.iter().map(|&i| i.unwrap()).collect_vec();
     (table, inv_table)
 }
 
 impl LogicSim for BitPackSimInner {
     fn create(
-        outputs_iter: impl IntoIterator<Item = impl IntoIterator<Item = usize>>,
+        //outputs_iter: impl IntoIterator<Item = impl IntoIterator<Item = usize>>,
+        csr: Csr<u32>,//impl IntoIterator<Item = impl IntoIterator<Item = usize>>,
         nodes: Vec<GateNode>,
         mut translation_table: Vec<u32>,
     ) -> (Vec<IndexType>, Self) {
-        let csr = Csr::new(
-            outputs_iter
-                .into_iter()
-                .map(|i| i.into_iter().map(|i| i as u32)),
-        );
+        //let csr = Csr::new(
+        //    outputs_iter
+        //        .into_iter()
+        //        .map(|i| i.into_iter().map(|i| i as u32)),
+        //);
         let (bit_pack_table, bit_pack_inv_table) = bit_pack_nodes(&nodes);
         translation_table.iter_mut().for_each(|t| {
             *t = u32::try_from(bit_pack_inv_table[usize::try_from(*t).unwrap()]).unwrap()

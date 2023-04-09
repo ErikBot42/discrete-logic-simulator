@@ -347,10 +347,8 @@ impl<S: RenderSim> RenderInput<S> {
 /// 32-bit id -> 24-bit id + 8-bit trace
 fn pack_single(gate_id: u32, trace: u8) -> u32 {
     let id_mask = u32::MAX >> 8;
-
     let masked_id = id_mask & gate_id;
     assert_eq!(masked_id, gate_id);
-
     gate_id | (u32::from(trace) << 24)
 }
 #[derive(Default, Copy, Clone, Debug)]

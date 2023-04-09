@@ -91,6 +91,10 @@ pub struct Args {
     /// Iterations to run in bench, or iterations per frame in run mode
     #[arg(short = 'i', long)]
     pub iterations: Option<usize>,
+    
+    /// Skip optimization step
+    #[arg(short = 's', long)]
+    pub skip_optim: bool,
 }
 
 fn main() {
@@ -137,7 +141,7 @@ fn handle_board<T: LogicSim + RenderSim + Clone + Send + 'static>(
     parser_input: VcbInput,
 ) {
     let now = Instant::now();
-    let mut board = { VcbParser::parse_compile::<T>(parser_input, true).unwrap() };
+    let mut board = { VcbParser::parse_compile::<T>(parser_input, !args.skip_optim).unwrap() };
     println!("parsed entire board in {:?}", now.elapsed());
     match args.mode {
         RunMode::RunGpu => {
@@ -182,7 +186,7 @@ fn handle_board<T: LogicSim + RenderSim + Clone + Send + 'static>(
                 board.update_i(updates_per_frame);
                 total_ticks += updates_per_frame;
 
-                let target_delay = Duration::from_millis(16);
+                let target_delay = Duration::from_millis(500);
                 let elapsed = time_prev.elapsed();
 
                 updates_per_frame = (updates_per_frame as f64 * (target_delay.as_nanos() as f64)

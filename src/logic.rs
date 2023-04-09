@@ -85,6 +85,7 @@ impl GateType {
         // XorXnor => acc & 1 == 1,
         // Latch => state != ((acc & 1 == 1) && (acc_prev & 1 == 0)),
         // TODO: EXPAND MATCHING TO INCLUDE LATCH
+        //dbg!(acc0, acc1);
         use GateType::*;
         match k {
             And | Nor => acc0 != 0 && acc1 != 0,
@@ -92,6 +93,51 @@ impl GateType {
             Xor | Xnor => acc0 == 0 && acc1 == 0,
             Latch => !initial_state && acc0 == 0 && acc1 == 0,
             Interface(_) => false,
+            _ => false,
+        }
+    }
+}
+//TODO: check that constant analysis is opitimistic enough
+#[test]
+fn validate_constant_analysis() {
+    use itertools::iproduct;
+    for inputs in 0..10 {
+        use GateType::*;
+        for (max_active_inputs, kind, initial_state) in iproduct!(
+            0..=inputs,
+            [
+                And,
+                Or,
+                Xor,
+                Nand,
+                Nor,
+                Xnor,
+                Cluster,
+                Interface(None),
+                Latch,
+            ],
+            [true, false]
+        ) {
+            let analysis = GateType::constant_analysis(kind, initial_state, max_active_inputs, inputs);
+            if analysis {
+                if let Interface(_) = kind {
+                    panic!("interface behaviour is non deterministic");
+                }
+                for (active_inputs, active_inputs_prev) in iproduct!(
+                    (0..=max_active_inputs as AccType),
+                    (0..=max_active_inputs as AccType)
+                ) {
+                    let acc_base = Gate::calc_acc_i(inputs, kind);
+                    let acc = acc_base.wrapping_add(active_inputs);
+                    let acc_prev = acc_base.wrapping_add(active_inputs_prev);
+                    assert!(!Gate::evaluate(
+                        acc,
+                        acc_prev,
+                        initial_state,
+                        RunTimeGateType::new(kind)
+                    ), "\nkind: {kind:?}\nacc: {acc:?}\nacc_prev: {acc_prev:?}\nmax_inputs: {max_active_inputs:?}\ninputs: {inputs:?}\ninitial_state {initial_state:?}");
+                }
+            }
         }
     }
 }
@@ -177,7 +223,7 @@ pub trait LogicSim {
     /// external gate ids to internal gate ids.
     //fn create(network: InitializedNetwork) -> (Vec<IndexType>, Self);
     fn create(
-        outputs: impl IntoIterator<Item = impl IntoIterator<Item = usize>>,
+        outputs: Csr<u32>, //impl IntoIterator<Item = impl IntoIterator<Item = usize>>,
         nodes: Vec<GateNode>,
         table: Vec<IndexType>,
     ) -> (Vec<IndexType>, Self);

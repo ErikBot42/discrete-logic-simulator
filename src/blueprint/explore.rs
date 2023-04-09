@@ -248,10 +248,20 @@ pub(crate) mod explore_new {
             } else {
                 (csc, nodes, table)
             };
-            let csr = csc.as_csr();
-            let table = table.into_iter().map(|i| i as u32).collect();
+            let csr = {
+                Csr::from_adjacency(
+                    csc.adjacency_iter()
+                        .map(|(from, to)| {
+                            (u32::try_from(to).unwrap(), u32::try_from(from).unwrap())
+                        })
+                        .collect(),
+                    csc.len(),
+                )
+            };
+            let table: Vec<u32> = table.into_iter().map(|i| i as u32).collect();
+            table.iter().for_each(|&i| assert!(i < 1_000_000, "{i}"));
 
-            T::create(csr.iter().map(|i| i.iter().cloned()), nodes, table)
+            T::create(csr, nodes, table)
         };
 
         let element_ids: Vec<_> = ids

@@ -72,6 +72,8 @@ impl<T: LogicSim> VcbBoard<T> {
         let (height, width, element_ids_external, _translation_table, logic_sim, element_ids) =
             explore::explore_new::construct_vcbboard_parts(&plain, optimize);
         //construct_vcbboard_parts(&plain, optimize);
+        
+        element_ids.iter().for_each(|&i| if let Some(i) = i {assert!(i < 1_000_000, "{i}")});
 
         VcbBoard {
             element_ids_internal: element_ids,
@@ -422,30 +424,27 @@ impl<T: LogicSim> VcbBoard<T> {
         println!("Gif stored at: {path:?}");
     }
     pub fn print_binary(&mut self) {
-        let pre_iterations = 0;
         let iterations = 50;
-        println!(
-            "\"{}\" ({pre_iterations} {iterations})",
-            self.encode_state_base64(pre_iterations, iterations)
+        let mut clip = arboard::Clipboard::new().unwrap();
+        timed!(
+            {
+                let encoded = self.encode_state_base64(iterations);
+                let len = encoded.len();
+                clip.set_text(&encoded).unwrap();
+                println!("\"{encoded}\" (iter: {iterations}, len: {len})",);
+            },
+            "encoding took {:?}"
         );
+        println!("this was copied to your clipboard (C-c to exit)");
+        loop {}
     }
-    pub(crate) fn encode_state_base64(
-        &mut self,
-        pre_iterations: usize,
-        iterations: usize,
-    ) -> String {
-        self.update_i(pre_iterations);
+    pub(crate) fn encode_state_base64(&mut self, iterations: usize) -> String {
         let mut states = Vec::new();
         for _ in 0..iterations {
-            states.extend(
-                self.make_state_vec()
-                    .into_iter()
-                    .array_chunks()
-                    .map(crate::logic::bitmanip::pack_bits),
-            );
+            states.extend(self.make_state_vec().into_iter());
             self.update();
         }
-        base64::encode(zstd::bulk::compress(bytemuck::cast_slice(&states), 0).unwrap())
+        base64::encode(zstd::bulk::compress(bytemuck::cast_slice(&states), i32::MAX).unwrap())
     }
 }
 
