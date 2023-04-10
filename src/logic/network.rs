@@ -330,13 +330,23 @@ pub(crate) mod passes {
         // 3.637530266s
 
         let num_nodes_estimate: usize = nodes.len();
+        let num_connections_estimate: usize = csc.len_inner();
 
         let mut constant_analysis = ConstantAnalysis {
             is_constant: Vec::with_capacity(num_nodes_estimate),
             max_active_inputs: Vec::with_capacity(num_nodes_estimate),
         };
-        let mut scratch_vec_usize1 = Vec::with_capacity(num_nodes_estimate);
-        let mut scratch_vec_usize2 = Vec::with_capacity(num_nodes_estimate);
+        let mut scratch_vec_usize1: Vec<usize> = Vec::with_capacity(num_nodes_estimate);
+        let mut scratch_vec_usize2: Vec<usize> = Vec::with_capacity(num_nodes_estimate);
+        let mut scratch_vec_node: Vec<GateNode> = Vec::with_capacity(num_nodes_estimate);
+        let mut scratch_csc_t = Csc {
+            indexes: {
+                let mut v = Vec::with_capacity(num_nodes_estimate + 1);
+                v.push(0_usize.try_into().unwrap());
+                v
+            },
+            outputs: Vec::with_capacity(num_connections_estimate),
+        };
 
         let mut iterations = 0;
         while {
@@ -355,7 +365,14 @@ pub(crate) mod passes {
                     &mut csc,
                 );
                 //remove_redundant_input_connections_pass(&mut csc, &nodes, &constant);
-                node_merge_pass(&mut csc, &mut nodes, &mut table);
+                node_merge_pass(
+                    &mut csc,
+                    &mut nodes,
+                    &mut table,
+                    &mut scratch_vec_usize1,
+                    &mut scratch_vec_node,
+                    &mut scratch_csc_t,
+                );
                 //KLUv/SAAAQAA
                 iterations += 1;
             }
@@ -381,6 +398,9 @@ pub(crate) mod passes {
         csc: &mut Csc<T>,
         nodes: &mut Vec<GateNode>,
         translation_table: &mut [T],
+        scratch_vec_usize1: &mut Vec<usize>,
+        scratch_vec_node: &mut Vec<GateNode>,
+        scratch_csc_t: &mut Csc<T>,
     ) where
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
@@ -404,34 +424,28 @@ pub(crate) mod passes {
 
         // id -> new_id
         // |table| = max(id) + 1
-        let mut table: Vec<usize> = Vec::with_capacity(num_nodes_estimate); // TODO with capacity
+        //let mut table: Vec<usize> = Vec::with_capacity(num_nodes_estimate); // TODO with capacity
+        let table = scratch_vec_usize1;
+        table.clear();
 
         // new_id -> node
         // |new_nodes| = max(new_id) + 1
-        let mut new_nodes: Vec<GateNode> = Vec::with_capacity(num_nodes_estimate); // TODO with capacity
+        //let mut new_nodes: Vec<GateNode> = Vec::with_capacity(num_nodes_estimate); // TODO with capacity
+        let new_nodes = scratch_vec_node;
+        new_nodes.clear();
 
-        // adjacency list
-        let mut connections: Vec<(T, T)> = Vec::with_capacity(csc.len_inner()); // TODO with capacity
-
-        let mut next_csc: Csc<T> = Csc::default();
+        //let mut next_csc: Csc<T> = Csc::default();
+        let next_csc = scratch_csc_t;
+        next_csc.clear();
 
         for (old_id, (node, inputs)) in nodes.iter().zip(csc.iter()).enumerate() {
-            // TODO: into_iter
-
             let new_id = if let Some(existing_id) = map.get(&(node, inputs)) {
                 *existing_id
             } else {
                 let next_id = new_nodes.len();
                 map.insert((node, inputs), next_id);
                 new_nodes.push(node.clone());
-
-                //TODO: push csc directly?
-
                 next_csc.push(csc[old_id].into_iter().cloned());
-
-                //connections.extend(
-                //    repeat(T::try_from(old_id).unwrap()).zip(csc[old_id].into_iter().cloned()),
-                //);
                 next_id
             };
             table.push(new_id);
@@ -439,19 +453,16 @@ pub(crate) mod passes {
         // id -> new_id
         let f = |a: T| table[usize::try_from(a).unwrap()].try_into().unwrap();
 
-        next_csc.iter_inner_mut().for_each(|t| *t = f(*t));
-        next_csc.iter_mut().for_each(|t| t.sort());
+        for t in next_csc.iter_mut() {
+            t.iter_mut().for_each(|t| *t = f(*t));
+            t.sort_unstable();
+        }
 
         translation_table.iter_mut().for_each(|t| *t = f(*t));
-        //connections
-        //    .iter_mut()
-        //    .for_each(|(a, b)| (*a, *b) = (f(*a), f(*b)));
-        //let new_csc = Csc::from_adjacency(connections, new_nodes.len());
-        //assert_eq!(new_csc, next_csc);
-        *nodes = new_nodes;
-        //*csc = new_csc;
-        *csc = next_csc;
-        //assert_eq!(nodes.len(), table.len());
+        //*nodes = new_nodes;
+        swap(nodes, new_nodes);
+        //*csc = next_csc;
+        swap(csc, next_csc);
     }
 
     /// CSC output sorted
