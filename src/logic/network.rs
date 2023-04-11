@@ -103,6 +103,10 @@ mod sparse {
         usize: TryFrom<T>,
         Sparse<T, CSR>: IndexMut<usize, Output = [T]>,
     {
+        pub(crate) fn mut_slices_in<'a>(&'a mut self, a: &mut Vec<&'a mut [T]>) {
+            a.clear();
+            a.extend(self.iter_mut());
+        }
         /// Returns the raw swap csr csc of this [`Sparse<T, CSR>`].
         pub(crate) fn raw_swap_csr_csc(&self) -> Sparse<T, CSR> {
             Self::from_adjacency(
@@ -295,6 +299,181 @@ pub(crate) mod passes {
     ///
     /// CSC output not sorted
 
+    pub(crate) fn optimize2<T: SparseIndex>(
+        mut csc: Csc<T>,
+        mut nodes: Vec<GateNode>,
+        table: Vec<T>,
+    ) where
+        <T as TryFrom<usize>>::Error: Debug,
+        <usize as TryFrom<T>>::Error: Debug,
+        usize: TryFrom<T>,
+        Csc<T>: IndexMut<usize, Output = [T]>,
+        Csr<T>: IndexMut<usize, Output = [T]>,
+    {
+        {
+            let bump = bumpalo::Bump::new();
+            let a = vec![1, 2, 3];
+            let b: &[i32] = &a;
+            let c = bump.alloc_slice_clone(b);
+        }
+
+        let nodes_len = nodes.len();
+        //csc.sort(); // we plan on maybe maintaining this invariant.
+        //let mut outputs: Vec<_> = csc.as_csr().iter().map(|i| i.to_vec()).collect();
+        let mut inputs: Vec<&mut [T]> = Vec::with_capacity(nodes_len);
+        csc.mut_slices_in(&mut inputs); // csc used as a bump allocator
+        let mut inputs: Vec<&[T]> = inputs.iter().map(|i| &**i).map(|i| i).collect();
+
+        // copy gatenode since it needs to be modifed while maintaining map
+        let mut map: HashMap<(&[T], GateNode), usize> = HashMap::new();
+
+        let mut active_list = (0..nodes_len).collect_vec();
+        let mut in_active_list = (0..nodes_len).map(|_| true).collect_vec();
+        let mut next_active_list = Vec::new();
+        let mut next_in_active_list = (0..nodes_len).map(|_| false).collect_vec();
+
+        // "deleted" nodes and their new id
+        let mut merged: Vec<Option<usize>> = (0..nodes_len).map(|_| None).collect();
+
+        // NOTE: pop stuff from map if key is modified.
+        loop {
+            fn try_schedule(
+                i: usize,
+                next_active_list: &mut Vec<usize>,
+                next_in_active_list: &mut [bool],
+                merged: &[Option<usize>],
+            ) {
+                // don't double schedule and don't schedule merged
+                if !next_in_active_list[i] && merged[i].is_none() {
+                    next_active_list.push(i);
+                    next_in_active_list[i] = true;
+                }
+            }
+            fn calc_key<'a, T>(
+                i: usize,
+                nodes: &[GateNode],
+                inputs: &[&'a [T]],
+            ) -> (&'a [T], GateNode) {
+                (inputs[i], nodes[i].clone())
+            }
+
+            for &i in &active_list {
+                let mut should_schedule = false;
+                assert!(replace(&mut in_active_list[i], false));
+                assert!(merged[i].is_none());
+
+                // NORMALIZE PASS:
+                // invalidates: inputs, outputs, node data
+                let new_key = {
+                    //TODO: propagate constant analysis
+                    use RetainedConnections::*;
+                    #[derive(Copy, Clone)]
+                    enum RetainedConnections {
+                        Zero,
+                        Variable,
+                        All,
+                    }
+
+                    let (connection_action, new_kind) = {
+                        let input_connections = inputs[i];
+                        const BUFFER: GateType = Or; // TODO: change dynamically for perfect packing
+                        const INVERTER: GateType = Nor;
+                        use GateType::{And, Cluster, Interface, Latch, Nand, Nor, Or, Xnor, Xor};
+                        let is_constant = false; //is_constant;
+                        let max_active_inputs = input_connections.len(); //max_active_inputs;
+                        let kind = nodes[i].kind;
+                        let state = nodes[i].initial_state;
+                        let inputs = input_connections.len();
+                        match kind {
+                            Cluster => (Variable, Cluster),
+                            Interface(s) => (Variable, Interface(s)),
+                            Latch if max_active_inputs == 0 && !state => (Zero, BUFFER),
+                            Latch if max_active_inputs == 0 && state => (Zero, INVERTER),
+                            Latch => (Variable, Latch),
+                            _ if is_constant => (Zero, BUFFER),
+                            Or | Xor | Nand if inputs == 0 => (Zero, BUFFER),
+                            Nor | Xnor | And if inputs == 0 => (Zero, INVERTER),
+                            Or | Xor if max_active_inputs == 1 => (Variable, BUFFER),
+                            Nor | Xnor if max_active_inputs == 1 => (Variable, INVERTER),
+                            Or | Xor | Xnor | Nor => (Variable, kind),
+                            And if max_active_inputs < inputs => (Zero, BUFFER),
+                            Nand if max_active_inputs < inputs => (Zero, INVERTER),
+                            And if max_active_inputs == 1 && inputs == 1 => (Variable, BUFFER),
+                            Nand if max_active_inputs == 1 && inputs == 1 => (Variable, INVERTER),
+                            _ => (All, kind),
+                        }
+                    };
+
+                    let old_key = calc_key(i, &nodes, &inputs);
+
+                    // modify
+                    let mut modified = false;
+                    {
+                        // update inputs
+                        // TODO: remove from outputs array
+                        match connection_action {
+                            All => (),
+                            Zero => {
+                                if inputs[i] != &[] {
+                                    inputs[i] = &[];
+                                    modified = true;
+                                }
+                                // TODO: notify all outputs
+                            },
+                            Variable => {
+                                modified = true;
+                                todo!() /*alloc here*/
+                                // TODO: notify all outputs
+                            },
+                        }
+                        if new_kind != nodes[i].kind {
+                            nodes[i].kind = new_kind;
+                            if !replace(&mut modified, true) {
+                                // TODO: notify all outputs
+                            }
+                        }
+                    }
+                    if modified {
+                        should_schedule = true;
+                        if let Some(existing_id) = map.get(&old_key) {
+                            if *existing_id == i {
+                                map.remove(&old_key);
+                            }
+                            // TODO: merge later
+                        }
+                        calc_key(i, &nodes, &inputs)
+                    } else {
+                        old_key
+                    }
+                };
+
+                // MERGE PASS:
+                // invalidates: inputs, outputs
+                {
+                    let key = new_key;
+                    //inputs[i];
+                    //    if let Some(existing_id) = map.get(key) {
+                    //        // TODO: merge operation:
+                    //        // remove input connections, move output connections.
+
+                    //        // TODO: signal modification to output gates
+                    //    } else {
+                    //        //map.insert(key, i);
+                    //}
+                }
+
+                // finalize
+                if should_schedule {
+                    try_schedule(i, &mut next_active_list, &mut next_in_active_list, &merged);
+                }
+            }
+
+            // finalize passes for next iteration
+            active_list.clear();
+            swap(&mut active_list, &mut next_active_list);
+            swap(&mut in_active_list, &mut next_in_active_list);
+        }
+    }
     pub(crate) fn optimize<T: SparseIndex>(
         csc: Csc<T>,
         nodes: Vec<GateNode>,
@@ -364,7 +543,6 @@ pub(crate) mod passes {
                     &constant_analysis,
                     &mut csc,
                 );
-                //remove_redundant_input_connections_pass(&mut csc, &nodes, &constant);
                 node_merge_pass(
                     &mut csc,
                     &mut nodes,
@@ -373,7 +551,6 @@ pub(crate) mod passes {
                     &mut scratch_vec_node,
                     &mut scratch_csc_t,
                 );
-                //KLUv/SAAAQAA
                 iterations += 1;
             }
             replace(&mut score, dbg!((csc.len(), csc.len_inner()))) != (csc.len(), csc.len_inner())
@@ -648,14 +825,11 @@ pub(crate) mod passes {
             //};
 
             // connections to retain:
-
             const NONE: u32 = 0;
             const VARIABLE: u32 = 1;
             const ALL: u32 = 2;
-
             const BUFFER: GateType = Or;
             const INVERTER: GateType = Nor;
-
             use GateType::{And, Cluster, Interface, Latch, Nand, Nor, Or, Xnor, Xor};
             let is_constant = is_constant;
             let max_active_inputs = max_active_inputs;

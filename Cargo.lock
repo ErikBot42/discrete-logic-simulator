@@ -1050,6 +1050,7 @@ dependencies = [
  "anyhow",
  "arboard",
  "base64",
+ "bumpalo",
  "bytemuck",
  "clap 4.2.1",
  "criterion",
