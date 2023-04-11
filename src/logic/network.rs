@@ -310,16 +310,55 @@ pub(crate) mod passes {
         Csc<T>: IndexMut<usize, Output = [T]>,
         Csr<T>: IndexMut<usize, Output = [T]>,
     {
-        {
-            let bump = bumpalo::Bump::new();
-            let a = vec![1, 2, 3];
-            let b: &[i32] = &a;
-            let c = bump.alloc_slice_clone(b);
+        #[derive(Copy, Clone)]
+        enum RetainedConnections {
+            Zero,
+            Variable,
+            All,
         }
-
+        struct PretendExactSize<T: Iterator<Item = V>, V> {
+            iter: T,
+        }
+        impl<T: Iterator<Item = V>, V> Iterator for PretendExactSize<T, V> {
+            type Item = V;
+            fn next(&mut self) -> Option<Self::Item> {
+                self.iter.next()
+            }
+        }
+        impl<T: Iterator<Item = V>, V> ExactSizeIterator for PretendExactSize<T, V> {}
+        fn try_schedule(
+            i: usize,
+            next_active_list: &mut Vec<usize>,
+            next_in_active_list: &mut [bool],
+            merged: &[Option<usize>],
+        ) {
+            // don't double schedule and don't schedule merged
+            if !next_in_active_list[i] && merged[i].is_none() {
+                next_active_list.push(i);
+                next_in_active_list[i] = true;
+            }
+        }
+        fn calc_key<'a, T>(
+            i: usize,
+            nodes: &[GateNode],
+            inputs: &[&'a [T]],
+        ) -> (&'a [T], GateNode) {
+            (inputs[i], nodes[i].clone())
+        }
         let nodes_len = nodes.len();
+
+        let bump_allocator = bumpalo::Bump::with_capacity(csc.len_inner());
+        let inputs_alloc = &bump_allocator;
+        let outputs_alloc = inputs_alloc;
+
         //csc.sort(); // we plan on maybe maintaining this invariant.
         //let mut outputs: Vec<_> = csc.as_csr().iter().map(|i| i.to_vec()).collect();
+
+        // output slices can be mutable
+        let mut outputs: Vec<&mut [T]> = Vec::with_capacity(nodes_len);
+        let mut csr = csc.as_csr();
+        csr.mut_slices_in(&mut outputs);
+
         let mut inputs: Vec<&mut [T]> = Vec::with_capacity(nodes_len);
         csc.mut_slices_in(&mut inputs); // csc used as a bump allocator
         let mut inputs: Vec<&[T]> = inputs.iter().map(|i| &**i).map(|i| i).collect();
@@ -332,55 +371,49 @@ pub(crate) mod passes {
         let mut next_active_list = Vec::new();
         let mut next_in_active_list = (0..nodes_len).map(|_| false).collect_vec();
 
+        let mut is_constant = (0..nodes_len).map(|_| false).collect_vec();
+        let mut max_active_inputs = (0..nodes_len).map(|i| inputs[i].len()).collect_vec();
         // "deleted" nodes and their new id
         let mut merged: Vec<Option<usize>> = (0..nodes_len).map(|_| None).collect();
 
         // NOTE: pop stuff from map if key is modified.
-        loop {
-            fn try_schedule(
-                i: usize,
-                next_active_list: &mut Vec<usize>,
-                next_in_active_list: &mut [bool],
-                merged: &[Option<usize>],
-            ) {
-                // don't double schedule and don't schedule merged
-                if !next_in_active_list[i] && merged[i].is_none() {
-                    next_active_list.push(i);
-                    next_in_active_list[i] = true;
-                }
-            }
-            fn calc_key<'a, T>(
-                i: usize,
-                nodes: &[GateNode],
-                inputs: &[&'a [T]],
-            ) -> (&'a [T], GateNode) {
-                (inputs[i], nodes[i].clone())
-            }
-
+        while active_list.len() > 0 {
             for &i in &active_list {
-                let mut should_schedule = false;
                 assert!(replace(&mut in_active_list[i], false));
                 assert!(merged[i].is_none());
+
+                let mut modified = false;
 
                 // NORMALIZE PASS:
                 // invalidates: inputs, outputs, node data
                 let new_key = {
-                    //TODO: propagate constant analysis
-                    use RetainedConnections::*;
-                    #[derive(Copy, Clone)]
-                    enum RetainedConnections {
-                        Zero,
-                        Variable,
-                        All,
+                    let is_constant_calc = GateType::constant_analysis(
+                        nodes[i].kind,
+                        nodes[i].initial_state,
+                        max_active_inputs[i],
+                        inputs[i].len(),
+                    );
+                    if is_constant_calc && !replace(&mut is_constant[i], is_constant_calc) {
+                        for &output in &*outputs[i] {
+                            max_active_inputs[output.index()] -= 1;
+                            try_schedule(
+                                output.index(),
+                                &mut next_active_list,
+                                &mut next_in_active_list,
+                                &merged,
+                            );
+                        }
                     }
+
+                    use RetainedConnections::*;
 
                     let (connection_action, new_kind) = {
                         let input_connections = inputs[i];
                         const BUFFER: GateType = Or; // TODO: change dynamically for perfect packing
                         const INVERTER: GateType = Nor;
                         use GateType::{And, Cluster, Interface, Latch, Nand, Nor, Or, Xnor, Xor};
-                        let is_constant = false; //is_constant;
-                        let max_active_inputs = input_connections.len(); //max_active_inputs;
+                        let is_constant = is_constant[i];
+                        let max_active_inputs = max_active_inputs[i];
                         let kind = nodes[i].kind;
                         let state = nodes[i].initial_state;
                         let inputs = input_connections.len();
@@ -407,39 +440,60 @@ pub(crate) mod passes {
                     let old_key = calc_key(i, &nodes, &inputs);
 
                     // modify
-                    let mut modified = false;
                     {
                         // update inputs
                         // TODO: remove from outputs array
+
+                        let mut removed_inputs: &[T] = &[];
                         match connection_action {
                             All => (),
                             Zero => {
-                                if inputs[i] != &[] {
-                                    inputs[i] = &[];
-                                    modified = true;
-                                }
-                                // TODO: notify all outputs
+                                removed_inputs = replace(&mut inputs[i], &[]);
                             },
                             Variable => {
-                                modified = true;
-                                todo!() /*alloc here*/
-                                // TODO: notify all outputs
+                                let mut boxed_inputs =
+                                    inputs[i].to_vec_in(&inputs_alloc).into_boxed_slice();
+
+                                boxed_inputs.sort_by_key(|&i| is_constant[i.index()]); // [variable, constant]
+                                let split_point =
+                                    boxed_inputs.partition_point(|&i| is_constant[i.index()]);
+
+                                if split_point > 0 {
+                                    let mut_inputs_slice = Box::leak(boxed_inputs);
+                                    let (variable_inputs, constant_inputs) =
+                                        mut_inputs_slice.split_at_mut(split_point);
+
+                                    removed_inputs = constant_inputs;
+                                    inputs[i] = variable_inputs;
+                                } else {
+                                    drop(boxed_inputs);
+                                }
                             },
+                        }
+                        if removed_inputs != &[] {
+                            modified = true;
+                            for &removed_input in removed_inputs {
+                                // "outputs[removed_input].remove_first(i)"
+                                let index = removed_input.index();
+                                let slice = replace(&mut outputs[index], &mut []);
+                                let element = T::new(i);
+                                slice.sort();
+                                let index = slice.iter().position(|&e| e == element).unwrap();
+                                let slice_len_without_last = slice.len() - 1;
+                                slice.swap(index, slice_len_without_last);
+                                outputs[index] = &mut slice[0..slice_len_without_last];
+                            }
                         }
                         if new_kind != nodes[i].kind {
                             nodes[i].kind = new_kind;
-                            if !replace(&mut modified, true) {
-                                // TODO: notify all outputs
-                            }
+                            modified = true;
                         }
                     }
                     if modified {
-                        should_schedule = true;
                         if let Some(existing_id) = map.get(&old_key) {
                             if *existing_id == i {
                                 map.remove(&old_key);
                             }
-                            // TODO: merge later
                         }
                         calc_key(i, &nodes, &inputs)
                     } else {
@@ -451,20 +505,73 @@ pub(crate) mod passes {
                 // invalidates: inputs, outputs
                 {
                     let key = new_key;
-                    //inputs[i];
-                    //    if let Some(existing_id) = map.get(key) {
-                    //        // TODO: merge operation:
-                    //        // remove input connections, move output connections.
+                    if let Some(&existing_id) = map.get(&key) {
+                        if existing_id != i {
+                            merged[i] = Some(existing_id);
+                            modified = true;
 
-                    //        // TODO: signal modification to output gates
-                    //    } else {
-                    //        //map.insert(key, i);
-                    //}
+                            // C
+                            let removed_inputs = replace(&mut inputs[i], &[]);
+
+                            // D
+                            for &removed_input in removed_inputs {
+                                // "outputs[removed_input].remove_first(i)"
+                                let index = removed_input.index();
+                                let slice = replace(&mut outputs[index], &mut []);
+                                let element = T::new(i);
+                                slice.sort();
+                                let index = slice.iter().position(|&e| e == element).unwrap();
+                                let slice_len_without_last = slice.len() - 1;
+                                slice.swap(index, slice_len_without_last);
+                                outputs[index] = &mut slice[0..slice_len_without_last];
+                            }
+                            if outputs[i].len() > 0 {
+                                // A
+                                for &output in &*outputs[i] {
+                                    let old_key = calc_key(output.index(), &nodes, &inputs);
+                                    if let Some(&existing_id) = map.get(&old_key)  && existing_id == output.index() {
+                                        map.remove(&old_key);
+                                    }
+
+                                    let old_inputs = inputs[output.index()];
+                                    let inputs_mut = inputs_alloc.alloc_slice_copy(old_inputs);
+                                    for input_mut in inputs_mut.iter_mut() {
+                                        if input_mut.index() == i {
+                                            *input_mut = T::new(existing_id);
+                                        }
+                                    }
+                                }
+
+                                // B
+                                let my_old_outputs = replace(&mut outputs[i], &mut []);
+                                let new_outputs_slice =
+                                    outputs_alloc.alloc_slice_fill_iter(PretendExactSize {
+                                        iter: my_old_outputs
+                                            .iter()
+                                            .cloned()
+                                            .chain(outputs[existing_id].iter().cloned()),
+                                    });
+                                outputs[existing_id] = new_outputs_slice;
+                            }
+                        }
+                    } else {
+                        map.insert(key, i);
+                    }
                 }
 
                 // finalize
-                if should_schedule {
+                if modified {
                     try_schedule(i, &mut next_active_list, &mut next_in_active_list, &merged);
+                    for &i in &*outputs[i] {
+                        try_schedule(
+                            i.index(),
+                            &mut next_active_list,
+                            &mut next_in_active_list,
+                            &merged,
+                        );
+                    }
+                    // TODO: schedule outputs here?
+                    // TODO: should self be scheduled just because it was modified?
                 }
             }
 
@@ -473,6 +580,7 @@ pub(crate) mod passes {
             swap(&mut active_list, &mut next_active_list);
             swap(&mut in_active_list, &mut next_in_active_list);
         }
+        drop(bump_allocator);
     }
     pub(crate) fn optimize<T: SparseIndex>(
         csc: Csc<T>,

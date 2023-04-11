@@ -1,6 +1,11 @@
 //use super::*;
 
 // TODO: optimizations based on ignoring parts of network.
+// TODO: bitmask for non-zero number of ouputs 
+//     => gates with zero outputs do not affect performance
+//     make dynamic to facilitate changing network structure? maybe better to switch to another
+//     network entirely though
+// TODO: second csr with groups to schedule. <- TODO: best effort reordering for this.
 
 use bytemuck::cast_slice_mut;
 use itertools::Itertools;
