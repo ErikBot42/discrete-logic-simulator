@@ -9,8 +9,8 @@ pub(crate) struct RawList<T>
 where
     T: Default + Clone,
 {
-    list: Box<[T]>,
-    len: usize,
+    pub(crate) list: Box<[T]>, // be careful if modifying this
+    pub(crate) len: usize, // be careful if modifying this
 }
 impl<T> RawList<T>
 where

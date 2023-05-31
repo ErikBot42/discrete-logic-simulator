@@ -1,7 +1,7 @@
 //use super::*;
 
 // TODO: optimizations based on ignoring parts of network.
-// TODO: bitmask for non-zero number of ouputs 
+// TODO: bitmask for non-zero number of ouputs
 //     => gates with zero outputs do not affect performance
 //     make dynamic to facilitate changing network structure? maybe better to switch to another
 //     network entirely though
@@ -78,12 +78,20 @@ impl BitPackSimInner {
     }
 
     #[inline(always)] // function used at 2 call sites
-    fn update_inner<const CLUSTER: bool>(&mut self) {
+    fn update_inner_gen<const CLUSTER: bool>(&mut self) {
         self.update_inner_direct::<CLUSTER>();
+    }
+    #[inline(never)]
+    pub fn update_inner(&mut self) {
+        self.update_inner_gen::<false>();
+        self.update_inner_gen::<true>();
     }
 
     #[inline(always)]
     fn update_inner_direct<const CLUSTER: bool>(&mut self) {
+
+        let mut histogram_map = std::collections::HashMap::new();
+
         let (update_list, next_update_list) = if CLUSTER {
             (&mut self.cluster_update_list, &mut self.update_list)
         } else {
@@ -117,9 +125,11 @@ impl BitPackSimInner {
                     next_update_list,
                     //soap.base_offset,
                     //soap.num_outputs,
+                    &mut histogram_map,
                 );
             }
         }
+        dbg!(histogram_map);
         update_list.clear();
     }
 
@@ -153,7 +163,7 @@ impl BitPackSimInner {
 
     /// # SAFETY
     /// Assumes invalid gates never activate and that #outputs is constant within a group
-    #[inline(always)]
+    #[inline(never)]
     fn propagate_acc(
         group_id: usize,
         mut changed: BitInt,
@@ -163,6 +173,7 @@ impl BitPackSimInner {
         acc: &mut [u8],
         in_update_list: &mut [bool],
         next_update_list: &mut UpdateList,
+        histogram_map: &mut std::collections::HashMap<u32, usize>,
         //base_offset: IndexType,
         //num_outputs: u16,
     ) {
@@ -189,14 +200,20 @@ impl BitPackSimInner {
                 (0 as BitAcc).wrapping_sub(1)
             };
 
-            for output in
-                unsafe { csr_outputs.get_unchecked(outputs_start as usize..outputs_end as usize) }
-                    .iter()
-                    .map(
-                        |&i| i as usize, /* Truncating cast needed for performance */
-                    )
-            {
-                let output_group_id = Self::calc_group_id(output);
+            //for output in
+            //    unsafe { csr_outputs.get_unchecked(outputs_start as usize..outputs_end as usize) }
+            //        .iter()
+            //        .map(
+            //            |&i| i as usize, /* Truncating cast needed for performance */
+            //        )
+            //{
+            let output_count = outputs_end - outputs_start;
+            histogram_map.entry(output_count).and_modify(|c| *c += 1).or_insert(0);
+            let mut index = outputs_start; // (1)
+            while index != outputs_end {
+                // (1)
+                let output = *unsafe { csr_outputs.get_unchecked(index as usize) } as usize; // (1)
+                let output_group_id = Self::calc_group_id(output); // (1)
 
                 let acc_mut = unsafe { acc.get_unchecked_mut(output) };
                 *acc_mut = acc_mut.wrapping_add(delta);
@@ -206,10 +223,26 @@ impl BitPackSimInner {
 
                 if !*in_update_list_mut {
                     unsafe {
-                        next_update_list.push_unchecked(output_group_id as IndexType /* Truncating cast is needed for performance */ )
-                    };
+                        next_update_list.push_unchecked(output_group_id as IndexType /* Truncating cast is needed for performance */ );
+                    }
                     *in_update_list_mut = true;
                 }
+
+                //{
+
+                //    let list = &mut *next_update_list;
+                //    *unsafe { list.list.get_unchecked_mut(list.len) } =
+                //        output_group_id as IndexType;
+                //    list.len += (!*in_update_list_mut) as usize;
+                //    debug_assert!(
+                //        list.list.len() > list.len,
+                //        "{} <= {}",
+                //        list.list.len(),
+                //        list.len
+                //    );
+                //    *in_update_list_mut = true;
+                //}
+                index += 1; // (1)
             }
         }
     }
@@ -336,7 +369,7 @@ fn bit_pack_nodes(nodes: &Vec<GateNode>) -> (Vec<Option<usize>>, Vec<usize>) {
 impl LogicSim for BitPackSimInner {
     fn create(
         //outputs_iter: impl IntoIterator<Item = impl IntoIterator<Item = usize>>,
-        csr: Csr<u32>,//impl IntoIterator<Item = impl IntoIterator<Item = usize>>,
+        csr: Csr<u32>, //impl IntoIterator<Item = impl IntoIterator<Item = usize>>,
         nodes: Vec<GateNode>,
         mut translation_table: Vec<u32>,
     ) -> (Vec<IndexType>, Self) {
@@ -448,10 +481,9 @@ impl LogicSim for BitPackSimInner {
         let index = Self::calc_group_id(gate_id);
         wrapping_bit_get(self.state[index], gate_id)
     }
-    #[inline(always)] // function used at single call site
+    #[inline(always)] // TODO: never inline function used at single call site
     fn update(&mut self) {
-        self.update_inner::<false>();
-        self.update_inner::<true>();
+        self.update_inner();
     }
     const STRATEGY: UpdateStrategy = UpdateStrategy::BitPack;
 

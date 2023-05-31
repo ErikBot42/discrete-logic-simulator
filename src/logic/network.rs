@@ -28,17 +28,21 @@ fn reorder_by_indices_with<F: FnMut(usize, usize)>(mut swap_indices: F, mut indi
 }
 mod sparse {
 
-    /// Cast following the `Self` as `T` semantics (truncating/zero/sign extending)
     use itertools::Itertools;
     use std::convert::TryFrom;
     use std::fmt::Debug;
     use std::hash::Hash;
+    use std::mem::take;
     use std::ops::{Index, IndexMut};
 
+    /// Cast following the `Self` as `T` semantics (truncating/zero/sign extending)
     pub trait SparseIndex:
         Copy + Default + Hash + Ord + Debug + 'static + TryInto<usize> + TryFrom<usize>
     {
+        // may truncate if type is smaller than usize
         fn new(x: usize) -> Self;
+
+        // always sound if usize is the biggest type
         fn index(self) -> usize;
     }
     macro_rules! sparse_index_impl {
@@ -58,7 +62,6 @@ mod sparse {
     sparse_index_impl!(u32);
     //sparse_index_impl!(u16);
     //sparse_index_impl!(u8);
-    fn foo() {}
 
     /// Compressed Sparse Column, "list of inputs"
     pub(crate) type Csc<T> = Sparse<T, false>;
@@ -73,9 +76,6 @@ mod sparse {
 
     impl<T: SparseIndex> Csc<T>
     where
-        <T as TryFrom<usize>>::Error: Debug,
-        <usize as TryFrom<T>>::Error: Debug,
-        usize: TryFrom<T>,
         Csc<T>: IndexMut<usize, Output = [T]>,
     {
         pub(crate) fn as_csr(&self) -> Csr<T> {
@@ -85,9 +85,6 @@ mod sparse {
     }
     impl<T: SparseIndex> Csr<T>
     where
-        <T as TryFrom<usize>>::Error: Debug,
-        <usize as TryFrom<T>>::Error: Debug,
-        usize: TryFrom<T>,
         Csr<T>: IndexMut<usize, Output = [T]>,
     {
         pub(crate) fn as_csc(&self) -> Csc<T> {
@@ -96,24 +93,7 @@ mod sparse {
         }
     }
 
-    impl<T: SparseIndex, const CSR: bool> Sparse<T, CSR>
-    where
-        <T as TryFrom<usize>>::Error: Debug,
-        <usize as TryFrom<T>>::Error: Debug,
-        usize: TryFrom<T>,
-        Sparse<T, CSR>: IndexMut<usize, Output = [T]>,
-    {
-        pub(crate) fn mut_slices_in<'a>(&'a mut self, a: &mut Vec<&'a mut [T]>) {
-            a.clear();
-            a.extend(self.iter_mut());
-        }
-        /// Returns the raw swap csr csc of this [`Sparse<T, CSR>`].
-        pub(crate) fn raw_swap_csr_csc(&self) -> Sparse<T, CSR> {
-            Self::from_adjacency(
-                self.adjacency_iter().map(|(from, to)| (to, from)).collect(),
-                self.len(),
-            )
-        }
+    impl<T: SparseIndex, const CSR: bool> Sparse<T, CSR> {
         pub(crate) fn new(
             outputs_iter: impl IntoIterator<Item = impl IntoIterator<Item = T>>,
         ) -> Self {
@@ -125,13 +105,20 @@ mod sparse {
         }
         pub(crate) fn push(&mut self, new_outputs: impl IntoIterator<Item = T>) {
             self.outputs.extend(new_outputs);
-            self.indexes.push(self.outputs.len().try_into().unwrap());
+            self.indexes.push(T::new(self.outputs.len()));
         }
         pub(crate) fn len(&self) -> usize {
             self.indexes.len() - 1
         }
         pub(crate) fn len_inner(&self) -> usize {
             self.outputs.len()
+        }
+        /// Swap csr/csc without changing type.
+        pub(crate) fn raw_swap_csr_csc(&self) -> Sparse<T, CSR> {
+            Self::from_adjacency(
+                self.adjacency_iter().map(|(from, to)| (to, from)).collect(),
+                self.len(),
+            )
         }
         pub(crate) fn adjacency_iter(&self) -> impl Iterator<Item = (T, T)> + '_ {
             (0..self.len())
@@ -171,11 +158,25 @@ mod sparse {
         pub(crate) fn iter(&self) -> impl Iterator<Item = &[T]> {
             (0..self.len()).map(|i| &self[i])
         }
-        pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = &mut [T]> {
-            SparseIterMut::new(&self.indexes, &mut self.outputs)
-        }
         pub(crate) fn iter_inner(&self) -> impl Iterator<Item = T> + '_ {
             self.outputs.iter().cloned()
+        }
+        pub(crate) fn clear(&mut self) {
+            self.indexes.clear();
+            self.indexes.push(T::new(0_usize));
+            self.outputs.clear();
+        }
+    }
+    impl<T: SparseIndex, const CSR: bool> Sparse<T, CSR>
+    where
+        Sparse<T, CSR>: IndexMut<usize, Output = [T]>,
+    {
+        pub(crate) fn mut_slices_in<'a>(&'a mut self, a: &mut Vec<&'a mut [T]>) {
+            a.clear();
+            a.extend(self.iter_mut());
+        }
+        pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = &mut [T]> {
+            SparseIterMut::new(&self.indexes, &mut self.outputs)
         }
         pub(crate) fn iter_inner_mut(&mut self) -> impl Iterator<Item = &mut T> {
             self.outputs.iter_mut()
@@ -184,55 +185,55 @@ mod sparse {
         pub(crate) fn sort(&mut self) {
             self.iter_mut().for_each(|inputs| inputs.sort());
         }
-        pub(crate) fn clear(&mut self) {
-            self.indexes.clear();
-            self.indexes.push(0_usize.try_into().unwrap());
-            self.outputs.clear();
-        }
     }
-    impl<T: SparseIndex, const CSR: bool> Index<usize> for Sparse<T, CSR>
-    where
-        <T as TryInto<usize>>::Error: Debug,
-    {
+    impl<T: SparseIndex, const CSR: bool> Index<usize> for Sparse<T, CSR> {
         type Output = [T];
         fn index(&self, i: usize) -> &Self::Output {
-            let from: usize = self.indexes[i].try_into().unwrap();
-            let to: usize = self.indexes[i + 1].try_into().unwrap();
+            let from: usize = self.indexes[i].index();
+            let to: usize = self.indexes[i + 1].index();
             &self.outputs[from..to]
         }
     }
-    impl<T: SparseIndex, const CSR: bool> IndexMut<usize> for Sparse<T, CSR>
-    where
-        <T as TryInto<usize>>::Error: Debug,
-    {
+    impl<T: SparseIndex, const CSR: bool> IndexMut<usize> for Sparse<T, CSR> {
         fn index_mut(&mut self, i: usize) -> &mut Self::Output {
-            let from: usize = self.indexes[i].try_into().unwrap();
-            let to: usize = self.indexes[i + 1].try_into().unwrap();
+            let from: usize = self.indexes[i].index();
+            let to: usize = self.indexes[i + 1].index();
             &mut self.outputs[from..to]
         }
     }
-    impl<T: SparseIndex, const CSR: bool> Default for Sparse<T, CSR>
-    where
-        <T as TryFrom<usize>>::Error: Debug,
-    {
+    impl<T: SparseIndex, const CSR: bool> Default for Sparse<T, CSR> {
         fn default() -> Self {
             Self {
-                indexes: vec![0_usize.try_into().unwrap()],
+                indexes: vec![T::new(0_usize)],
                 outputs: Vec::new(),
             }
         }
     }
-
+    impl<T: SparseIndex, const CSR: bool, V: IntoIterator<Item = T>> Extend<V> for Sparse<T, CSR>
+    where
+        Sparse<T, CSR>: IndexMut<usize, Output = [T]>,
+    {
+        fn extend<I: IntoIterator<Item = V>>(&mut self, iter: I) {
+            for i in iter {
+                self.push(i);
+            }
+        }
+    }
     struct SparseIterMut<'a, T: SparseIndex> {
         indexes: &'a [T],
         outputs: &'a mut [T],
         current: usize,
     }
-    impl<'a, T: SparseIndex> Iterator for SparseIterMut<'a, T>
-    where
-        usize: TryFrom<T>,
-        <usize as TryFrom<T>>::Error: std::fmt::Debug,
-    {
+    impl<'a, T: SparseIndex> SparseIterMut<'a, T> {
+        fn new(indexes: &'a [T], outputs: &'a mut [T]) -> Self {
+            Self {
+                indexes,
+                outputs,
+                current: 0,
+            }
+        }
+    }
+    impl<'a, T: SparseIndex> Iterator for SparseIterMut<'a, T> {
         type Item = &'a mut [T];
 
         fn next(&mut self) -> Option<Self::Item> {
@@ -249,17 +250,6 @@ mod sparse {
             Some(l)
         }
     }
-    impl<'a, T: SparseIndex> SparseIterMut<'a, T> {
-        fn new(indexes: &'a [T], outputs: &'a mut [T]) -> Self {
-            Self {
-                indexes,
-                outputs,
-                current: 0,
-            }
-        }
-    }
-
-    use std::mem::take;
 }
 // TODO: compressed representation, maybe a to/from?
 #[derive(Hash, Clone, Eq, PartialEq, Debug)]
@@ -303,7 +293,9 @@ pub(crate) mod passes {
         mut csc: Csc<T>,
         mut nodes: Vec<GateNode>,
         table: Vec<T>,
-    ) where
+    )
+    //-> (Csc<T>, Vec<GateNode>, Vec<T>)
+    where
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
         usize: TryFrom<T>,
@@ -581,6 +573,12 @@ pub(crate) mod passes {
             swap(&mut in_active_list, &mut next_in_active_list);
         }
         drop(bump_allocator);
+
+        // finalize into output format
+
+        //let final_csc = Csc::new(inputs.into_iter().map(|i| i.into_iter().copied()));
+
+        //(csc, todo_nodes, todo_translation)
     }
     pub(crate) fn optimize<T: SparseIndex>(
         csc: Csc<T>,
@@ -595,7 +593,7 @@ pub(crate) mod passes {
         Csr<T>: IndexMut<usize, Output = [T]>,
     {
         let (mut csc, mut nodes, mut table) = (csc, nodes, table);
-        let mut score = dbg!((csc.len(), csc.len_inner()));
+        let mut score = (csc.len(), csc.len_inner());
         let initial_score = score;
 
         //for i in csc.iter_mut() {
@@ -661,7 +659,7 @@ pub(crate) mod passes {
                 );
                 iterations += 1;
             }
-            replace(&mut score, dbg!((csc.len(), csc.len_inner()))) != (csc.len(), csc.len_inner())
+            replace(&mut score, (csc.len(), csc.len_inner())) != (csc.len(), csc.len_inner())
         } {}
 
         let final_score = score;
