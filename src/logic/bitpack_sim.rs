@@ -158,7 +158,8 @@ impl BitPackSimInner {
 
     /// # SAFETY
     /// Assumes invalid gates never activate and that #outputs is constant within a group
-    #[inline(never)]
+    //#[inline(never)]
+    #[inline(always)]
     fn propagate_acc(
         group_id: usize,
         mut changed: BitInt,
@@ -184,7 +185,7 @@ impl BitPackSimInner {
             //let outputs_end = outputs_start + num_outputs;
             let gate_id = group_id * BITS + i as usize;
             let outputs_start = *unsafe { csr_indexes.get_unchecked(gate_id) };
-            let outputs_end = *unsafe { csr_indexes.get_unchecked(gate_id + 1) };
+            let outputs_end = *unsafe { csr_indexes.get_unchecked(gate_id + 1) }; // (1)
 
             changed &= !(1 << i); // ANY
 
@@ -203,26 +204,39 @@ impl BitPackSimInner {
             //            |&i| i as usize, /* Truncating cast needed for performance */
             //        )
             //{
-            let output_count = outputs_end - outputs_start;
-            let mut index = outputs_start; // (1)
-            while index != outputs_end {
-                // (1)
-                let output = *unsafe { csr_outputs.get_unchecked(index as usize) } as usize; // (1)
-                let output_group_id = Self::calc_group_id(output); // (1)
+
+            //unsafe { std::intrinsics::assume(outputs_start <= outputs_end) }; // no diffrence
+            let mut index = outputs_start;
+            while index < outputs_end {
+                let output = *unsafe { csr_outputs.get_unchecked(index as usize) } as usize;
+
+                index += 1;
+
+                let output_group_id = Self::calc_group_id(output);
 
                 let acc_mut = unsafe { acc.get_unchecked_mut(output) };
-                *acc_mut = acc_mut.wrapping_add(delta);
-
                 let in_update_list_mut =
                     unsafe { in_update_list.get_unchecked_mut(output_group_id) };
 
-                if !*in_update_list_mut {
-                    unsafe {
-                        next_update_list.push_unchecked(output_group_id as IndexType /* Truncating cast is needed for performance */ );
-                    }
-                    *in_update_list_mut = true;
-                }
-                index += 1; // (1)
+                // <- r0
+                *acc_mut = acc_mut.wrapping_add(delta);
+
+                *unsafe {
+                    next_update_list
+                        .list
+                        .get_unchecked_mut(next_update_list.len)
+                } = output_group_id as IndexType;
+                next_update_list.len += (!*in_update_list_mut) as usize;
+                *in_update_list_mut = true;
+
+                //if !*in_update_list_mut {
+                //    unsafe {
+                //        next_update_list.push_unchecked(output_group_id as IndexType /* Truncating cast is needed for performance */ );
+                //    }
+                //    *in_update_list_mut = true;
+                //}
+                //if !*in_update_list_mut {
+                //}
             }
         }
     }
@@ -346,6 +360,25 @@ fn bit_pack_nodes(nodes: &Vec<GateNode>) -> (Vec<Option<usize>>, Vec<usize>) {
     (table, inv_table)
 }
 
+//fn make_aligned_vec(v: Vec<u32>) -> Vec<u32> {
+//    use std::alloc::{realloc, Layout};
+//
+//    let align_bytes = 64; // cache line
+//    unsafe {
+//        let (ptr, len, cap): (*mut u32, usize, usize) = v.into_raw_parts();
+//
+//        let layout = Layout::new().align_to(align_bytes).unwrap();
+//
+//        let new_cap = cap.div_ceil(align_bytes) * align_bytes;
+//
+//        //TODO: round up to layout
+//        let ptr: *mut u8 = realloc(ptr as _, layout, new_cap);
+//
+//        let v = Vec::from_raw_parts(ptr as _, len, cap);
+//    }
+//    todo!();
+//}
+
 impl LogicSim for BitPackSimInner {
     fn create(
         //outputs_iter: impl IntoIterator<Item = impl IntoIterator<Item = usize>>,
@@ -461,7 +494,7 @@ impl LogicSim for BitPackSimInner {
         let index = Self::calc_group_id(gate_id);
         wrapping_bit_get(self.state[index], gate_id)
     }
-    #[inline(always)] 
+    #[inline(always)]
     fn update(&mut self) {
         self.update_inner();
     }
