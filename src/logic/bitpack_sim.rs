@@ -81,7 +81,7 @@ impl BitPackSimInner {
     fn update_inner_gen<const CLUSTER: bool>(&mut self) {
         self.update_inner_direct::<CLUSTER>();
     }
-    #[inline(never)]
+    #[inline(always)]
     pub fn update_inner(&mut self) {
         self.update_inner_gen::<false>();
         self.update_inner_gen::<true>();
@@ -89,9 +89,6 @@ impl BitPackSimInner {
 
     #[inline(always)]
     fn update_inner_direct<const CLUSTER: bool>(&mut self) {
-
-        let mut histogram_map = std::collections::HashMap::new();
-
         let (update_list, next_update_list) = if CLUSTER {
             (&mut self.cluster_update_list, &mut self.update_list)
         } else {
@@ -125,11 +122,9 @@ impl BitPackSimInner {
                     next_update_list,
                     //soap.base_offset,
                     //soap.num_outputs,
-                    &mut histogram_map,
                 );
             }
         }
-        dbg!(histogram_map);
         update_list.clear();
     }
 
@@ -173,7 +168,6 @@ impl BitPackSimInner {
         acc: &mut [u8],
         in_update_list: &mut [bool],
         next_update_list: &mut UpdateList,
-        histogram_map: &mut std::collections::HashMap<u32, usize>,
         //base_offset: IndexType,
         //num_outputs: u16,
     ) {
@@ -199,6 +193,8 @@ impl BitPackSimInner {
             } else {
                 (0 as BitAcc).wrapping_sub(1)
             };
+            // cargo build --release && perf record -b -e branches -e branch-misses -e cycles -e L1-dcache-load-misses -e L1-icache-load-misses -e branch-load-misses target/release/logic_simulator --world-file test_files/serial_multipliers.vcb bench bit-pack -i 50000 && perf report -M intel
+            // cargo build --release && perf record -e cycles target/release/logic_simulator --world-file test_files/serial_multipliers.vcb bench bit-pack -i 10000 && perf report -M intel
 
             //for output in
             //    unsafe { csr_outputs.get_unchecked(outputs_start as usize..outputs_end as usize) }
@@ -208,7 +204,6 @@ impl BitPackSimInner {
             //        )
             //{
             let output_count = outputs_end - outputs_start;
-            histogram_map.entry(output_count).and_modify(|c| *c += 1).or_insert(0);
             let mut index = outputs_start; // (1)
             while index != outputs_end {
                 // (1)
@@ -227,21 +222,6 @@ impl BitPackSimInner {
                     }
                     *in_update_list_mut = true;
                 }
-
-                //{
-
-                //    let list = &mut *next_update_list;
-                //    *unsafe { list.list.get_unchecked_mut(list.len) } =
-                //        output_group_id as IndexType;
-                //    list.len += (!*in_update_list_mut) as usize;
-                //    debug_assert!(
-                //        list.list.len() > list.len,
-                //        "{} <= {}",
-                //        list.list.len(),
-                //        list.len
-                //    );
-                //    *in_update_list_mut = true;
-                //}
                 index += 1; // (1)
             }
         }
@@ -481,7 +461,7 @@ impl LogicSim for BitPackSimInner {
         let index = Self::calc_group_id(gate_id);
         wrapping_bit_get(self.state[index], gate_id)
     }
-    #[inline(always)] // TODO: never inline function used at single call site
+    #[inline(always)] 
     fn update(&mut self) {
         self.update_inner();
     }
