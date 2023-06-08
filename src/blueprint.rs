@@ -15,6 +15,9 @@ use anyhow::{anyhow, Context};
 use crossterm::style::{Color, Colors, Print, ResetColor, SetColors, Stylize};
 use crossterm::{terminal, QueueableCommand};
 
+use base64::Engine;
+const BASE64_STANDARD: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
+
 use std::array::from_fn;
 use std::collections::BTreeSet;
 use std::io::{stdout, Write};
@@ -72,8 +75,12 @@ impl<T: LogicSim> VcbBoard<T> {
         let (height, width, element_ids_external, _translation_table, logic_sim, element_ids) =
             explore::explore_new::construct_vcbboard_parts(&plain, optimize);
         //construct_vcbboard_parts(&plain, optimize);
-        
-        element_ids.iter().for_each(|&i| if let Some(i) = i {assert!(i < 1_000_000, "{i}")});
+
+        element_ids.iter().for_each(|&i| {
+            if let Some(i) = i {
+                assert!(i < 1_000_000, "{i}")
+            }
+        });
 
         VcbBoard {
             element_ids_internal: element_ids,
@@ -444,11 +451,12 @@ impl<T: LogicSim> VcbBoard<T> {
             states.extend(self.make_state_vec().into_iter());
             self.update();
         }
-        base64::encode(zstd::bulk::compress(bytemuck::cast_slice(&states), i32::MAX).unwrap())
+        BASE64_STANDARD
+            .encode(zstd::bulk::compress(bytemuck::cast_slice(&states), i32::MAX).unwrap())
     }
 }
 
-/// Represents one pixel.
+/// Represents one "pixel".
 /// It is probably a mistake to
 /// make a copy of this type.
 struct BoardElement {

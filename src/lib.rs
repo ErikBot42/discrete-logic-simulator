@@ -11,7 +11,7 @@
 #![feature(stdsimd)]
 #![feature(unchecked_math)]
 #![feature(allocator_api)]
-#![feature(build_hasher_simple_hash_one)]
+//#![feature(build_hasher_simple_hash_one)]
 macro_rules! timed {
     ($block:expr, $print_str:expr) => {{
         let now = std::time::Instant::now();
