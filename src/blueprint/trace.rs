@@ -1,4 +1,4 @@
-use strum_macros::EnumIter;
+use strum::EnumIter;
 
 /// All color constants used by vcb
 #[rustfmt::skip]

@@ -14,7 +14,7 @@ pub mod reference_sim;
 pub(crate) use crate::logic::network::{GateNetwork, InitializedNetwork};
 use network::Csr;
 use std::simd::{Mask, Simd};
-use strum_macros::EnumIter;
+use strum::EnumIter;
 
 //pub type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
 pub type ReferenceSim = reference_sim::ReferenceLogicSim;
