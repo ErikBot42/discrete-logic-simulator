@@ -103,11 +103,11 @@ zstd          = { version="0.12.3",                                           de
 itertools     = { version="0.10.5", features=["use_std"],                     default-features=false }
 bytemuck      = { version="1.12.1",                                           default-features=false }
 clap          = { version="4.3.2",  features=["derive"]                                              }
-crossterm     = { version="0.26.1",                                           default-features=false }
+crossterm     = { version="0.26.1",                                           default-features=false, optional=true }
 anyhow        = { version="1.0.71", features=["std","backtrace"],             default-features=false }
-image         = { version="0.24.6", features=["gif"],                         default-features=false }
+image         = { version="0.24.6", features=["gif"],                         default-features=false, optional=true }
 arboard       = { version="3.2.0",  features=["image-data"],                  default-features=false }
-tempfile      = { version="3.6.0",                                            default-features=false }
+tempfile      = { version="3.6.0",                                            default-features=false, optional=true }
 json          = { version="0.12.4",                                           default-features=false }
 nohash-hasher = { version="0.2.0",  features=["std"],                         default-features=false }
 strum         = { version="0.24.1", features=["std","derive","strum_macros"], default-features=false }
@@ -121,6 +121,11 @@ ahash         = { version="0.8.3",  features=["std"],                         de
 bumpalo       = { version="3.12.0", features = ["allocator_api"]                                     }
 #rustc-hash = { version="1.1.0", features=["std"] }
 #rendezvous_swap = "*"
+
+[features]
+default = []
+gif = ["dep:image", "dep:tempfile"]
+print_sim = ["dep:crossterm"]
 
 [dev-dependencies]
 criterion = { version = "0.4", default-features = false }

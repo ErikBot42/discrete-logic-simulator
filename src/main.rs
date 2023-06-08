@@ -1,10 +1,4 @@
 use clap::{Parser, ValueEnum};
-use crossterm::cursor::{Hide, MoveTo};
-use crossterm::execute;
-use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, ClearType, DisableLineWrap, EnterAlternateScreen,
-    LeaveAlternateScreen,
-};
 use logic_simulator::blueprint::{VcbInput, VcbParser};
 use logic_simulator::logic::{
     /*BatchSim,*/ BitPackSim, LogicSim, ReferenceSim, RenderSim, UpdateStrategy,
@@ -23,10 +17,13 @@ pub enum RunMode {
     /// Print board using vcb emoji
     EmojiVcb,
     /// Print initial state of board
+    #[cfg(feature = "print_sim")]
     Print,
     /// Print board with internal ids
+    #[cfg(feature = "print_sim")]
     PrintDebug,
     /// Run and display state of board
+    #[cfg(feature = "print_sim")]
     Run,
     /// Run and render state of board
     RunGpu,
@@ -35,6 +32,7 @@ pub enum RunMode {
     /// Copy image of board to clipboard.
     Clip,
     /// Make an animated gif of the board
+    #[cfg(feature = "gif")]
     Gif,
     /// Only parse board
     Parse,
@@ -91,7 +89,7 @@ pub struct Args {
     /// Iterations to run in bench, or iterations per frame in run mode
     #[arg(short = 'i', long)]
     pub iterations: Option<usize>,
-    
+
     /// Skip optimization step
     #[arg(short = 's', long)]
     pub skip_optim: bool,
@@ -148,19 +146,30 @@ fn handle_board<T: LogicSim + RenderSim + Clone + Send + 'static>(
             board.run_gpu();
         },
         RunMode::Parse => (),
+        #[cfg(feature = "gif")]
         RunMode::Gif => board.print_to_gif(args.iterations.unwrap_or(100)),
         RunMode::Clip => board.print_to_clipboard(),
         RunMode::Emoji => board.print_regular_emoji(args.legend),
         RunMode::EmojiVcb => board.print_vcb_discord_emoji(args.legend),
+        #[cfg(feature = "print_sim")]
         RunMode::PrintDebug => {
             board.update();
             board.print_debug_constrain();
         },
+        #[cfg(feature = "print_sim")]
         RunMode::Print => {
             board.update();
             board.print().unwrap();
         },
+        #[cfg(feature = "print_sim")]
         RunMode::Run => {
+            use crossterm::cursor::{Hide, MoveTo};
+            use crossterm::execute;
+            use crossterm::terminal::{
+                disable_raw_mode, enable_raw_mode, ClearType, DisableLineWrap,
+                EnterAlternateScreen, LeaveAlternateScreen,
+            };
+
             use crossterm::style::Print;
             use crossterm::QueueableCommand;
 

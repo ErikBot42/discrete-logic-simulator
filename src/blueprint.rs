@@ -12,8 +12,6 @@ pub use parse::{VcbInput, VcbParser};
 use trace::*;
 
 use anyhow::{anyhow, Context};
-use crossterm::style::{Color, Colors, Print, ResetColor, SetColors, Stylize};
-use crossterm::{terminal, QueueableCommand};
 
 use base64::Engine;
 const BASE64_STANDARD: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
@@ -210,7 +208,11 @@ impl<T: LogicSim> VcbBoard<T> {
     }
 }
 impl<T: LogicSim> VcbBoard<T> {
+    #[cfg(feature = "print_sim")]
     fn print_generic_debug<F: Fn(usize) -> String>(&self, f: F, constrain: bool) {
+        use crossterm::style::{Color, Stylize};
+        use crossterm::terminal;
+
         let (sx, sy) = terminal::size().unwrap_or((50, 50));
         let (max_print_width, max_print_height) = if constrain {
             (
@@ -233,8 +235,7 @@ impl<T: LogicSim> VcbBoard<T> {
             println!();
         }
     }
-}
-impl<T: LogicSim> VcbBoard<T> {
+    #[cfg(feature = "print_sim")]
     fn print_inner(&self, debug_inner: Option<bool>, constrain: bool) {
         let format = |id: usize| {
             debug_inner
@@ -253,7 +254,11 @@ impl<T: LogicSim> VcbBoard<T> {
         self.print_generic_debug(format, constrain);
     }
 
+    #[cfg(feature = "print_sim")]
     fn print_compact(&self) -> Result<(), std::io::Error> {
+        use crossterm::style::{Colors, Print, ResetColor, SetColors};
+        use crossterm::{terminal, QueueableCommand};
+
         let mut stdout = stdout();
         let (sx, sy) = terminal::size()?;
         let max_print_width = self.width.min(sx as usize);
@@ -312,16 +317,19 @@ impl<T: LogicSim> VcbBoard<T> {
     pub fn print_vcb_discord_emoji(&self, legend: bool) {
         self.print_using_translation(Trace::as_discord_emoji, legend);
     }
+    #[cfg(feature = "print_sim")]
     pub fn print_debug(&self) {
         self.print_inner(Some(true), false);
         self.print_inner(Some(false), false);
     }
+    #[cfg(feature = "print_sim")]
     pub fn print_debug_constrain(&self) {
         self.print_inner(Some(true), true);
         self.print_inner(Some(false), true);
     }
     /// # Errors
     /// cannot print
+    #[cfg(feature = "print_sim")]
     pub fn print(&self) -> Result<(), std::io::Error> {
         self.print_compact()
     }
@@ -362,8 +370,10 @@ impl<T: LogicSim> VcbBoard<T> {
             sleep(Duration::from_secs(1));
         }
     }
+
     /// # Panics
     /// very large image
+    #[cfg(feature = "gif")]
     pub fn print_to_gif(&mut self, limit: usize) {
         #![allow(clippy::cast_precision_loss)]
         #![allow(clippy::cast_possible_truncation)]
