@@ -118,7 +118,8 @@ fn validate_constant_analysis() {
             ],
             [true, false]
         ) {
-            let analysis = GateType::constant_analysis(kind, initial_state, max_active_inputs, inputs);
+            let analysis =
+                GateType::constant_analysis(kind, initial_state, max_active_inputs, inputs);
             if analysis {
                 if let Interface(_) = kind {
                     panic!("interface behaviour is non deterministic");
@@ -152,6 +153,14 @@ pub(crate) enum RunTimeGateType {
     XorXnor,
     Latch,
 }
+#[cfg(test)]
+const RUNTIME_GATETYPE_VARIANTS: [RunTimeGateType; 4] = [
+    RunTimeGateType::OrNand,
+    RunTimeGateType::AndNor,
+    RunTimeGateType::XorXnor,
+    RunTimeGateType::Latch,
+];
+
 impl RunTimeGateType {
     const fn new(kind: GateType) -> Self {
         match kind {

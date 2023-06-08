@@ -26,10 +26,12 @@ pub enum RunMode {
     #[cfg(feature = "print_sim")]
     Run,
     /// Run and render state of board
+    #[cfg(feature = "render")]
     RunGpu,
     /// Run a number of iterations and print time
     Bench,
     /// Copy image of board to clipboard.
+    #[cfg(feature = "clip")]
     Clip,
     /// Make an animated gif of the board
     #[cfg(feature = "gif")]
@@ -37,6 +39,7 @@ pub enum RunMode {
     /// Only parse board
     Parse,
     /// Print state of board in binary
+    #[cfg(feature = "clip")]
     PrintBinary,
 }
 
@@ -142,12 +145,14 @@ fn handle_board<T: LogicSim + RenderSim + Clone + Send + 'static>(
     let mut board = { VcbParser::parse_compile::<T>(parser_input, !args.skip_optim).unwrap() };
     println!("parsed entire board in {:?}", now.elapsed());
     match args.mode {
+        #[cfg(feature = "render")]
         RunMode::RunGpu => {
             board.run_gpu();
         },
         RunMode::Parse => (),
         #[cfg(feature = "gif")]
         RunMode::Gif => board.print_to_gif(args.iterations.unwrap_or(100)),
+        #[cfg(feature = "clip")]
         RunMode::Clip => board.print_to_clipboard(),
         RunMode::Emoji => board.print_regular_emoji(args.legend),
         RunMode::EmojiVcb => board.print_vcb_discord_emoji(args.legend),
@@ -228,6 +233,7 @@ fn handle_board<T: LogicSim + RenderSim + Clone + Send + 'static>(
             .unwrap();
         },
         RunMode::Bench => run_bench(args, board),
+        #[cfg(feature = "clip")]
         RunMode::PrintBinary => board.print_binary(),
     }
     println!("Exiting...");

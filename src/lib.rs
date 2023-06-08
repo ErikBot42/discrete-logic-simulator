@@ -44,6 +44,8 @@ macro_rules! assert_eq_len {
 pub mod blueprint;
 pub mod logic;
 pub mod raw_list;
+
+#[cfg(feature = "render")]
 pub mod render;
 
 #[cfg(test)]
@@ -256,8 +258,10 @@ mod tests {
             .collect();
         println!("--------------------------------------");
         println!("OTHER:");
+        #[cfg(feature = "print_sim")]
         other.print_debug();
         println!("REFERENCE:");
+        #[cfg(feature = "print_sim")]
         reference.print_debug();
         if diff.len() != 0 {
             println!(

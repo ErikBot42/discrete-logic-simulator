@@ -23,8 +23,6 @@ use std::mem::size_of;
 use std::thread::sleep;
 use std::time::Duration;
 
-use crate::render;
-
 pub struct VcbBoard<T: LogicSim> {
     traces: Vec<Trace>,
     element_ids_internal: Vec<Option<usize>>,
@@ -37,7 +35,9 @@ pub struct VcbBoard<T: LogicSim> {
     _translation_table: Vec<u32>,
 }
 impl<T: LogicSim + RenderSim + Clone + Send + 'static> VcbBoard<T> {
+    #[cfg(feature = "render")]
     pub fn run_gpu(&self) {
+        use crate::render;
         use render::{RenderInput, TraceInfo};
         use strum::IntoEnumIterator;
         pollster::block_on(render::run(RenderInput {
@@ -352,6 +352,7 @@ impl<T: LogicSim> VcbBoard<T> {
 
     /// # Panics
     /// Cannot set clipboard
+    #[cfg(feature = "clip")]
     pub fn print_to_clipboard(&self) -> ! {
         use arboard::{Clipboard, ImageData};
         use std::borrow::Cow;
@@ -440,6 +441,7 @@ impl<T: LogicSim> VcbBoard<T> {
 
         println!("Gif stored at: {path:?}");
     }
+    #[cfg(feature = "clip")]
     pub fn print_binary(&mut self) {
         let iterations = 50;
         let mut clip = arboard::Clipboard::new().unwrap();
