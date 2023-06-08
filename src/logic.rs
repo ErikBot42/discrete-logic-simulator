@@ -14,7 +14,6 @@ pub mod reference_sim;
 pub(crate) use crate::logic::network::{GateNetwork, InitializedNetwork};
 use network::Csr;
 use std::simd::{Mask, Simd};
-use strum::EnumIter;
 
 //pub type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
 pub type ReferenceSim = reference_sim::ReferenceLogicSim;
@@ -146,7 +145,7 @@ fn validate_constant_analysis() {
 /// The only cases that matter at the hot code sections.
 /// For example And/Nor can be evalutated in the same way
 /// with an offset to the input count (acc).
-#[derive(Debug, Copy, Clone, PartialEq, EnumIter)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) enum RunTimeGateType {
     OrNand,
     AndNor,
@@ -480,8 +479,7 @@ mod tests {
 
     #[test]
     fn inactive_acc_possible() {
-        use strum::IntoEnumIterator;
-        for g in RunTimeGateType::iter() {
+        for g in RUNTIME_GATETYPE_VARIANTS {
             g.acc_to_never_activate();
         }
     }

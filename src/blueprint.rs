@@ -18,10 +18,7 @@ const BASE64_STANDARD: base64::engine::GeneralPurpose = base64::engine::general_
 
 use std::array::from_fn;
 use std::collections::BTreeSet;
-use std::io::{stdout, Write};
 use std::mem::size_of;
-use std::thread::sleep;
-use std::time::Duration;
 
 pub struct VcbBoard<T: LogicSim> {
     traces: Vec<Trace>,
@@ -39,9 +36,9 @@ impl<T: LogicSim + RenderSim + Clone + Send + 'static> VcbBoard<T> {
     pub fn run_gpu(&self) {
         use crate::render;
         use render::{RenderInput, TraceInfo};
-        use strum::IntoEnumIterator;
         pollster::block_on(render::run(RenderInput {
-            trace_info: Trace::iter()
+            trace_info: Trace::VARIANTS
+                .into_iter()
                 .enumerate()
                 .map(|(i, t)| {
                     assert_eq!(t as u8, i as u8);
@@ -258,6 +255,7 @@ impl<T: LogicSim> VcbBoard<T> {
     fn print_compact(&self) -> Result<(), std::io::Error> {
         use crossterm::style::{Colors, Print, ResetColor, SetColors};
         use crossterm::{terminal, QueueableCommand};
+        use std::io::{stdout, Write};
 
         let mut stdout = stdout();
         let (sx, sy) = terminal::size()?;
@@ -356,6 +354,8 @@ impl<T: LogicSim> VcbBoard<T> {
     pub fn print_to_clipboard(&self) -> ! {
         use arboard::{Clipboard, ImageData};
         use std::borrow::Cow;
+        use std::thread::sleep;
+        use std::time::Duration;
 
         let color_data: Vec<u8> = self.traces.iter().flat_map(|x| x.to_color_on()).collect();
         let mut clipboard = Clipboard::new().unwrap();

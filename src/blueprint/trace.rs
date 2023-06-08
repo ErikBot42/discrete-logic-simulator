@@ -1,5 +1,3 @@
-use strum::EnumIter;
-
 /// All color constants used by vcb
 #[rustfmt::skip]
 mod vcb_colors {
@@ -59,7 +57,7 @@ mod vcb_colors {
 use super::*;
 #[non_exhaustive]
 #[repr(u8)]
-#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash, EnumIter)]
+#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
 pub(crate) enum Trace {
     Empty = 0,
     Gray,
@@ -114,6 +112,58 @@ pub(crate) enum Trace {
     BusYellow,
 }
 impl Trace {
+    pub const VARIANTS: [Trace; 50] = [
+        Trace::Empty,
+        Trace::Gray,
+        Trace::White,
+        Trace::Red,
+        Trace::Orange1,
+        Trace::Orange2,
+        Trace::Orange3,
+        Trace::Yellow,
+        Trace::Green1,
+        Trace::Green2,
+        Trace::Cyan1,
+        Trace::Cyan2,
+        Trace::Blue1,
+        Trace::Blue2,
+        Trace::Purple,
+        Trace::Magenta,
+        Trace::Pink,
+        Trace::Write,
+        Trace::Cross,
+        Trace::Read,
+        Trace::Buffer,
+        Trace::And,
+        Trace::Or,
+        Trace::Xor,
+        Trace::Not,
+        Trace::Nand,
+        Trace::Nor,
+        Trace::Xnor,
+        Trace::LatchOn,
+        Trace::LatchOff,
+        Trace::Clock,
+        Trace::Led,
+        Trace::Annotation,
+        Trace::Filler,
+        Trace::Vmem,
+        Trace::Tunnel,
+        Trace::Mesh,
+        Trace::Wireless0,
+        Trace::Wireless1,
+        Trace::Wireless2,
+        Trace::Wireless3,
+        Trace::Timer,
+        Trace::Random,
+        Trace::Break,
+        Trace::BusRed,
+        Trace::BusGreen,
+        Trace::BusBlue,
+        Trace::BusTeal,
+        Trace::BusPurple,
+        Trace::BusYellow,
+    ];
     pub(crate) fn get_color(&self, state: bool) -> [u8; 4] {
         if state {
             self.to_color_on()

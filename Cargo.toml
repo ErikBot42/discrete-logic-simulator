@@ -106,7 +106,7 @@ clap          = { version="4.3.2",  features=["derive"]                         
 anyhow        = { version="1.0.71", features=["std","backtrace"],             default-features=false }
 json          = { version="0.12.4",                                           default-features=false }
 nohash-hasher = { version="0.2.0",  features=["std"],                         default-features=false }
-strum         = { version="0.24.1", features=["std","derive","strum_macros"], default-features=false }
+#strum         = { version="0.24.1", features=["std","derive","strum_macros"], default-features=false }
 either        = { version="1.8.1",                                            default-features=false }
 ahash         = { version="0.8.3",  features=["std"],                         default-features=false }
 bumpalo       = { version="3.12.0", features = ["allocator_api"],             default-features=false }
