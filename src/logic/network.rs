@@ -1694,7 +1694,7 @@ impl InitializedNetwork {
         }
     }
 
-    fn _fgo_connections_grouping(self) {
+    /*fn _fgo_connections_grouping(self) {
         let gates = self.gates;
 
         #[derive(Eq, PartialEq, Hash, Ord, PartialOrd, Debug, Copy, Clone)]
@@ -1725,7 +1725,7 @@ impl InitializedNetwork {
             GateType::Interface(s) => FgoGateTarget::Interface(s),
         };
         fgo::fgo_connections_grouping(gates, gate_kind_mapping);
-    }
+    }*/
 }
 
 /// Contains gate graph in order to do network optimization
@@ -1808,6 +1808,7 @@ impl GateNetwork {
     }
 }
 
+/*
 mod fgo {
 
     //! TODO:
@@ -2342,4 +2343,4 @@ mod fgo {
         });
         array::from_fn(|_| oid_iterator.next().unwrap())
     }
-}
+}*/

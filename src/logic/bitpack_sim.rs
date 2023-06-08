@@ -17,7 +17,7 @@ use super::bitmanip::{
     BitAccPack, BitInt, BITS,
 };
 use super::{
-    Csr, Gate, GateType, IndexType, InitializedNetwork, LogicSim, RunTimeGateType, UpdateList,
+    Csr, Gate, GateType, IndexType, LogicSim, RunTimeGateType, UpdateList,
     UpdateStrategy,
 };
 
@@ -31,15 +31,15 @@ struct Soap {
 }
 #[derive(Clone)]
 pub struct BitPackSimInner {
-    acc: Vec<BitAccPack>,
-    state: Vec<BitInt>,
-    parity: Vec<BitInt>,
-    csr_outputs: Vec<IndexType>,
-    csr_indexes: Vec<IndexType>,
-    group_run_type: Vec<RunTimeGateType>,
+    acc: Box<[BitAccPack]>,
+    state: Box<[BitInt]>,
+    parity: Box<[BitInt]>,
+    csr_outputs: Box<[IndexType]>,
+    csr_indexes: Box<[IndexType]>,
+    group_run_type: Box<[RunTimeGateType]>,
     update_list: UpdateList,
     cluster_update_list: UpdateList,
-    in_update_list: Vec<bool>,
+    in_update_list: Box<[bool]>,
     //soap: Vec<Soap>,
 }
 
@@ -426,7 +426,7 @@ impl LogicSim for BitPackSimInner {
             .array_chunks()
             .map(pack_bits)
             .collect();
-        let parity = (0..num_groups).map(|_| 0).collect();
+        let parity: Vec<_> = (0..num_groups).map(|_| 0).collect();
 
         let kind: Vec<_> = node_data
             .iter()
@@ -474,15 +474,15 @@ impl LogicSim for BitPackSimInner {
         //    .collect();
 
         let mut this = Self {
-            acc,
-            state,
-            parity,
-            csr_indexes,
-            csr_outputs,
-            group_run_type,
+            acc: acc.into_boxed_slice(),
+            state: state.into_boxed_slice(),
+            parity: parity.into_boxed_slice(),
+            csr_indexes: csr_indexes.into_boxed_slice(),
+            csr_outputs: csr_outputs.into_boxed_slice(),
+            group_run_type: group_run_type.into_boxed_slice(),
             update_list,
             cluster_update_list,
-            in_update_list,
+            in_update_list: in_update_list.into_boxed_slice(),
             //soap,
         };
 
