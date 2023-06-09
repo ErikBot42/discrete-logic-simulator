@@ -11,7 +11,7 @@ pub mod gate_status;
 pub mod network;
 pub mod reference_sim;
 
-pub(crate) use crate::logic::network::GateNetwork;
+//pub(crate) use crate::logic::network::GateNetwork;
 use network::Csr;
 use std::simd::{Mask, Simd};
 

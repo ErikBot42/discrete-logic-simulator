@@ -5,7 +5,7 @@ pub mod explore;
 pub mod parse;
 pub mod trace;
 
-use crate::logic::{GateNetwork, GateType, LogicSim, RenderSim};
+use crate::logic::{GateType, LogicSim, RenderSim};
 use parse::VcbPlainBoard;
 pub use parse::{VcbInput, VcbParser};
 use trace::*;
@@ -22,6 +22,7 @@ use std::mem::size_of;
 pub struct VcbBoard<T: LogicSim> {
     traces: Vec<Trace>,
     element_ids_internal: Vec<Option<usize>>,
+    #[cfg(feature = "print_sim")]
     element_ids_external: Vec<Option<usize>>, // to debug
     pub(crate) logic_sim: T,
     pub(crate) width: usize,
@@ -62,11 +63,12 @@ impl<T: LogicSim + RenderSim + Clone + Send + 'static> VcbBoard<T> {
     }
 }
 impl<T: LogicSim> VcbBoard<T> {
+    #[cfg(feature = "gif")]
     fn num_elements(&self) -> usize {
         self.width * self.height
     }
     fn new(plain: VcbPlainBoard, optimize: bool) -> Self {
-        let (height, width, element_ids_external, _translation_table, logic_sim, element_ids) =
+        let (height, width, _element_ids_external, _translation_table, logic_sim, element_ids) =
             explore::explore_new::construct_vcbboard_parts(&plain, optimize);
         //construct_vcbboard_parts(&plain, optimize);
 
@@ -78,7 +80,8 @@ impl<T: LogicSim> VcbBoard<T> {
 
         VcbBoard {
             element_ids_internal: element_ids,
-            element_ids_external,
+            #[cfg(feature = "print_sim")]
+            element_ids_external: _element_ids_external,
             traces: plain.traces,
             logic_sim,
             width,
@@ -185,6 +188,7 @@ impl<T: LogicSim> VcbBoard<T> {
     }
     /// pixel -> external_id
     #[must_use]
+    #[cfg(feature = "print_sim")]
     fn get_external_id(&self, id: usize) -> Option<usize> {
         self.element_ids_external[id]
     }
@@ -195,10 +199,12 @@ impl<T: LogicSim> VcbBoard<T> {
     }
     /// pixel -> color
     #[must_use]
+    #[cfg(any(feature = "gif", feature = "print_sim"))]
     fn get_color_element(&self, id: usize) -> [u8; 4] {
         self.traces[id].get_color(self.get_state_element(id))
     }
     /// x,y -> pixel
+    #[cfg(feature = "print_sim")]
     fn pixel_id(&self, x: usize, y: usize) -> usize {
         x + y * self.width
     }

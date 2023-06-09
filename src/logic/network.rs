@@ -1741,8 +1741,8 @@ impl EditableNetwork {
     }
 }
 
-/// The API for creating a gate network.
-#[derive(Debug, Default)]
+// The API for creating a gate network.
+/*#[derive(Debug, Default)]
 pub(crate) struct GateNetwork {
     network: EditableNetwork,
 }
@@ -1805,7 +1805,7 @@ impl GateNetwork {
     pub(crate) fn initialized(self, optimize: bool) -> InitializedNetwork {
         self.network.initialized(optimize)
     }
-}
+}*/
 
 /*
 mod fgo {

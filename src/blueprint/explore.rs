@@ -22,7 +22,7 @@ impl BoardNode {
     }
 }
 
-pub(super) fn compile_network<T: LogicSim>(
+/*pub(super) fn compile_network<T: LogicSim>(
     plain: &parse::VcbPlainBoard,
 ) -> (usize, usize, Vec<BoardNode>, Vec<BoardElement>, GateNetwork) {
     let height = plain.height;
@@ -76,7 +76,7 @@ pub(super) fn compile_network<T: LogicSim>(
         network
     };
     (height, width, nodes, elements, network)
-}
+}*/
 
 pub(crate) mod explore_new {
     use crate::blueprint::{LogicSim, VcbPlainBoard};
