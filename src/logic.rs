@@ -11,7 +11,7 @@ pub mod gate_status;
 pub mod network;
 pub mod reference_sim;
 
-pub(crate) use crate::logic::network::{GateNetwork, InitializedNetwork};
+pub(crate) use crate::logic::network::GateNetwork;
 use network::Csr;
 use std::simd::{Mask, Simd};
 
@@ -92,7 +92,6 @@ impl GateType {
             Xor | Xnor => acc0 == 0 && acc1 == 0,
             Latch => !initial_state && acc0 == 0 && acc1 == 0,
             Interface(_) => false,
-            _ => false,
         }
     }
 }

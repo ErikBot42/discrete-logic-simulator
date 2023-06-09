@@ -83,12 +83,10 @@ pub(crate) mod explore_new {
     // stack search floodfill
     // of other has ID, connect, otherwise, noop
     use crate::blueprint::Trace;
-    use crate::logic::network::{Csr, GateNetwork, GateNode};
+    use crate::logic::network::{Csr, GateNode};
     use crate::logic::GateType;
-    use either::Either::{Left, Right};
     use itertools::Itertools;
     use std::collections::HashMap;
-    use std::mem::replace;
     use Trace::*;
 
     // We are ignoring the Random trace since it is non deterministic.
@@ -242,6 +240,9 @@ pub(crate) mod explore_new {
                     }
                 })
                 .collect_vec();
+
+            let _ = crate::logic::network::passes::optimize::<usize>;
+            let _ = crate::logic::network::passes::optimize2::<usize>;
 
             let (csc, nodes, table) = if optimize {
                 crate::logic::network::passes::optimize(csc, nodes, table)

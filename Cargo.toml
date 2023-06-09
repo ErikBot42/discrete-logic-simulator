@@ -131,11 +131,13 @@ env_logger    = { version="0.10.0",                                           de
 log           = { version="0.4.17",                                           default-features=false, optional=true }
 
 [features]
-default = []
+default = ["all"]
 print_sim = ["dep:crossterm"]
 clip = ["dep:arboard"]
 gif = ["dep:image", "dep:tempfile"]
 render = ["dep:winit", "dep:wgpu", "dep:env_logger", "dep:pollster", "dep:log"]
+
+all = ["print_sim", "clip", "gif", "render"]
 
 [dev-dependencies]
 criterion = { version = "0.4", default-features = false }

@@ -1,13 +1,12 @@
 //! network.rs: Manage and optimize the network while preserving behaviour.
 use crate::logic::{gate_status, Gate, GateKey, GateType, IndexType};
 use itertools::Itertools;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::iter::repeat;
-use std::ops::{Index, IndexMut};
+use std::ops::IndexMut;
 
-fn reorder_by_indices<T>(data: &mut [T], indices: Vec<usize>) {
+/*fn reorder_by_indices<T>(data: &mut [T], indices: Vec<usize>) {
     reorder_by_indices_with(|a, b| data.swap(a, b), indices)
 }
 fn reorder_by_indices_with<F: FnMut(usize, usize)>(mut swap_indices: F, mut indices: Vec<usize>) {
@@ -25,7 +24,7 @@ fn reorder_by_indices_with<F: FnMut(usize, usize)>(mut swap_indices: F, mut indi
             }
         }
     }
-}
+}*/
 mod sparse {
 
     use itertools::Itertools;
@@ -275,7 +274,6 @@ pub(crate) struct CsrGraph<T: SparseIndex> {
 use sparse::SparseIndex;
 pub(crate) use sparse::{Csc, Csr};
 pub(crate) mod passes {
-    use std::iter::once;
     use std::mem::{replace, swap};
 
     use super::*;
@@ -302,6 +300,7 @@ pub(crate) mod passes {
         Csc<T>: IndexMut<usize, Output = [T]>,
         Csr<T>: IndexMut<usize, Output = [T]>,
     {
+        todo!("handle orig table");
         #[derive(Copy, Clone)]
         enum RetainedConnections {
             Zero,
@@ -749,7 +748,7 @@ pub(crate) mod passes {
     }
 
     /// CSC output sorted
-    /*fn sort_connections_pass<T: SparseIndex>(csc: &mut Csc<T>)
+    fn sort_connections_pass<T: SparseIndex>(csc: &mut Csc<T>)
     where
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
@@ -757,7 +756,7 @@ pub(crate) mod passes {
         Csc<T>: IndexMut<usize, Output = [T]>,
     {
         csc.sort();
-    }*/
+    }
 
     /// TODO: combine with constant analysis pass?
     /// Removes duplicate connections created from other passes, preserving gate behavior.
@@ -1376,7 +1375,7 @@ impl InitializedNetwork {
             //    std::cmp::Ordering::Equal
             //};
 
-            dynamic.sort_by(|(ia, a), (ib, b)| {
+            dynamic.sort_by(|(_ia, a), (_ib, b)| {
                 //let input_degree = a.inputs.len().cmp(&b.inputs.len()).reverse();
                 //let output_degree = a.outputs.len().cmp(&b.outputs.len());
                 //let input_degree_exclude_const = input_count_without_const[*ia]
@@ -1413,7 +1412,7 @@ impl InitializedNetwork {
             }
 
             //panic!();
-            dynamic.sort_by_key(|(ia, a)| sibling_ids_not_const(*ia).len());
+            dynamic.sort_by_key(|(ia, _a)| sibling_ids_not_const(*ia).len());
             dynamic.reverse();
             let mut dynamic = {
                 let mut not_added: Vec<_> = v.iter().map(|(id, _)| is_dynamic(*id)).collect();

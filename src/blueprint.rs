@@ -6,7 +6,6 @@ pub mod parse;
 pub mod trace;
 
 use crate::logic::{GateNetwork, GateType, LogicSim, RenderSim};
-use explore::{compile_network, BoardNode};
 use parse::VcbPlainBoard;
 pub use parse::{VcbInput, VcbParser};
 use trace::*;
@@ -90,7 +89,7 @@ impl<T: LogicSim> VcbBoard<T> {
     }
 }
 
-fn construct_vcbboard_parts<T: LogicSim>(
+/*fn construct_vcbboard_parts<T: LogicSim>(
     plain: &VcbPlainBoard,
     optimize: bool,
 ) -> (
@@ -129,7 +128,7 @@ fn construct_vcbboard_parts<T: LogicSim>(
         logic_sim,
         element_ids,
     )
-}
+}*/
 impl<T: LogicSim> VcbBoard<T> {
     pub fn update_i(&mut self, iterations: usize) {
         self.logic_sim.update_i(iterations);
