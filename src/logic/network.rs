@@ -1000,6 +1000,7 @@ pub(crate) mod passes {
     // automatically ("invalidate" completion of passes if they modify stuff), maybe something
     // like https://github.com/typst/comemo/
 }
+/*
 /// Iterate through all gates, skipping any
 /// placeholder gates.
 trait NetworkInfo {
@@ -1739,7 +1740,7 @@ impl EditableNetwork {
     pub(crate) fn initialized(self, optimize: bool) -> InitializedNetwork {
         InitializedNetwork::create_from(self, optimize)
     }
-}
+}*/
 
 // The API for creating a gate network.
 /*#[derive(Debug, Default)]
