@@ -749,7 +749,7 @@ pub(crate) mod passes {
     }
 
     /// CSC output sorted
-    fn sort_connections_pass<T: SparseIndex>(csc: &mut Csc<T>)
+    /*fn sort_connections_pass<T: SparseIndex>(csc: &mut Csc<T>)
     where
         <T as TryFrom<usize>>::Error: Debug,
         <usize as TryFrom<T>>::Error: Debug,
@@ -757,14 +757,14 @@ pub(crate) mod passes {
         Csc<T>: IndexMut<usize, Output = [T]>,
     {
         csc.sort();
-    }
+    }*/
 
     /// TODO: combine with constant analysis pass?
     /// Removes duplicate connections created from other passes, preserving gate behavior.
     ///
     /// PRE: sorted connections yeild better result. will maintain input connection order.
     /// CSC input sorted => CSC output sorted
-    fn remove_redundant_input_connections_pass<T: SparseIndex>(
+    /*fn remove_redundant_input_connections_pass<T: SparseIndex>(
         csc: &mut Csc<T>,
         nodes: &Vec<GateNode>,
         constant: &ConstantAnalysis,
@@ -821,7 +821,7 @@ pub(crate) mod passes {
                 }
             });
         *csc = Csc::new(inputs_iter)
-    }
+    }*/
 
     struct ConstantAnalysis {
         is_constant: Vec<bool>,

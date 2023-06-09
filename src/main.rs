@@ -4,9 +4,8 @@ use logic_simulator::logic::{
     /*BatchSim,*/ BitPackSim, LogicSim, ReferenceSim, RenderSim, UpdateStrategy,
 };
 use std::fs::read_to_string;
-use std::io::stdout;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 #[deny(missing_docs)]
@@ -58,7 +57,7 @@ pub struct Args {
     pub blueprint_file: Option<PathBuf>,
 
     /// Filepath to legacy VCB blueprint string
-    #[arg(long, group = "blueprint")]
+    #[arg(short = 'F', long, group = "blueprint")]
     pub blueprint_file_legacy: Option<PathBuf>,
 
     /// VCB blueprint string
@@ -66,7 +65,7 @@ pub struct Args {
     pub blueprint_string: Option<String>,
 
     /// legacy VCB blueprint string
-    #[arg(long, group = "blueprint")]
+    #[arg(short = 'B', long, group = "blueprint")]
     pub blueprint_string_legacy: Option<String>,
 
     /// Filepath to VCB world
@@ -74,7 +73,7 @@ pub struct Args {
     pub world_file: Option<PathBuf>,
 
     /// Filepath to legacy VCB world
-    #[arg(long, group = "blueprint")]
+    #[arg(short = 'W', long, group = "blueprint")]
     pub world_file_legacy: Option<PathBuf>,
 
     /// What mode to run the program in
@@ -142,7 +141,7 @@ fn handle_board<T: LogicSim + RenderSim + Clone + Send + 'static>(
     parser_input: VcbInput,
 ) {
     let now = Instant::now();
-    let mut board = { VcbParser::parse_compile::<T>(parser_input, !args.skip_optim).unwrap() };
+    let board = { VcbParser::parse_compile::<T>(parser_input, !args.skip_optim).unwrap() };
     println!("parsed entire board in {:?}", now.elapsed());
     match args.mode {
         #[cfg(feature = "render")]
@@ -151,32 +150,40 @@ fn handle_board<T: LogicSim + RenderSim + Clone + Send + 'static>(
         },
         RunMode::Parse => (),
         #[cfg(feature = "gif")]
-        RunMode::Gif => board.print_to_gif(args.iterations.unwrap_or(100)),
+        RunMode::Gif => {
+            let mut board = board;
+            board.print_to_gif(args.iterations.unwrap_or(100))
+        },
         #[cfg(feature = "clip")]
         RunMode::Clip => board.print_to_clipboard(),
         RunMode::Emoji => board.print_regular_emoji(args.legend),
         RunMode::EmojiVcb => board.print_vcb_discord_emoji(args.legend),
         #[cfg(feature = "print_sim")]
         RunMode::PrintDebug => {
+            let mut board = board;
             board.update();
             board.print_debug_constrain();
         },
         #[cfg(feature = "print_sim")]
         RunMode::Print => {
+            let mut board = board;
             board.update();
             board.print().unwrap();
         },
         #[cfg(feature = "print_sim")]
         RunMode::Run => {
+            use std::io::stdout;
+            use std::time::Duration;
+
             use crossterm::cursor::{Hide, MoveTo};
-            use crossterm::execute;
+            use crossterm::style::Print;
             use crossterm::terminal::{
                 disable_raw_mode, enable_raw_mode, ClearType, DisableLineWrap,
                 EnterAlternateScreen, LeaveAlternateScreen,
             };
+            use crossterm::{execute, QueueableCommand};
 
-            use crossterm::style::Print;
-            use crossterm::QueueableCommand;
+            let mut board = board;
 
             execute!(stdout(), EnterAlternateScreen, Hide, DisableLineWrap).unwrap();
 
@@ -234,7 +241,10 @@ fn handle_board<T: LogicSim + RenderSim + Clone + Send + 'static>(
         },
         RunMode::Bench => run_bench(args, board),
         #[cfg(feature = "clip")]
-        RunMode::PrintBinary => board.print_binary(),
+        RunMode::PrintBinary => {
+            let mut board = board;
+            board.print_binary()
+        },
     }
     println!("Exiting...");
 }
