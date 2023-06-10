@@ -121,7 +121,7 @@ mod sparse {
         }
         pub(crate) fn adjacency_iter(&self) -> impl Iterator<Item = (T, T)> + '_ {
             (0..self.len())
-                .map(|i| std::iter::repeat(T::new(i)).zip(self.index(i).iter().cloned()))
+                .map(|i| std::iter::repeat(T::new(i)).zip(self.index(i).iter().copied()))
                 .flatten()
         }
         fn from_sorted_adjacency_iter(
@@ -274,7 +274,7 @@ pub struct GateNode {
 use sparse::SparseIndex;
 pub(crate) use sparse::{Csc, Csr};
 pub(crate) mod passes {
-    use std::mem::{replace, swap};
+    use std::mem::{replace, swap, take};
 
     use super::*;
     // https://faultlore.com/blah/oops-that-was-important/
@@ -502,13 +502,13 @@ pub(crate) mod passes {
                             modified = true;
 
                             // C
-                            let removed_inputs = replace(&mut inputs[i], &[]);
+                            let removed_inputs = take(&mut inputs[i]);
 
                             // D
                             for &removed_input in removed_inputs {
                                 // "outputs[removed_input].remove_first(i)"
                                 let index = removed_input.index();
-                                let slice = replace(&mut outputs[index], &mut []);
+                                let slice = take(&mut outputs[index]);
                                 let element = T::new(i);
                                 slice.sort();
                                 let index = slice.iter().position(|&e| e == element).unwrap();
@@ -516,7 +516,7 @@ pub(crate) mod passes {
                                 slice.swap(index, slice_len_without_last);
                                 outputs[index] = &mut slice[0..slice_len_without_last];
                             }
-                            if outputs[i].len() > 0 {
+                            if !outputs[i].is_empty() {
                                 // A
                                 for &output in &*outputs[i] {
                                     let old_key = calc_key(output.index(), &nodes, &inputs);
@@ -534,13 +534,13 @@ pub(crate) mod passes {
                                 }
 
                                 // B
-                                let my_old_outputs = replace(&mut outputs[i], &mut []);
+                                let my_old_outputs = take(&mut outputs[i]);
                                 let new_outputs_slice =
                                     outputs_alloc.alloc_slice_fill_iter(PretendExactSize {
                                         iter: my_old_outputs
                                             .iter()
-                                            .cloned()
-                                            .chain(outputs[existing_id].iter().cloned()),
+                                            .copied()
+                                            .chain(outputs[existing_id].iter().copied()),
                                     });
                                 outputs[existing_id] = new_outputs_slice;
                             }
@@ -632,7 +632,7 @@ pub(crate) mod passes {
             outputs: Vec::with_capacity(num_connections_estimate),
         };
 
-        let mut iterations = 0;
+        let mut iterations: usize = 0;
         while {
             {
                 constant_analysis_pass(
@@ -727,7 +727,7 @@ pub(crate) mod passes {
                 let next_id = new_nodes.len();
                 map.insert((node, inputs), next_id);
                 new_nodes.push(node.clone());
-                next_csc.push(csc[old_id].into_iter().cloned());
+                next_csc.push(csc[old_id].iter().copied());
                 next_id
             };
             table.push(new_id);
@@ -864,7 +864,7 @@ pub(crate) mod passes {
         next_active_set.clear();
         //let mut next_active_set: Vec<usize> = Vec::new();
 
-        while active_set.len() > 0 {
+        while !active_set.is_empty() {
             for &i in active_set.iter() {
                 if is_constant[i] {
                     continue;
@@ -895,7 +895,7 @@ pub(crate) mod passes {
 
     /// Modify nodes in place, remove connections
     fn node_normalization_and_connection_removal_pass<T: SparseIndex>(
-        nodes: &mut Vec<GateNode>,
+        nodes: &mut [GateNode],
         constant: &ConstantAnalysis,
         csc: &mut Csc<T>,
     ) where
@@ -936,8 +936,8 @@ pub(crate) mod passes {
             const BUFFER: GateType = Or;
             const INVERTER: GateType = Nor;
             use GateType::{And, Cluster, Interface, Latch, Nand, Nor, Or, Xnor, Xor};
-            let is_constant = is_constant;
-            let max_active_inputs = max_active_inputs;
+            //let is_constant = is_constant;
+            //let max_active_inputs = max_active_inputs;
             let kind = node.kind;
             let state = node.initial_state;
             let inputs = input_connections.len();
@@ -957,7 +957,8 @@ pub(crate) mod passes {
                 Nand if max_active_inputs < inputs => (NONE, INVERTER),
                 And if max_active_inputs == 1 && inputs == 1 => (VARIABLE, BUFFER),
                 Nand if max_active_inputs == 1 && inputs == 1 => (VARIABLE, INVERTER),
-                _ => (ALL, kind),
+
+                And | Nand => (ALL, kind),
             };
 
             //if new_kind != node.kind {
@@ -974,13 +975,13 @@ pub(crate) mod passes {
                 VARIABLE => new_csc.push(
                     inputs
                         .iter()
-                        .cloned()
+                        .copied()
                         .filter(|&i| !constant.is_constant[usize::try_from(i).unwrap()]),
                 ),
-                ALL | _ => new_csc.push(inputs.iter().cloned()),
+                ALL | _ => new_csc.push(inputs.iter().copied()),
             }
 
-            node.kind = new_kind
+            node.kind = new_kind;
         }
         std::mem::swap(csc, &mut new_csc);
     }

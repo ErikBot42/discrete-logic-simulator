@@ -35,7 +35,7 @@ impl LogicSim for ReferenceLogicSim {
 
         let (in_update_list, state, kind, acc): (Vec<_>, Vec<_>, Vec<_>, Vec<_>) = nodes
             .into_iter()
-            .zip(csc.iter().map(|c| c.len()))
+            .zip(csc.iter().map(<[IndexType]>::len))
             .map(|(node, inputs)| {
                 (
                     true,
@@ -88,7 +88,7 @@ impl ReferenceLogicSim {
         } else {
             (&mut self.update_list, &mut self.cluster_update_list)
         };
-        for id in update_list.iter().map(|&i| i) {
+        for id in update_list.iter().copied() {
             assert!(self.in_update_list[id]);
             let kind = self.kind[id];
             assert_eq!(kind.is_cluster(), cluster);

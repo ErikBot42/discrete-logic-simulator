@@ -13,6 +13,41 @@
 #![feature(allocator_api)]
 
 #![allow(clippy::float_arithmetic)]
+#![allow(clippy::multiple_inherent_impl)]
+#![allow(clippy::implicit_return)]
+#![allow(clippy::undocumented_unsafe_blocks)]
+#![allow(clippy::arithmetic_side_effects)]
+#![allow(clippy::expect_used)]
+#![allow(clippy::unwrap_used)]
+#![allow(clippy::use_self)]
+#![allow(clippy::missing_docs_in_private_items)]
+#![allow(clippy::exhaustive_enums)]
+#![allow(clippy::indexing_slicing)]
+#![allow(clippy::while_let_on_iterator)]
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::missing_inline_in_public_items)]
+
+
+#![allow(clippy::enum_glob_use)]
+#![allow(clippy::items_after_statements)]
+#![allow(clippy::shadow_unrelated)]
+#![allow(clippy::missing_assert_message)]
+#![allow(clippy::shadow_reuse)]
+#![allow(clippy::missing_trait_methods)]
+#![allow(clippy::wildcard_in_or_patterns)]
+#![allow(clippy::option_if_let_else)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::use_debug)]
+#![allow(clippy::print_stdout)]
+#![allow(clippy::semicolon_outside_block)]
+
+
+#![allow(clippy::redundant_pub_crate)]
+#![allow(clippy::std_instead_of_core)]
+#![allow(clippy::todo)]
+
+
 //#![feature(build_hasher_simple_hash_one)]
 macro_rules! timed {
     ($block:expr, $print_str:expr) => {{

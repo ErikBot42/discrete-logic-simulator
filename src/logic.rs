@@ -65,7 +65,7 @@ impl GateType {
     //        GateType::Xor | GateType::Xnor | GateType::Latch | GateType::Interface(_) => false,
     //    }
     //}
-    fn is_cluster(self) -> bool {
+    const fn is_cluster(self) -> bool {
         matches!(self, GateType::Cluster)
     }
 
@@ -85,11 +85,11 @@ impl GateType {
         // Latch => state != ((acc & 1 == 1) && (acc_prev & 1 == 0)),
         // TODO: EXPAND MATCHING TO INCLUDE LATCH
         //dbg!(acc0, acc1);
+        //todo!("why is or == xor?");
         use GateType::*;
         match k {
             And | Nor => acc0 != 0 && acc1 != 0,
-            Or | Nand | Cluster => acc0 == 0 && acc1 == 0,
-            Xor | Xnor => acc0 == 0 && acc1 == 0,
+            Or | Nand | Cluster | Xor | Xnor => acc0 == 0 && acc1 == 0,
             Latch => !initial_state && acc0 == 0 && acc1 == 0,
             Interface(_) => false,
         }
@@ -161,34 +161,35 @@ const RUNTIME_GATETYPE_VARIANTS: [RunTimeGateType; 4] = [
 
 impl RunTimeGateType {
     const fn new(kind: GateType) -> Self {
+        use GateType::*;
         match kind {
-            GateType::And | GateType::Nor => RunTimeGateType::AndNor,
-            GateType::Or | GateType::Nand | GateType::Cluster => RunTimeGateType::OrNand,
-            GateType::Xor | GateType::Xnor => RunTimeGateType::XorXnor,
-            GateType::Latch => RunTimeGateType::Latch,
-            GateType::Interface(_) => RunTimeGateType::Latch,
+            And | Nor => RunTimeGateType::AndNor,
+            Or | Nand | GateType::Cluster => RunTimeGateType::OrNand,
+            Xor | Xnor => RunTimeGateType::XorXnor,
+            Latch | Interface(_) => RunTimeGateType::Latch,
         }
     }
 
     /// (`is_inverted`, `is_xor`)
     #[cfg(test)]
     const fn calc_flags(kind: RunTimeGateType) -> (bool, bool) {
+        use RunTimeGateType::*;
         match kind {
-            RunTimeGateType::OrNand => (false, false),
-            RunTimeGateType::AndNor => (true, false),
-            RunTimeGateType::XorXnor => (false, true),
-            RunTimeGateType::Latch => (true, true),
+            OrNand => (false, false),
+            AndNor => (true, false),
+            XorXnor => (false, true),
+            Latch => (true, true),
         }
     }
 
     /// Required `acc` value to force the gate to never change state
     /// Assumes `acc` never changes (`prev_acc` = `acc`)
-    const fn acc_to_never_activate(&self) -> u8 {
+    const fn acc_to_never_activate(self) -> u8 {
         let state = false;
-        if state == Gate::evaluate(0, 0, state, *self) {
+        if state == Gate::evaluate(0, 0, state, self) {
             return 0;
         }
-        if state == Gate::evaluate(1, 1, state, *self) {
+        if state == Gate::evaluate(1, 1, state, self) {
             return 1;
         }
         panic!();
@@ -270,6 +271,7 @@ pub trait RenderSim: LogicSim {
         self.update();
     }
     /// Clear and write state bitvec
+    #[inline]
     fn get_state_in(&mut self, v: &mut Vec<u64>) {
         use bitmanip::{pack_bits, pack_bits_remainder};
         let mut chunks = (0..(self.num_gates_internal()))

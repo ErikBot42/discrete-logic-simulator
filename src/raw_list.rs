@@ -89,7 +89,7 @@ where
     }
     /// SAFE
     #[inline(always)]
-    pub(crate) fn len(&self) -> usize {
+    pub(crate) const fn len(&self) -> usize {
         self.len
     }
     /// SAFE
