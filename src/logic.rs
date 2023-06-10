@@ -13,7 +13,7 @@ pub mod reference_sim;
 
 //pub(crate) use crate::logic::network::GateNetwork;
 use network::Csr;
-use std::simd::{Mask, Simd};
+use std::simd::Simd;
 
 //pub type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
 pub type ReferenceSim = reference_sim::ReferenceLogicSim;
@@ -283,32 +283,31 @@ pub trait RenderSim: LogicSim {
     }
 }
 
-/// data needed after processing network
 #[derive(Debug, Clone)]
-pub(crate) struct Gate {
-    inputs: Vec<IndexType>,  // list of ids
-    outputs: Vec<IndexType>, // list of ids
-    kind: GateType,
-    initial_state: bool,
-}
+pub(crate) struct Gate {}
+//    inputs: Vec<IndexType>,  // list of ids
+//    outputs: Vec<IndexType>, // list of ids
+//    kind: GateType,
+//    initial_state: bool,
+
 impl Gate {
-    fn new(kind: GateType, initial_state: bool) -> Self {
-        Gate {
-            inputs: Vec::new(),
-            outputs: Vec::new(),
-            kind,
-            initial_state,
-        }
-    }
-    fn is_propably_constant(&self) -> bool {
-        self.inputs.is_empty()
-    }
-    fn acc(&self) -> AccType {
-        self.calc_acc()
-    }
-    fn calc_acc(&self) -> AccType {
-        Self::calc_acc_i(self.inputs.len(), self.kind)
-    }
+    //fn new(kind: GateType, initial_state: bool) -> Self {
+    //    Gate {
+    //        inputs: Vec::new(),
+    //        outputs: Vec::new(),
+    //        kind,
+    //        initial_state,
+    //    }
+    //}
+    //fn is_propably_constant(&self) -> bool {
+    //    self.inputs.is_empty()
+    //}
+    //fn acc(&self) -> AccType {
+    //    self.calc_acc()
+    //}
+    //fn calc_acc(&self) -> AccType {
+    //    Self::calc_acc_i(self.inputs.len(), self.kind)
+    //}
     fn calc_acc_i(inputs: usize, kind: GateType) -> AccType {
         match kind {
             GateType::And | GateType::Nand => {
@@ -325,47 +324,47 @@ impl Gate {
         }
     }
 
-    fn kind_runtime(&self) -> RunTimeGateType {
-        RunTimeGateType::new(self.kind)
-    }
-    fn is_cluster_a_xor_is_cluster_b_and_no_type_overlap_equal_cardinality(
-        &self,
-        other: &Gate,
-    ) -> bool {
-        self.is_cluster_a_xor_is_cluster_b(other)
-            || (self.kind_runtime() != other.kind_runtime())
-            || self.outputs.len() != other.outputs.len()
-    }
+    //fn kind_runtime(&self) -> RunTimeGateType {
+    //    RunTimeGateType::new(self.kind)
+    //}
+    //fn is_cluster_a_xor_is_cluster_b_and_no_type_overlap_equal_cardinality(
+    //    &self,
+    //    other: &Gate,
+    //) -> bool {
+    //    self.is_cluster_a_xor_is_cluster_b(other)
+    //        || (self.kind_runtime() != other.kind_runtime())
+    //        || self.outputs.len() != other.outputs.len()
+    //}
 
-    fn is_cluster_a_xor_is_cluster_b_and_no_type_overlap(&self, other: &Gate) -> bool {
-        self.is_cluster_a_xor_is_cluster_b(other) || (self.kind_runtime() != other.kind_runtime())
-    }
+    //fn is_cluster_a_xor_is_cluster_b_and_no_type_overlap(&self, other: &Gate) -> bool {
+    //    self.is_cluster_a_xor_is_cluster_b(other) || (self.kind_runtime() != other.kind_runtime())
+    //}
 
-    fn is_cluster_a_xor_is_cluster_b(&self, other: &Gate) -> bool {
-        self.kind.is_cluster() != other.kind.is_cluster()
-    }
+    //fn is_cluster_a_xor_is_cluster_b(&self, other: &Gate) -> bool {
+    //    self.kind.is_cluster() != other.kind.is_cluster()
+    //}
 
-    /// add inputs and handle internal logic for them
-    /// # NOTE
-    /// Redundant connections are allowed here.
-    fn add_inputs_vec(&mut self, inputs: &mut Vec<IndexType>) {
-        self.inputs.append(inputs);
-        self.inputs.sort_unstable(); // TODO: probably not needed
-    }
-    const fn evaluate_simple<T>(
-        acc: AccType,
-        acc_prev_parity: bool,
-        state: bool,
-        kind: RunTimeGateType,
-    ) -> bool {
-        let acc_prev = acc_prev_parity as AccType;
-        match kind {
-            RunTimeGateType::OrNand => acc != 0,
-            RunTimeGateType::AndNor => acc == 0,
-            RunTimeGateType::XorXnor => acc & 1 == 1,
-            RunTimeGateType::Latch => state != ((acc & 1 == 1) && (acc_prev & 1 == 0)),
-        }
-    }
+    ///// add inputs and handle internal logic for them
+    ///// # NOTE
+    ///// Redundant connections are allowed here.
+    //fn add_inputs_vec(&mut self, inputs: &mut Vec<IndexType>) {
+    //    self.inputs.append(inputs);
+    //    self.inputs.sort_unstable(); // TODO: probably not needed
+    //}
+    //const fn evaluate_simple<T>(
+    //    acc: AccType,
+    //    acc_prev_parity: bool,
+    //    state: bool,
+    //    kind: RunTimeGateType,
+    //) -> bool {
+    //    let acc_prev = acc_prev_parity as AccType;
+    //    match kind {
+    //        RunTimeGateType::OrNand => acc != 0,
+    //        RunTimeGateType::AndNor => acc == 0,
+    //        RunTimeGateType::XorXnor => acc & 1 == 1,
+    //        RunTimeGateType::Latch => state != ((acc & 1 == 1) && (acc_prev & 1 == 0)),
+    //    }
+    //}
     #[inline]
     const fn evaluate(acc: AccType, acc_prev: AccType, state: bool, kind: RunTimeGateType) -> bool {
         match kind {
@@ -409,55 +408,55 @@ impl Gate {
                     || (is_inverted && (state != ((acc & 1 == 1) && (acc_prev & 1 == 0)))))
     }
     //#[must_use]
-    #[cfg(test)]
-    fn evaluate_simd<const LANES: usize>(
-        // only acc is not u8...
-        acc: Simd<AccType, LANES>,
-        is_inverted: Simd<SimdLogicType, LANES>,
-        is_xor: Simd<SimdLogicType, LANES>,
-        old_state: Simd<SimdLogicType, LANES>,
-    ) -> (Simd<SimdLogicType, LANES>, Simd<SimdLogicType, LANES>)
-    where
-        std::simd::LaneCount<LANES>: std::simd::SupportedLaneCount,
-    {
-        use std::simd::SimdPartialEq;
-        let acc_logic = acc.cast::<SimdLogicType>();
-        let acc_not_zero = acc_logic
-            .simd_ne(Simd::splat(0))
-            .select(Simd::splat(1), Simd::splat(0)); // 0|1
-        let xor_term = is_xor & acc_logic; // 0|1
-                                           // TODO is this just subtracting 1?
-        let not_xor = !is_xor; // 0|1111...
-                               //let xor_term = is_xor & acc & Simd::splat(1);
-                               //let not_xor = !is_xor & Simd::splat(1);
-        let acc_term = not_xor & (is_inverted ^ acc_not_zero); //0|1
-        let new_state = acc_term | xor_term; //0|1
-        (new_state, old_state ^ new_state)
-    }
+    //#[cfg(test)]
+    //fn evaluate_simd<const LANES: usize>(
+    //    // only acc is not u8...
+    //    acc: Simd<AccType, LANES>,
+    //    is_inverted: Simd<SimdLogicType, LANES>,
+    //    is_xor: Simd<SimdLogicType, LANES>,
+    //    old_state: Simd<SimdLogicType, LANES>,
+    //) -> (Simd<SimdLogicType, LANES>, Simd<SimdLogicType, LANES>)
+    //where
+    //    std::simd::LaneCount<LANES>: std::simd::SupportedLaneCount,
+    //{
+    //    use std::simd::SimdPartialEq;
+    //    let acc_logic = acc.cast::<SimdLogicType>();
+    //    let acc_not_zero = acc_logic
+    //        .simd_ne(Simd::splat(0))
+    //        .select(Simd::splat(1), Simd::splat(0)); // 0|1
+    //    let xor_term = is_xor & acc_logic; // 0|1
+    //                                       // TODO is this just subtracting 1?
+    //    let not_xor = !is_xor; // 0|1111...
+    //                           //let xor_term = is_xor & acc & Simd::splat(1);
+    //                           //let not_xor = !is_xor & Simd::splat(1);
+    //    let acc_term = not_xor & (is_inverted ^ acc_not_zero); //0|1
+    //    let new_state = acc_term | xor_term; //0|1
+    //    (new_state, old_state ^ new_state)
+    //}
 
-    /// calculate a key that is used to determine if the gate
-    /// can be merged with other gates.
-    fn calc_key(&self) -> GateKey {
-        // TODO: can potentially include inverted.
-        // but then every connection would have to include
-        // connection information
+    // calculate a key that is used to determine if the gate
+    // can be merged with other gates.
+    //fn calc_key(&self) -> GateKey {
+    //    // TODO: can potentially include inverted.
+    //    // but then every connection would have to include
+    //    // connection information
 
-        // TODO: merge latch further
-        let kind = self.kind;
-        let inputs_len = self.inputs.len();
-        let kind = match inputs_len {
-            0 | 1 => match kind {
-                GateType::Nand | GateType::Xnor | GateType::Nor => GateType::Nor,
-                GateType::And | GateType::Or | GateType::Xor => GateType::Or,
-                GateType::Cluster => GateType::Cluster, // merging cluster with gate is invalid
-                GateType::Latch => GateType::Latch,     // TODO: is merging latch with gate invalid?
-                GateType::Interface(s) => GateType::Interface(s), // never merge interface
-            },
-            _ => kind,
-        };
-        assert!(self.inputs.is_sorted());
-        (kind, self.inputs.clone(), self.initial_state)
-    }
+    //    // TODO: merge latch further
+    //    let kind = self.kind;
+    //    let inputs_len = self.inputs.len();
+    //    let kind = match inputs_len {
+    //        0 | 1 => match kind {
+    //            GateType::Nand | GateType::Xnor | GateType::Nor => GateType::Nor,
+    //            GateType::And | GateType::Or | GateType::Xor => GateType::Or,
+    //            GateType::Cluster => GateType::Cluster, // merging cluster with gate is invalid
+    //            GateType::Latch => GateType::Latch,     // TODO: is merging latch with gate invalid?
+    //            GateType::Interface(s) => GateType::Interface(s), // never merge interface
+    //        },
+    //        _ => kind,
+    //    };
+    //    assert!(self.inputs.is_sorted());
+    //    (kind, self.inputs.clone(), self.initial_state)
+    //}
 }
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]

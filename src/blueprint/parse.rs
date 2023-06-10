@@ -435,10 +435,10 @@ impl VcbPlainBoard {
         let y: usize = y.try_into().ok()?;
         (x < self.width && y < self.height).then_some(x + y * self.width)
     }
-    /// Iterate origin of all vmem bits, contents then address
-    fn iter_vmem_bits(&self) {
-        todo!()
-    }
+    // Iterate origin of all vmem bits, contents then address
+    //fn iter_vmem_bits(&self) {
+    //    todo!()
+    //}
     fn apply_vmem(mut self) -> anyhow::Result<Self> {
         match &self.vmem {
             None => Ok(self),

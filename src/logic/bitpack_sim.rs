@@ -22,13 +22,13 @@ use super::{
 };
 
 /// size = 8 (u64), align = 4 (u32) -> 8 (u64)
-#[derive(Debug, Copy, Clone)]
-#[repr(align(8))]
-struct Soap {
-    base_offset: u32, // 4
-    num_outputs: u16, // 2
-                      //run_type: RunTimeGateType, // 1
-}
+//#[derive(Debug, Copy, Clone)]
+//#[repr(align(8))]
+//struct Soap {
+//    base_offset: u32, // 4
+//    num_outputs: u16, // 2
+//                      //run_type: RunTimeGateType, // 1
+//}
 #[derive(Clone)]
 pub struct BitPackSimInner {
     acc: Box<[BitAccPack]>,

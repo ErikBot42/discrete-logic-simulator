@@ -473,15 +473,15 @@ impl<T: LogicSim> VcbBoard<T> {
     }
 }
 
-/// Represents one "pixel".
-/// It is probably a mistake to
-/// make a copy of this type.
-struct BoardElement {
-    trace: Trace,
-    id: Option<usize>,
-}
-impl BoardElement {
-    fn new(trace: Trace) -> Self {
-        BoardElement { trace, id: None }
-    }
-}
+// Represents one "pixel".
+// It is probably a mistake to
+// make a copy of this type.
+//struct BoardElement {
+//    trace: Trace,
+//    id: Option<usize>,
+//}
+//impl BoardElement {
+//    fn new(trace: Trace) -> Self {
+//        BoardElement { trace, id: None }
+//    }
+//}

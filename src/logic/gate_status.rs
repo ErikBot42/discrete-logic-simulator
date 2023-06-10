@@ -1,27 +1,43 @@
+
+
 //use super::*;
 use super::{AccType, RunTimeGateType, SimdLogicType};
 use std::simd::{LaneCount, Mask, Simd, SimdPartialEq, SupportedLaneCount};
 //TODO: this only uses 4 bits, 2 adjacent gates could share their
 //      in_update_list flag and be updated at the same time.
+#[cfg(test)]
 pub(crate) type Inner = u8;
+#[cfg(test)]
 pub(crate) type InnerSigned = i8;
+#[cfg(test)]
 pub(crate) type Packed = u64;
+#[cfg(test)]
 pub(crate) const PACKED_ELEMENTS: usize = std::mem::size_of::<Packed>();
 // bit locations
+#[cfg(test)]
 const STATE: Inner = 0;
+#[cfg(test)]
 const IN_UPDATE_LIST: Inner = 1;
+#[cfg(test)]
 const IS_INVERTED: Inner = 2;
+#[cfg(test)]
 const IS_XOR: Inner = 3;
 
+#[cfg(test)]
 const FLAG_STATE: Inner = 1 << STATE;
+#[cfg(test)]
 const FLAG_IN_UPDATE_LIST: Inner = 1 << IN_UPDATE_LIST;
+#[cfg(test)]
 const FLAG_IS_INVERTED: Inner = 1 << IS_INVERTED;
+#[cfg(test)]
 const FLAG_IS_XOR: Inner = 1 << IS_XOR;
+#[cfg(test)]
 const FLAG_IS_LATCH: Inner = FLAG_IS_XOR | FLAG_IS_INVERTED;
-
+#[cfg(test)]
 const FLAGS_MASK: Inner = FLAG_IS_INVERTED | FLAG_IS_XOR;
 //const ANY_MASK: Inner = FLAG_STATE | FLAG_IN_UPDATE_LIST | FLAG_IS_INVERTED | FLAG_IS_XOR;
 
+#[cfg(test)]
 pub(crate) fn new(in_update_list: bool, state: bool, kind: RunTimeGateType) -> Inner {
     //let in_update_list = in_update_list as u8;
     //let state = state as u8;
@@ -37,6 +53,7 @@ pub(crate) fn new(in_update_list: bool, state: bool, kind: RunTimeGateType) -> I
 /// # Returns
 /// Delta (+-1) if state changed (0 = no change)
 #[inline]
+#[cfg(test)]
 pub(crate) fn eval_mut<const CLUSTER: bool>(
     inner_mut: &mut Inner,
     acc: AccType,
@@ -120,12 +137,14 @@ pub(crate) fn eval_mut<const CLUSTER: bool>(
     }
 }
 
+#[cfg(test)]
 pub(crate) const fn splat_u32(value: u8) -> Packed {
     pack_single([value; PACKED_ELEMENTS])
 }
 /// if byte contains any bit set, it will be
 /// replaced with 0xff
-pub(crate) const fn _or_combine(value: Packed) -> Packed {
+#[cfg(test)]
+pub(crate) const fn or_combine(value: Packed) -> Packed {
     //TODO: try using a tree here.
     //      this is extremely sequential
     let mut value = value;
@@ -139,6 +158,7 @@ pub(crate) const fn _or_combine(value: Packed) -> Packed {
 }
 /// like `or_combine`, but replaces with 0x1 instead.
 /// equivalent to `BYTEwise` != 0
+#[cfg(test)]
 const fn or_combine_1(value: Packed) -> Packed {
     //let mut value = value;
     //value |= (splat_u32(0b1111_0000) & value) >> 4;
@@ -153,6 +173,7 @@ const fn or_combine_1(value: Packed) -> Packed {
 /// for each byte:
 /// 0 -> `0b0000_0000`
 /// 1 -> `0b1111_1111`
+#[cfg(test)]
 const fn mask_if_one(value: Packed) -> Packed {
     //let value = value & splat_u32(1);
     //let value = value | (value << 4);
@@ -162,6 +183,7 @@ const fn mask_if_one(value: Packed) -> Packed {
 }
 // TODO: save on the 4 unused bits, maybe merge 2 iterations?
 // TODO: relaxed or_combine
+#[cfg(test)]
 pub(crate) fn eval_mut_scalar<const CLUSTER: bool>(
     inner_mut: &mut Packed,
     acc: Packed,
@@ -193,6 +215,7 @@ pub(crate) fn eval_mut_scalar<const CLUSTER: bool>(
 }
 
 #[inline]
+#[cfg(test)]
 pub(crate) fn eval_mut_simd<const CLUSTER: bool, const LANES: usize>(
     inner_mut: &mut Simd<Inner, LANES>,
     acc: Simd<AccType, LANES>,
@@ -244,19 +267,23 @@ where
     )
 }
 
+//#[inline]
+//#[cfg(test)]
+//pub(crate) fn mark_in_update_list(inner: &mut Inner) {
+//    *inner |= FLAG_IN_UPDATE_LIST;
+//}
 #[inline]
-pub(crate) fn mark_in_update_list(inner: &mut Inner) {
-    *inner |= FLAG_IN_UPDATE_LIST;
-}
-#[inline]
+#[cfg(test)]
 pub(crate) fn in_update_list(inner: Inner) -> bool {
     inner & FLAG_IN_UPDATE_LIST != 0
 }
 #[inline]
+#[cfg(test)]
 pub(crate) fn state(inner: Inner) -> bool {
     inner & FLAG_STATE != 0
 }
 
+#[cfg(test)]
 pub(crate) fn pack(mut iter: impl Iterator<Item = u8>) -> Vec<Packed> {
     let mut tmp = Vec::new();
     loop {
@@ -274,20 +301,23 @@ pub(crate) fn pack(mut iter: impl Iterator<Item = u8>) -> Vec<Packed> {
     tmp
 }
 #[inline(always)]
+#[cfg(test)]
 pub(crate) const fn pack_single(unpacked: [u8; PACKED_ELEMENTS]) -> Packed {
     Packed::from_le_bytes(unpacked)
 }
 #[inline(always)]
+#[cfg(test)]
 pub(crate) const fn unpack_single(packed: Packed) -> [u8; PACKED_ELEMENTS] {
     Packed::to_le_bytes(packed)
 }
-pub(crate) fn packed_state(packed: Packed) -> [bool; PACKED_ELEMENTS] {
-    let mut res = [false; PACKED_ELEMENTS];
-    res.iter_mut()
-        .zip(unpack_single(packed & splat_u32(FLAG_STATE)))
-        .for_each(|(res, x)| *res = x != 0);
-    res
-}
+//#[cfg(test)]
+//pub(crate) fn packed_state(packed: Packed) -> [bool; PACKED_ELEMENTS] {
+//    let mut res = [false; PACKED_ELEMENTS];
+//    res.iter_mut()
+//        .zip(unpack_single(packed & splat_u32(FLAG_STATE)))
+//        .for_each(|(res, x)| *res = x != 0);
+//    res
+//}
 #[cfg(test)]
 pub(crate) fn packed_state_vec(packed: Packed) -> Vec<bool> {
     unpack_single(packed & splat_u32(FLAG_STATE))
@@ -295,12 +325,13 @@ pub(crate) fn packed_state_vec(packed: Packed) -> Vec<bool> {
         .map(|x| x != 0)
         .collect()
 }
-pub(crate) fn get_state_from_packed_slice(packed: &[Packed], index: usize) -> bool {
-    let outer_index = index / PACKED_ELEMENTS;
-    let inner_index = index % PACKED_ELEMENTS;
-
-    packed_state(packed[outer_index])[inner_index]
-}
+//#[cfg(test)]
+//pub(crate) fn get_state_from_packed_slice(packed: &[Packed], index: usize) -> bool {
+//    let outer_index = index / PACKED_ELEMENTS;
+//    let inner_index = index % PACKED_ELEMENTS;
+//
+//    packed_state(packed[outer_index])[inner_index]
+//}
 
 #[cfg(test)]
 mod tests {
@@ -345,7 +376,7 @@ mod tests {
                 let expected = Packed::from_le_bytes(bytes);
                 assert_eq!(
                     expected,
-                    _or_combine(value),
+                    or_combine(value),
                     "invalid or_combine() for: {}",
                     value
                 );

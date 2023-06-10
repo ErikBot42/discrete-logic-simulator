@@ -156,7 +156,7 @@ mod tests {
             .collect::<Vec<_>>()
     }
 
-    fn prep_cases<SIM: LogicSim>(optimize: bool) -> Vec<(&'static str, VcbBoard<SIM>)> {
+    /*fn prep_cases<SIM: LogicSim>(optimize: bool) -> Vec<(&'static str, VcbBoard<SIM>)> {
         let cases: Vec<(&str, _)> = vec![
             (
                 "gates",
@@ -194,7 +194,7 @@ mod tests {
             .into_iter()
             .map(|x| (x.0, VcbParser::parse_compile(x.1, optimize).unwrap()))
             .collect::<Vec<(&str, VcbBoard<SIM>)>>()
-    }
+    }*/
 
     #[test]
     fn optimization_regression_test() {

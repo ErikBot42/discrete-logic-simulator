@@ -112,6 +112,7 @@ pub(crate) enum Trace {
     BusYellow,
 }
 impl Trace {
+    #[cfg(feature = "render")]
     pub const VARIANTS: [Trace; 50] = [
         Trace::Empty,
         Trace::Gray,
@@ -164,6 +165,9 @@ impl Trace {
         Trace::BusPurple,
         Trace::BusYellow,
     ];
+}
+#[cfg(any(feature = "gif", feature = "print_sim", feature = "clip"))]
+impl Trace {
     pub(crate) fn get_color(&self, state: bool) -> [u8; 4] {
         if state {
             self.to_color_on()
@@ -255,6 +259,60 @@ impl Trace {
             },
         }
     }
+    #[inline]
+    fn is_wire(self) -> bool {
+        matches!(
+            self,
+            Trace::Gray
+                | Trace::White
+                | Trace::Red
+                | Trace::Orange1
+                | Trace::Orange2
+                | Trace::Orange3
+                | Trace::Yellow
+                | Trace::Green1
+                | Trace::Green2
+                | Trace::Cyan1
+                | Trace::Cyan2
+                | Trace::Blue1
+                | Trace::Blue2
+                | Trace::Purple
+                | Trace::Magenta
+                | Trace::Pink
+                | Trace::Read
+                | Trace::Write
+        )
+    }
+    #[inline]
+    pub(crate) fn is_gate(self) -> bool {
+        matches!(
+            self,
+            Trace::Buffer
+                | Trace::And
+                | Trace::Or
+                | Trace::Xor
+                | Trace::Not
+                | Trace::Nand
+                | Trace::Nor
+                | Trace::Xnor
+                | Trace::LatchOn
+                | Trace::LatchOff
+                | Trace::Clock
+                | Trace::Led
+                | Trace::Vmem
+        )
+    }
+    #[inline]
+    pub(crate) fn is_logic(self) -> bool {
+        self.is_wire() || self.is_gate()
+    }
+    ///// non logical
+    //#[inline]
+    pub(crate) fn is_passive(self) -> bool {
+        !self.is_logic()
+    }
+}
+impl Trace {
     // colors from file format
     #[rustfmt::skip]
     pub(crate) fn from_raw_color(color: [u8; 4]) -> Result<Self, [u8;4]> {
@@ -317,87 +375,37 @@ impl Trace {
             //_ => {dbg!(color); Ok(Gray)},
         }
     }
-    #[inline]
-    fn is_wire(self) -> bool {
-        matches!(
-            self,
-            Trace::Gray
-                | Trace::White
-                | Trace::Red
-                | Trace::Orange1
-                | Trace::Orange2
-                | Trace::Orange3
-                | Trace::Yellow
-                | Trace::Green1
-                | Trace::Green2
-                | Trace::Cyan1
-                | Trace::Cyan2
-                | Trace::Blue1
-                | Trace::Blue2
-                | Trace::Purple
-                | Trace::Magenta
-                | Trace::Pink
-                | Trace::Read
-                | Trace::Write
-        )
-    }
-    #[inline]
-    pub(crate) fn is_gate(self) -> bool {
-        matches!(
-            self,
-            Trace::Buffer
-                | Trace::And
-                | Trace::Or
-                | Trace::Xor
-                | Trace::Not
-                | Trace::Nand
-                | Trace::Nor
-                | Trace::Xnor
-                | Trace::LatchOn
-                | Trace::LatchOff
-                | Trace::Clock
-                | Trace::Led
-                | Trace::Vmem
-        )
-    }
-    #[inline]
-    pub(crate) fn is_logic(self) -> bool {
-        self.is_wire() || self.is_gate()
-    }
-    /// non logical
-    #[inline]
-    pub(crate) fn is_passive(self) -> bool {
-        !self.is_logic()
-    }
 
-    /// should this trace connect to other
-    #[inline]
-    pub(crate) fn will_connect(self, other: Self) -> bool {
-        (self == other) || (self.is_wire() && other.is_wire())
-    }
+    ///// should this trace connect to other
+    //#[inline]
+    //pub(crate) fn will_connect(self, other: Self) -> bool {
+    //    (self == other) || (self.is_wire() && other.is_wire())
+    //}
 
-    #[inline]
-    pub(crate) fn to_gatetype_state(self) -> (GateType, bool) {
-        //TODO: handle latch gatetype
-        if self.is_wire() {
-            (GateType::Cluster, false)
-        } else {
-            match self {
-                Trace::Buffer | Trace::Or | Trace::Led => (GateType::Or, false),
-                Trace::Not | Trace::Nor => (GateType::Nor, false),
-                Trace::And => (GateType::And, false),
-                Trace::Nand => (GateType::Nand, false),
-                Trace::Xor => (GateType::Xor, false),
-                Trace::Xnor => (GateType::Xnor, false),
-                Trace::LatchOn => (GateType::Latch, true),
-                Trace::LatchOff => (GateType::Latch, false),
-                Trace::Vmem => (GateType::Interface(None), false),
-                //_ => panic!("unsupported logic trace: {self:?}"),
-                // ignore unsupported
-                _ => (GateType::Cluster, false),
-            }
-        }
-    }
+    //#[inline]
+    //pub(crate) fn to_gatetype_state(self) -> (GateType, bool) {
+    //    //TODO: handle latch gatetype
+    //    if self.is_wire() {
+    //        (GateType::Cluster, false)
+    //    } else {
+    //        match self {
+    //            Trace::Buffer | Trace::Or | Trace::Led => (GateType::Or, false),
+    //            Trace::Not | Trace::Nor => (GateType::Nor, false),
+    //            Trace::And => (GateType::And, false),
+    //            Trace::Nand => (GateType::Nand, false),
+    //            Trace::Xor => (GateType::Xor, false),
+    //            Trace::Xnor => (GateType::Xnor, false),
+    //            Trace::LatchOn => (GateType::Latch, true),
+    //            Trace::LatchOff => (GateType::Latch, false),
+    //            Trace::Vmem => (GateType::Interface(None), false),
+    //            //_ => panic!("unsupported logic trace: {self:?}"),
+    //            // ignore unsupported
+    //            _ => (GateType::Cluster, false),
+    //        }
+    //    }
+    //}
+}
+impl Trace {
     pub(crate) fn as_regular_emoji(self) -> &'static str {
         match self {
             Trace::Gray

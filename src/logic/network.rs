@@ -157,9 +157,9 @@ mod sparse {
         pub(crate) fn iter(&self) -> impl Iterator<Item = &[T]> {
             (0..self.len()).map(|i| &self[i])
         }
-        pub(crate) fn iter_inner(&self) -> impl Iterator<Item = T> + '_ {
-            self.outputs.iter().cloned()
-        }
+        //pub(crate) fn iter_inner(&self) -> impl Iterator<Item = T> + '_ {
+        //    self.outputs.iter().cloned()
+        //}
         pub(crate) fn clear(&mut self) {
             self.indexes.clear();
             self.indexes.push(T::new(0_usize));
@@ -177,13 +177,13 @@ mod sparse {
         pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = &mut [T]> {
             SparseIterMut::new(&self.indexes, &mut self.outputs)
         }
-        pub(crate) fn iter_inner_mut(&mut self) -> impl Iterator<Item = &mut T> {
-            self.outputs.iter_mut()
-        }
-        /// Sort slices in [`Sparse<T, CSR>`].
-        pub(crate) fn sort(&mut self) {
-            self.iter_mut().for_each(|inputs| inputs.sort());
-        }
+        //pub(crate) fn iter_inner_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        //    self.outputs.iter_mut()
+        //}
+        // Sort **slices** in [`Sparse<T, CSR>`].
+        //pub(crate) fn sort(&mut self) {
+        //    self.iter_mut().for_each(|inputs| inputs.sort());
+        //}
     }
     impl<T: SparseIndex, const CSR: bool> Index<usize> for Sparse<T, CSR> {
         type Output = [T];
@@ -262,15 +262,15 @@ pub struct GateNode {
 //    acc_offset: usize,
 //    constant: Option<bool>
 //}
-pub(crate) struct CsrGraph<T: SparseIndex> {
-    /// mapping from original nodes to optimized nodes
-    /// |n| -> |k|
-    pub(crate) table: Vec<T>,
-    /// |k|
-    pub(crate) csr: Csr<T>,
-    /// |k|
-    pub(crate) nodes: Vec<GateNode>,
-}
+//pub(crate) struct CsrGraph<T: SparseIndex> {
+//    /// mapping from original nodes to optimized nodes
+//    /// |n| -> |k|
+//    pub(crate) table: Vec<T>,
+//    /// |k|
+//    pub(crate) csr: Csr<T>,
+//    /// |k|
+//    pub(crate) nodes: Vec<GateNode>,
+//}
 use sparse::SparseIndex;
 pub(crate) use sparse::{Csc, Csr};
 pub(crate) mod passes {
@@ -748,15 +748,15 @@ pub(crate) mod passes {
     }
 
     /// CSC output sorted
-    fn sort_connections_pass<T: SparseIndex>(csc: &mut Csc<T>)
-    where
-        <T as TryFrom<usize>>::Error: Debug,
-        <usize as TryFrom<T>>::Error: Debug,
-        usize: TryFrom<T>,
-        Csc<T>: IndexMut<usize, Output = [T]>,
-    {
-        csc.sort();
-    }
+    //fn sort_connections_pass<T: SparseIndex>(csc: &mut Csc<T>)
+    //where
+    //    <T as TryFrom<usize>>::Error: Debug,
+    //    <usize as TryFrom<T>>::Error: Debug,
+    //    usize: TryFrom<T>,
+    //    Csc<T>: IndexMut<usize, Output = [T]>,
+    //{
+    //    csc.sort();
+    //}
 
     /// TODO: combine with constant analysis pass?
     /// Removes duplicate connections created from other passes, preserving gate behavior.

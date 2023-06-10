@@ -94,12 +94,12 @@ pub(crate) fn extract_acc_info_simd(acc: &BitAccPack) -> (BitInt, BitInt) {
     (acc_zero_simd(acc), acc_parity_simd(acc))
 }
 
-/// Mask out range of bits
-#[must_use]
-#[inline(always)]
-pub(crate) fn bit_slice(int: BitInt, range: Range<usize>) -> BitInt {
-    (int >> range.start) & (((1 as BitInt) << range.len()).wrapping_sub(1))
-}
+// Mask out range of bits
+//#[must_use]
+//#[inline(always)]
+//pub(crate) fn bit_slice(int: BitInt, range: Range<usize>) -> BitInt {
+//    (int >> range.start) & (((1 as BitInt) << range.len()).wrapping_sub(1))
+//}
 
 #[must_use]
 #[inline(always)]
