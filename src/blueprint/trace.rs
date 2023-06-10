@@ -54,7 +54,6 @@ mod vcb_colors {
     pub(crate) const COLOR_EMPTY:      [u8; 4] = [0, 0, 0, 0];
     pub(crate) const COLOR_VMEM:       [u8; 4] = COLOR_LATCHOFF;
 }
-use super::*;
 #[non_exhaustive]
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]

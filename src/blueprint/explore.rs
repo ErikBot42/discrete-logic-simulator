@@ -1,4 +1,3 @@
-use super::*;
 
 // Represents one gate or trace
 //pub(super) struct BoardNode {

@@ -7,13 +7,13 @@
 pub mod batch_sim;
 pub mod bitmanip;
 pub mod bitpack_sim;
+#[cfg(test)]
 pub mod gate_status;
 pub mod network;
 pub mod reference_sim;
 
 //pub(crate) use crate::logic::network::GateNetwork;
 use network::Csr;
-use std::simd::Simd;
 
 //pub type ReferenceSim = CompiledNetwork<{ UpdateStrategy::Reference as u8 }>;
 pub type ReferenceSim = reference_sim::ReferenceLogicSim;
@@ -47,24 +47,24 @@ pub(crate) enum GateType {
     Cluster, // equivalent to OR
 }
 impl GateType {
-    /// can a pair of identical connections be removed without changing behaviour
-    fn can_delete_double_identical_inputs(self) -> bool {
-        match self {
-            GateType::Xor | GateType::Xnor | GateType::Latch | GateType::Interface(_) => true,
-            GateType::And | GateType::Or | GateType::Nor | GateType::Nand | GateType::Cluster => {
-                false
-            },
-        }
-    }
-    /// can one connection in pair of identical connections be removed without changing behaviour
-    fn can_delete_single_identical_inputs(self) -> bool {
-        match self {
-            GateType::And | GateType::Or | GateType::Nor | GateType::Nand | GateType::Cluster => {
-                true
-            },
-            GateType::Xor | GateType::Xnor | GateType::Latch | GateType::Interface(_) => false,
-        }
-    }
+    // can a pair of identical connections be removed without changing behaviour
+    //fn can_delete_double_identical_inputs(self) -> bool {
+    //    match self {
+    //        GateType::Xor | GateType::Xnor | GateType::Latch | GateType::Interface(_) => true,
+    //        GateType::And | GateType::Or | GateType::Nor | GateType::Nand | GateType::Cluster => {
+    //            false
+    //        },
+    //    }
+    //}
+    // can one connection in pair of identical connections be removed without changing behaviour
+    //fn can_delete_single_identical_inputs(self) -> bool {
+    //    match self {
+    //        GateType::And | GateType::Or | GateType::Nor | GateType::Nand | GateType::Cluster => {
+    //            true
+    //        },
+    //        GateType::Xor | GateType::Xnor | GateType::Latch | GateType::Interface(_) => false,
+    //    }
+    //}
     fn is_cluster(self) -> bool {
         matches!(self, GateType::Cluster)
     }
@@ -171,6 +171,7 @@ impl RunTimeGateType {
     }
 
     /// (`is_inverted`, `is_xor`)
+    #[cfg(test)]
     const fn calc_flags(kind: RunTimeGateType) -> (bool, bool) {
         match kind {
             RunTimeGateType::OrNand => (false, false),
@@ -204,6 +205,7 @@ impl RunTimeGateType {
 type AccTypeInner = u8;
 type AccType = AccTypeInner;
 
+#[cfg(test)]
 type SimdLogicType = AccTypeInner;
 
 // tests don't need that many indexes, but this is obviously a big limitation.
@@ -212,7 +214,7 @@ type SimdLogicType = AccTypeInner;
 type IndexType = u32; //AccTypeInner;
 type UpdateList = crate::raw_list::RawList<IndexType>;
 
-type GateKey = (GateType, Vec<IndexType>, bool);
+//type GateKey = (GateType, Vec<IndexType>, bool);
 
 use network::GateNode;
 
@@ -484,6 +486,7 @@ mod tests {
 
     #[test]
     fn gate_evaluation_regression() {
+        use std::simd::Simd;
         for (kind, cluster) in [
             (RunTimeGateType::OrNand, true),
             (RunTimeGateType::OrNand, false),

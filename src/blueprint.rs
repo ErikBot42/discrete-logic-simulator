@@ -5,7 +5,7 @@ pub mod explore;
 pub mod parse;
 pub mod trace;
 
-use crate::logic::{GateType, LogicSim, RenderSim};
+use crate::logic::{LogicSim, RenderSim};
 use parse::VcbPlainBoard;
 pub use parse::{VcbInput, VcbParser};
 use trace::*;
@@ -16,7 +16,6 @@ use base64::Engine;
 const BASE64_STANDARD: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 
 use std::array::from_fn;
-use std::collections::BTreeSet;
 use std::mem::size_of;
 
 pub struct VcbBoard<T: LogicSim> {
@@ -462,6 +461,7 @@ impl<T: LogicSim> VcbBoard<T> {
         println!("this was copied to your clipboard (C-c to exit)");
         loop {}
     }
+    #[cfg(any(feature = "clip", test))]
     pub(crate) fn encode_state_base64(&mut self, iterations: usize) -> String {
         let mut states = Vec::new();
         for _ in 0..iterations {

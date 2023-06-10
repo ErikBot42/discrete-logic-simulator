@@ -36,8 +36,6 @@ pub(crate) type BitAcc = u8;
 pub(crate) type BitInt = u64;
 
 use std::mem::{align_of, size_of, transmute};
-use std::ops::Range;
-
 
 use core::arch::x86_64::{
     __m256i, _mm256_cmpeq_epi8, _mm256_load_si256, _mm256_movemask_epi8, _mm256_setzero_si256,

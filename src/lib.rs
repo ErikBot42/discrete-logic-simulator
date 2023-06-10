@@ -11,6 +11,8 @@
 #![feature(stdsimd)]
 #![feature(unchecked_math)]
 #![feature(allocator_api)]
+
+#![allow(clippy::float_arithmetic)]
 //#![feature(build_hasher_simple_hash_one)]
 macro_rules! timed {
     ($block:expr, $print_str:expr) => {{
@@ -28,13 +30,13 @@ macro_rules! unwrap_or_else {
         }
     };
 }
-macro_rules! assert_le {
-    ($first:expr, $second:expr) => {
-        let a = $first;
-        let b = $second;
-        assert!(a <= b, "{a} > {b}");
-    };
-}
+//macro_rules! assert_le {
+//    ($first:expr, $second:expr) => {
+//        let a = $first;
+//        let b = $second;
+//        assert!(a <= b, "{a} > {b}");
+//    };
+//}
 macro_rules! assert_eq_len {
     ($first:expr, $second:expr) => {
         assert_eq!($first.len(), $second.len());
