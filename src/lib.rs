@@ -41,11 +41,17 @@
 #![allow(clippy::use_debug)]
 #![allow(clippy::print_stdout)]
 #![allow(clippy::semicolon_outside_block)]
+#![allow(clippy::integer_division)]
+#![allow(clippy::question_mark_used)]
+#![allow(clippy::multiple_unsafe_ops_per_block)]
 
 
+#![allow(clippy::trivially_copy_pass_by_ref)]
 #![allow(clippy::redundant_pub_crate)]
 #![allow(clippy::std_instead_of_core)]
 #![allow(clippy::todo)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::cast_possible_truncation)]
 
 
 //#![feature(build_hasher_simple_hash_one)]

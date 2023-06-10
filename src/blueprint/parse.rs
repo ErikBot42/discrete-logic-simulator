@@ -341,7 +341,7 @@ impl BlueprintFooterInfo {
                     65_536 => Layer::Logic,
                     131_072 => Layer::On,
                     262_144 => Layer::Off,
-                    _ => Err(anyhow!("invalid footer layer"))?,
+                    _ => return Err(anyhow!("invalid footer layer")),
                 },
             })
         }
@@ -453,7 +453,7 @@ impl VcbPlainBoard {
                                     .context("vmem position bounds")?;
                                 let trace =
                                     self.traces.get_mut(index).context("vmem index bounds")?;
-                                assert_ne!(*trace, Trace::Vmem);
+                                assert_ne!(*trace, Trace::Vmem, "implementation error");
                                 *trace = Trace::Vmem;
                             }
                         }

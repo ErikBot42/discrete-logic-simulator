@@ -26,7 +26,7 @@ const _: () = {
     let align = align_of::<BitAccPack>();
     assert!(size == align, "BitAccPack: size diffrent from alignment");
 };
-pub(crate) fn bit_acc_pack(arr: [BitAcc; BITS]) -> BitAccPack {
+pub(crate) const fn bit_acc_pack(arr: [BitAcc; BITS]) -> BitAccPack {
     BitAccPack(arr)
 }
 
@@ -101,17 +101,17 @@ pub(crate) fn extract_acc_info_simd(acc: &BitAccPack) -> (BitInt, BitInt) {
 
 #[must_use]
 #[inline(always)]
-pub(crate) fn bit_set(int: BitInt, index: usize, set: bool) -> BitInt {
-    int | ((BitInt::from(set)) << index)
+pub(crate) const fn bit_set(int: BitInt, index: usize, set: bool) -> BitInt {
+    int | ((set as BitInt) << index)
 }
 #[must_use]
 #[inline(always)]
-pub(crate) fn bit_get(int: BitInt, index: u32) -> bool {
+pub(crate) const fn bit_get(int: BitInt, index: u32) -> bool {
     int & (1 << index) != 0
 }
 #[must_use]
 #[inline(always)]
-pub(crate) fn wrapping_bit_get(int: BitInt, index: usize) -> bool {
+pub(crate) const fn wrapping_bit_get(int: BitInt, index: usize) -> bool {
     // Truncating semantics desired here.
     int & (1 as BitInt).wrapping_shl(index as u32) != 0
 }

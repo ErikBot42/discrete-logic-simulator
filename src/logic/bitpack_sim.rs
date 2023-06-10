@@ -17,8 +17,7 @@ use super::bitmanip::{
     BitAccPack, BitInt, BITS,
 };
 use super::{
-    Csr, Gate, GateType, IndexType, LogicSim, RunTimeGateType, UpdateList,
-    UpdateStrategy,
+    Csr, Gate, GateType, IndexType, LogicSim, RunTimeGateType, UpdateList, UpdateStrategy,
 };
 
 /// size = 8 (u64), align = 4 (u32) -> 8 (u64)
@@ -226,7 +225,7 @@ impl BitPackSimInner {
                         .list
                         .get_unchecked_mut(next_update_list.len)
                 } = output_group_id as IndexType;
-                next_update_list.len += (!*in_update_list_mut) as usize;
+                next_update_list.len += usize::from(!*in_update_list_mut);
                 *in_update_list_mut = true;
 
                 //if !*in_update_list_mut {
@@ -265,7 +264,7 @@ impl crate::logic::RenderSim for BitPackSimInner {
     // WAY faster state copy
     fn get_state_in(&mut self, v: &mut Vec<u64>) {
         v.clear();
-        v.extend(self.state.iter().cloned());
+        v.extend(self.state.iter().copied());
         v.shrink_to_fit();
     }
 }
@@ -294,7 +293,7 @@ impl TryFrom<GateType> for GateOrderingKey {
             GateType::Xor | GateType::Xnor => XorXnor,
             GateType::Latch => Latch,
             GateType::Interface(s) => s
-                .map(|s| Interface(s))
+                .map(Interface)
                 .ok_or_else(|| anyhow::anyhow!("Interface with None slot"))?,
             GateType::Cluster => Cluster,
         })
@@ -314,8 +313,7 @@ impl From<GateOrderingKey> for GatePackingKey {
     fn from(g: GateOrderingKey) -> Self {
         use GatePackingKey::*;
         match g {
-            GateOrderingKey::Interface(_) => LatchInterface,
-            GateOrderingKey::Latch => LatchInterface,
+            GateOrderingKey::Interface(_) | GateOrderingKey::Latch => LatchInterface,
             GateOrderingKey::OrNand => OrNand,
             GateOrderingKey::AndNor => AndNor,
             GateOrderingKey::XorXnor => XorXnor,
@@ -334,7 +332,7 @@ fn bit_pack_nodes(nodes: &Vec<GateNode>) -> (Vec<Option<usize>>, Vec<usize>) {
         .iter()
         .map(|n| GateOrderingKey::try_from(n.kind).unwrap())
         .enumerate()
-        .sorted_by_key(|(_, ordkey)| *ordkey)
+        .sorted_by_key(|&(_, ordkey)| ordkey)
         .map(|(i, ordkey)| (i, GatePackingKey::from(ordkey)))
     {
         //dbg!((i, key));
@@ -392,9 +390,9 @@ impl LogicSim for BitPackSimInner {
         //        .map(|i| i.into_iter().map(|i| i as u32)),
         //);
         let (bit_pack_table, bit_pack_inv_table) = bit_pack_nodes(&nodes);
-        translation_table.iter_mut().for_each(|t| {
-            *t = u32::try_from(bit_pack_inv_table[usize::try_from(*t).unwrap()]).unwrap()
-        });
+        for t in translation_table.iter_mut() {
+            *t = u32::try_from(bit_pack_inv_table[usize::try_from(*t).unwrap()]).unwrap();
+        }
 
         let csc_pre_table = csr.as_csc();
 

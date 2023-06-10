@@ -121,8 +121,7 @@ mod sparse {
         }
         pub(crate) fn adjacency_iter(&self) -> impl Iterator<Item = (T, T)> + '_ {
             (0..self.len())
-                .map(|i| std::iter::repeat(T::new(i)).zip(self.index(i).iter().copied()))
-                .flatten()
+                .flat_map(|i| std::iter::repeat(T::new(i)).zip(self.index(i).iter().copied()))
         }
         fn from_sorted_adjacency_iter(
             adjacency_iter: impl IntoIterator<Item = (T, T)>,
@@ -137,7 +136,7 @@ mod sparse {
 
             let mut curr_output = outputs_iter.next();
             let outputs_iter = (0..len).map(|id| {
-                    if (curr_output.as_ref().map(|(from, _)| id == T::index(*from)) == Some(true)) &&
+                    if (curr_output.as_ref().map(|&(from, _)| id == T::index(from)) == Some(true)) &&
                         let Some(iter) = replace(&mut curr_output, outputs_iter.next()).map(|a| a.1) {
                         Left(iter)
                     } else {
@@ -352,7 +351,7 @@ pub(crate) mod passes {
 
         let mut inputs: Vec<&mut [T]> = Vec::with_capacity(nodes_len);
         csc.mut_slices_in(&mut inputs); // csc used as a bump allocator
-        let mut inputs: Vec<&[T]> = inputs.iter().map(|i| &**i).map(|i| i).collect();
+        let mut inputs: Vec<&[T]> = inputs.iter().map(|i| &**i).collect();
 
         // copy gatenode since it needs to be modifed while maintaining map
         let mut map: HashMap<(&[T], GateNode), usize> = HashMap::new();
@@ -368,7 +367,7 @@ pub(crate) mod passes {
         let mut merged: Vec<Option<usize>> = (0..nodes_len).map(|_| None).collect();
 
         // NOTE: pop stuff from map if key is modified.
-        while active_list.len() > 0 {
+        while !active_list.is_empty() {
             for &i in &active_list {
                 assert!(replace(&mut in_active_list[i], false));
                 assert!(merged[i].is_none());
@@ -424,7 +423,8 @@ pub(crate) mod passes {
                             Nand if max_active_inputs < inputs => (Zero, INVERTER),
                             And if max_active_inputs == 1 && inputs == 1 => (Variable, BUFFER),
                             Nand if max_active_inputs == 1 && inputs == 1 => (Variable, INVERTER),
-                            _ => (All, kind),
+
+                            And | Nand => (All, kind),
                         }
                     };
 
@@ -439,7 +439,7 @@ pub(crate) mod passes {
                         match connection_action {
                             All => (),
                             Zero => {
-                                removed_inputs = replace(&mut inputs[i], &[]);
+                                removed_inputs = take(&mut inputs[i]);
                             },
                             Variable => {
                                 let mut boxed_inputs =
@@ -461,12 +461,12 @@ pub(crate) mod passes {
                                 }
                             },
                         }
-                        if removed_inputs != &[] {
+                        if !removed_inputs.is_empty() {
                             modified = true;
                             for &removed_input in removed_inputs {
                                 // "outputs[removed_input].remove_first(i)"
                                 let index = removed_input.index();
-                                let slice = replace(&mut outputs[index], &mut []);
+                                let slice = take(&mut outputs[index]);
                                 let element = T::new(i);
                                 slice.sort();
                                 let index = slice.iter().position(|&e| e == element).unwrap();

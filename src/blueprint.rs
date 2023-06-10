@@ -71,11 +71,11 @@ impl<T: LogicSim> VcbBoard<T> {
             explore::explore_new::construct_vcbboard_parts(&plain, optimize);
         //construct_vcbboard_parts(&plain, optimize);
 
-        element_ids.iter().for_each(|&i| {
+        for &i in element_ids.iter() {
             if let Some(i) = i {
-                assert!(i < 1_000_000, "{i}")
+                assert!(i < 1_000_000, "{i}");
             }
-        });
+        }
 
         VcbBoard {
             element_ids_internal: element_ids,
@@ -310,7 +310,7 @@ impl<T: LogicSim> VcbBoard<T> {
             println!();
         }
         if legend {
-            self.print_legend(|x| fun(x).to_string(), |x| format!("{x:?}"));
+            self.print_legend(|x| fun(x).to_owned(), |x| format!("{x:?}"));
         }
     }
     pub fn print_regular_emoji(&self, legend: bool) {
@@ -339,7 +339,7 @@ impl<T: LogicSim> VcbBoard<T> {
         fn get_current_traces<T: LogicSim>(b: &VcbBoard<T>) -> Vec<Trace> {
             b.traces
                 .iter()
-                .cloned()
+                .copied()
                 .fold(std::collections::HashSet::new(), |mut set, trace| {
                     set.insert(trace);
                     set
