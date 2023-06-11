@@ -90,6 +90,14 @@ impl<T: LogicSim> VcbBoard<T> {
         }
     }
 }
+pub fn fuzz_vcb_board_creation<'a>(plain_board: parse::ArbitraryVcbPlainBoard) -> arbitrary::Result<()> {
+    
+    let vcb_board: VcbBoard<crate::logic::BitPackSim> = VcbBoard::new(plain_board.board, false);
+
+    std::hint::black_box(vcb_board);
+
+    Ok(())
+}
 
 /*fn construct_vcbboard_parts<T: LogicSim>(
     plain: &VcbPlainBoard,

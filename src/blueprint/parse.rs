@@ -429,6 +429,33 @@ pub(crate) struct VcbPlainBoard {
     pub(crate) height: usize,
     pub(crate) vmem: Option<VmemInfo>,
 }
+
+#[derive(Debug)]
+pub struct ArbitraryVcbPlainBoard {
+    pub(crate) board: VcbPlainBoard,
+}
+impl<'a> arbitrary::Arbitrary<'a> for ArbitraryVcbPlainBoard {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let len: usize = std::cmp::max(u.arbitrary_len::<u8>()?, 1);
+        let width: usize = u.int_in_range(1..=len)?;
+        let height = len / width;
+
+        let mut traces: Vec<Trace> = Vec::new();
+        for _ in 0..(width * height) {
+            traces.push(trace::arbitrary_trace(u)?);
+        }
+
+        Ok(ArbitraryVcbPlainBoard {
+            board: VcbPlainBoard {
+                traces,
+                width,
+                height,
+                vmem: None,
+            },
+        })
+    }
+}
+
 impl VcbPlainBoard {
     fn pos_to_index(&self, (x, y): (isize, isize)) -> Option<usize> {
         let x: usize = x.try_into().ok()?;

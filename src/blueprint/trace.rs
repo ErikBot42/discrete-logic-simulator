@@ -54,6 +54,19 @@ mod vcb_colors {
     pub(crate) const COLOR_EMPTY:      [u8; 4] = [0, 0, 0, 0];
     pub(crate) const COLOR_VMEM:       [u8; 4] = COLOR_LATCHOFF;
 }
+
+pub(crate) fn arbitrary_trace<'a>(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Trace> {
+    use Trace::*;
+    u.choose(&[
+        Empty, Gray, White, Red, Orange1, Orange2, Orange3, Yellow, Green1, Green2, Cyan1, Cyan2,
+        Blue1, Blue2, Purple, Magenta, Pink, Write, Cross, Read, Buffer, And, Or, Xor, Not, Nand,
+        Nor, Xnor, LatchOn, LatchOff, Clock, Led, Annotation, Filler, Tunnel, Mesh, Wireless0,
+        Wireless1, Wireless2, Wireless3, Timer, Random, Break, BusRed, BusGreen, BusBlue, BusTeal,
+        BusPurple, BusYellow,
+    ])
+    .copied()
+}
+
 #[non_exhaustive]
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]

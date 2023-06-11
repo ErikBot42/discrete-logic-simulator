@@ -1,3 +1,6 @@
 /target
 perf*
 r00*
+flamegraph.svg
+flamegraph2.svg
+spirv.spv
