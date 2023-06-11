@@ -91,11 +91,21 @@ impl<T: LogicSim> VcbBoard<T> {
     }
 }
 pub fn fuzz_vcb_board_creation<'a>(plain_board: parse::ArbitraryVcbPlainBoard) -> arbitrary::Result<()> {
-    
-    let vcb_board: VcbBoard<crate::logic::BitPackSim> = VcbBoard::new(plain_board.board, false);
+    let mut vcb_board_0: VcbBoard<crate::logic::BitPackSim> = VcbBoard::new(plain_board.board.clone(), false);
+    let mut vcb_board_1: VcbBoard<crate::logic::BitPackSim> = VcbBoard::new(plain_board.board, false);
 
-    std::hint::black_box(vcb_board);
-
+    for i in 0..10 {
+        let a = vcb_board_0.make_state_vec();
+        let b = vcb_board_1.make_state_vec();
+        if a != b {
+            dbg!(a, b);
+            vcb_board_1.print_debug();
+            vcb_board_0.print_debug();
+            panic!("DATA DIFFERS AT ITERATION {i:?}!!!");
+        }
+        vcb_board_0.update();
+        vcb_board_1.update();
+    }
     Ok(())
 }
 

@@ -357,7 +357,7 @@ enum Layer {
     Off,
 }
 // bits, position xy, offset xy, size xy
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct VmemInfoInner {
     bits: isize,
     position: (isize, isize), // should only be positive
@@ -402,7 +402,7 @@ impl VmemInfoInner {
         }
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct VmemInfo {
     pub(crate) contents: VmemInfoInner,
     pub(crate) address: VmemInfoInner,
@@ -421,7 +421,7 @@ impl VmemInfo {
 }
 
 /// Decoded blueprint or board
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub(crate) struct VcbPlainBoard {
     pub(crate) traces: Vec<Trace>,
@@ -436,7 +436,7 @@ pub struct ArbitraryVcbPlainBoard {
 }
 impl<'a> arbitrary::Arbitrary<'a> for ArbitraryVcbPlainBoard {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        const MAX_DIM: usize = 20;
+        const MAX_DIM: usize = 4;
         use std::cmp::{max, min};
         let len: usize = max(u.arbitrary_len::<u8>()?, 1);
         let width: usize = min(u.int_in_range(1..=len)?, MAX_DIM);

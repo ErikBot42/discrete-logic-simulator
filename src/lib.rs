@@ -54,6 +54,10 @@
 #![allow(clippy::cast_possible_truncation)]
 
 
+// cargo fuzz run fuzz_target_1 fuzz/artifacts/fuzz_target_1/crash-433ed61ca8f22e77366cd1c40cbfdf84bb4cf9a0
+//
+// cargo fuzz tmin fuzz_target_1 fuzz/artifacts/fuzz_target_1/crash-433ed61ca8f22e77366cd1c40cbfdf84bb4cf9a0
+
 //#![feature(build_hasher_simple_hash_one)]
 macro_rules! timed {
     ($block:expr, $print_str:expr) => {{

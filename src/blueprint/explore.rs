@@ -1,4 +1,3 @@
-
 // Represents one gate or trace
 //pub(super) struct BoardNode {
 //    inputs: BTreeSet<usize>,
@@ -165,11 +164,13 @@ pub(crate) mod explore_new {
     }
     fn to_gatetype_state(trace: Trace) -> (GateType, bool) {
         match trace {
-            Filler | Annotation | Tunnel | Cross | Empty => unreachable!("{trace:?}"),
+            Filler | Annotation | Tunnel | Cross | Empty => {
+                unreachable!("non logic was not removed {trace:?}")
+            },
             BusRed | BusGreen | BusBlue | BusTeal | BusPurple | BusYellow | Mesh => {
-                //unreachable!("{trace:?}")
-                println!("TODO: bus found, plz remove");
-                (GateType::Or, false)
+                unreachable!("bus was not removed: {trace:?}")
+                //println!("TODO: bus found, plz remove");
+                //(GateType::Or, false)
             },
             Read | Write | Gray | White | Red | Orange1 | Orange2 | Orange3 | Yellow | Green1
             | Green2 | Cyan1 | Cyan2 | Blue1 | Blue2 | Purple | Magenta | Pink => {
@@ -325,7 +326,7 @@ pub(crate) mod explore_new {
                     .into_iter()
                     .map(|a| a.1)
                     .collect_vec()
-                .into_iter(),
+                    .into_iter(),
             );
             for set in id_sets.iter_mut() {
                 set.sort() // probably not needed, but may be better for cache stuff later?
@@ -356,7 +357,13 @@ pub(crate) mod explore_new {
                     }
                 }
             } else {
-                return (Csr::new([[0_usize; 0]; 0].iter().cloned()), Vec::new(), Vec::new());
+                //println!("No nodes found...?");
+                
+                return (
+                    Csr::new([[0_usize; 0]; 0].iter().cloned()),
+                    (0..traces.len()).map(|_| None).collect(),
+                    Vec::new(),
+                );
                 //todo!("this only has buses/mesh, make fallback")
             }
 
