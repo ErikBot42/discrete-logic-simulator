@@ -69,7 +69,7 @@ where
     #[inline(always)]
     pub(crate) fn get_slice(&self) -> &[T] {
         debug_assert!(
-            self.list.len() > self.len,
+            self.list.len() >= self.len,
             "{} <= {}",
             self.list.len(),
             self.len

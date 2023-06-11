@@ -320,11 +320,11 @@ pub(crate) mod explore_new {
                 .map(|a| a.1)
                 .collect();
             id_sets.extend(
-                dbg!(connect_state
+                connect_state
                     .bus_connections
                     .into_iter()
                     .map(|a| a.1)
-                    .collect_vec())
+                    .collect_vec()
                 .into_iter(),
             );
             for set in id_sets.iter_mut() {
@@ -356,7 +356,8 @@ pub(crate) mod explore_new {
                     }
                 }
             } else {
-                todo!("this only has buses/mesh, make fallback")
+                return (Csr::new([[0_usize; 0]; 0].iter().cloned()), Vec::new(), Vec::new());
+                //todo!("this only has buses/mesh, make fallback")
             }
 
             // compress table for removed ids

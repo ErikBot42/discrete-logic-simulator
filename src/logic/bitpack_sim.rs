@@ -508,6 +508,7 @@ fn make_update_lists(
     num_groups: usize,
     num_gates: usize,
 ) -> (UpdateList, UpdateList, Vec<bool>) {
+    //println!("\nkind: {:?}\nnum_groups: {:?}\nnum_gates: {:?}\n", kind, num_groups, num_gates);
     let update_list = UpdateList::collect_size(
         kind.iter()
             .step_by(BITS)

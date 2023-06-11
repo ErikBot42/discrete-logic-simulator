@@ -59,7 +59,9 @@ macro_rules! timed {
     ($block:expr, $print_str:expr) => {{
         let now = std::time::Instant::now();
         let a = ($block);
-        println!($print_str, now.elapsed());
+        if false {
+            println!($print_str, now.elapsed());
+        }
         a
     }};
 }

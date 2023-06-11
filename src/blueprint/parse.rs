@@ -436,9 +436,11 @@ pub struct ArbitraryVcbPlainBoard {
 }
 impl<'a> arbitrary::Arbitrary<'a> for ArbitraryVcbPlainBoard {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let len: usize = std::cmp::max(u.arbitrary_len::<u8>()?, 1);
-        let width: usize = u.int_in_range(1..=len)?;
-        let height = len / width;
+        const MAX_DIM: usize = 20;
+        use std::cmp::{max, min};
+        let len: usize = max(u.arbitrary_len::<u8>()?, 1);
+        let width: usize = min(u.int_in_range(1..=len)?, MAX_DIM);
+        let height = min(len / width, MAX_DIM);
 
         let mut traces: Vec<Trace> = Vec::new();
         for _ in 0..(width * height) {
